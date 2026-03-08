@@ -8,7 +8,7 @@ app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 
 // Supabase
-onst supabase = createClient(
+const supabase = createClient(
   process.env.SUPABASE_URL || 'https://ffjpzkpdumdcwnakpaje.supabase.co',
   process.env.SUPABASE_SERVICE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmanB6a3BkdW1kY3duYWtwYWplIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Mjk4Nzg5NywiZXhwIjoyMDg4NTYzODk3fQ.Lz-49Ssxd6rBcGviBDJUcL6Fdu1wpoY0y0Ab_1WtF7Q'
 );
