@@ -1,12 +1,16 @@
 {
-  "name": "raven-discord-bot",
+  "name": "raven",
   "version": "1.0.0",
-  "description": "RAVEN bill-splitting Discord bot",
-  "main": "bot.js",
+  "description": "RAVEN — SMS + Discord bill-splitting bot",
+  "main": "index.js",
   "scripts": {
-    "start": "node bot.js"
+    "start": "node index.js"
   },
   "dependencies": {
-    "discord.js": "^14.14.1"
+    "@supabase/supabase-js": "^2.43.4",
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.4.5",
+    "express": "^4.18.2",
+    "twilio": "^5.3.3"
   }
 }
