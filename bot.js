@@ -1,6 +1,6 @@
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
-const TOKEN = process.env.BOT_TOKEN || 'MTQ4MDI5NzEzMzM4MjA0MTc4MA.GwIC9f.De5h6rctZ0Y6VYNXjVwvUnP5qxNPkxgrbZM1JM';
+const TOKEN = process.env.BOT_TOKEN || 'MTQ4MDI5NzEzMzM4MjA0MTc4MA.G4u7-m.GzmkSXF5Bx9JWCV9zdbXIdKVA5UAQtFxp0Jt8U';
 const CLIENT_ID = process.env.CLIENT_ID || '148029713338204178';
 
 // In-memory bill storage
