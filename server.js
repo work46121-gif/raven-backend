@@ -1,4 +1,4 @@
-require('dotenv').config();
+
 const express = require('express');
 const twilio = require('twilio');
 const { createClient } = require('@supabase/supabase-js');
