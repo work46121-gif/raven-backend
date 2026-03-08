@@ -1,4 +1,4 @@
-
+require('dotenv').config();
 const express = require('express');
 const twilio = require('twilio');
 const { createClient } = require('@supabase/supabase-js');
@@ -9,8 +9,8 @@ app.use(express.json());
 
 // Supabase
 const supabase = createClient(
-  process.env.SUPABASE_URL || 'https://ffjpzkpdumdcwnakpaje.supabase.co',
-  process.env.SUPABASE_SERVICE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmanB6a3BkdW1kY3duYWtwYWplIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Mjk4Nzg5NywiZXhwIjoyMDg4NTYzODk3fQ.Lz-49Ssxd6rBcGviBDJUcL6Fdu1wpoY0y0Ab_1WtF7Q'
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
 );
 
 // Twilio — graceful init, won't crash with placeholder creds
@@ -262,6 +262,23 @@ app.post('/sms', async (req, res) => {
   const twiml = new twilio.twiml.MessagingResponse();
   twiml.message(reply);
   res.type('text/xml').send(twiml.toString());
+});
+
+
+// Waitlist endpoint
+app.post('/waitlist', async (req, res) => {
+  const { email, timestamp, source } = req.body;
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({ error: 'Invalid email' });
+  }
+  try {
+    await supabase.from('waitlist').insert({ email, source: source || 'website', created_at: timestamp || new Date().toISOString() });
+    console.log('Waitlist signup:', email);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Waitlist error:', err);
+    res.json({ success: true }); // Still return success to user
+  }
 });
 
 app.get('/', (req, res) => {
