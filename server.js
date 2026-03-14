@@ -5,6 +5,7 @@ const { createClient } = require('@supabase/supabase-js');
 const Anthropic = require('@anthropic-ai/sdk');
 const fetch = require('node-fetch');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 app.use(express.urlencoded({ extended: false }));
@@ -97,7 +98,6 @@ async function getAllContacts(ownerPhone) {
 
 async function parseReceiptWithClaude(imageUrl) {
   try {
-    // Download image and convert to base64
     const response = await fetch(imageUrl, {
       headers: {
         'Authorization': `Basic ${Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString('base64')}`
@@ -166,7 +166,6 @@ async function handleReceiptImage(fromPhone, mediaUrl, billName) {
     });
     if (billError) throw billError;
 
-    // Insert receipt items
     const itemRows = parsed.items.map(item => ({
       bill_id: billId,
       name: item.name,
@@ -174,7 +173,6 @@ async function handleReceiptImage(fromPhone, mediaUrl, billName) {
     }));
     await supabase.from('receipt_items').insert(itemRows);
 
-    // Store tax and tip in bill
     await supabase.from('bills').update({
       tax: parsed.tax || 0,
       tip: parsed.tip || 0,
@@ -189,7 +187,7 @@ async function handleReceiptImage(fromPhone, mediaUrl, billName) {
 
     await sendSMS(fromPhone, `🪶 RAVEN — Receipt Scanned!\n\n📋 ${name}\n💰 Total: ${formatMoney(parsed.total)}\n🧾 ${parsed.items.length} items found\n\nShare this link so everyone can pick what they ordered:\n${billUrl}\n\n🆔 Bill ID: ${billId}`);
 
-    return null; // already sent SMS
+    return null;
   } catch (err) {
     console.error('Receipt handler error:', err);
     return `🪶 RAVEN\n\nSomething went wrong scanning the receipt. Try again.`;
@@ -205,7 +203,6 @@ async function handleAdd(fromPhone, text) {
     const name = parts[1];
     const phone = normalizePhone(parts[2]);
     if (phone.length < 10) return `🪶 RAVEN\n\nInvalid phone number. Try: ADD Jake 3477887944`;
-
     const { error } = await supabase.from('contacts').upsert({
       owner_phone: fromPhone, name: name.toLowerCase(), phone
     }, { onConflict: 'owner_phone,name' });
@@ -320,6 +317,7 @@ async function handlePaidByName(fromPhone, billId, name, bill) {
     await supabase.from('participants').update({ paid: true, paid_at: new Date().toISOString(), phone: fromPhone }).eq('id', participant.id);
     return await buildPaidResponse(bill, billId, participant, fromPhone);
   } catch (err) {
+    console.error('PAID BY NAME error:', err);
     return `🪶 RAVEN\n\nSomething went wrong. Try again.`;
   }
 }
@@ -364,6 +362,7 @@ async function handleRemind(fromPhone, text) {
     if (reminded > 0) response += `\n✅ Auto-pinged ${reminded} people`;
     return response;
   } catch (err) {
+    console.error('REMIND error:', err);
     return `🪶 RAVEN\n\nSomething went wrong. Try again.`;
   }
 }
@@ -383,6 +382,7 @@ async function handleStatus(fromPhone, text) {
     response += `\n💵 Collected: ${formatMoney(totalCollected)} / ${formatMoney(bill.total)}`;
     return response;
   } catch (err) {
+    console.error('STATUS error:', err);
     return `🪶 RAVEN\n\nSomething went wrong. Try again.`;
   }
 }
@@ -398,6 +398,7 @@ async function handleBills(fromPhone) {
     });
     return response + `Reply STATUS [ID] for details`;
   } catch (err) {
+    console.error('BILLS error:', err);
     return `🪶 RAVEN\n\nSomething went wrong. Try again.`;
   }
 }
@@ -421,7 +422,6 @@ app.post('/sms', async (req, res) => {
 
   let reply = '';
 
-  // Handle image/receipt
   if (numMedia > 0 && mediaType.startsWith('image/')) {
     const billName = rawBody || 'Receipt Bill';
     const result = await handleReceiptImage(fromPhone, mediaUrl, billName);
@@ -457,146 +457,107 @@ app.get('/bill/:billId', async (req, res) => {
   const { data: items } = await supabase.from('receipt_items').select('*').eq('bill_id', billId);
   const { data: selections } = await supabase.from('item_selections').select('*').eq('bill_id', billId);
 
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>🪶 RAVEN — ${bill.name}</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a0a; color: #fff; min-height: 100vh; }
-    .header { background: #111; padding: 20px; text-align: center; border-bottom: 1px solid #222; }
-    .header h1 { font-size: 24px; }
-    .header p { color: #888; margin-top: 4px; font-size: 14px; }
-    .name-section { padding: 20px; }
-    .name-section input { width: 100%; padding: 14px; border-radius: 12px; border: 1px solid #333; background: #1a1a1a; color: #fff; font-size: 16px; outline: none; }
-    .name-section input:focus { border-color: #7c3aed; }
-    .items { padding: 0 20px 20px; }
-    .items h2 { font-size: 16px; color: #888; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
-    .item { display: flex; align-items: center; justify-content: space-between; padding: 16px; background: #1a1a1a; border-radius: 12px; margin-bottom: 8px; border: 2px solid transparent; cursor: pointer; transition: all 0.2s; }
-    .item.selected { border-color: #7c3aed; background: #1e1030; }
-    .item-left { display: flex; align-items: center; gap: 12px; }
-    .item-check { width: 24px; height: 24px; border-radius: 50%; border: 2px solid #444; display: flex; align-items: center; justify-content: center; transition: all 0.2s; flex-shrink: 0; }
-    .item.selected .item-check { background: #7c3aed; border-color: #7c3aed; }
-    .item-name { font-size: 16px; }
-    .item-claimers { font-size: 12px; color: #888; margin-top: 2px; }
-    .item-price { font-size: 16px; font-weight: 600; color: #a78bfa; }
-    .summary { margin: 0 20px 20px; padding: 16px; background: #1a1a1a; border-radius: 12px; }
-    .summary-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; color: #888; }
-    .summary-row.total { color: #fff; font-size: 18px; font-weight: 700; border-top: 1px solid #333; margin-top: 8px; padding-top: 12px; }
-    .submit-btn { margin: 0 20px 40px; width: calc(100% - 40px); padding: 16px; background: #7c3aed; border: none; border-radius: 12px; color: #fff; font-size: 18px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
-    .submit-btn:hover { background: #6d28d9; }
-    .submit-btn:disabled { background: #333; cursor: not-allowed; }
-    .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #7c3aed; color: #fff; padding: 12px 24px; border-radius: 24px; font-size: 14px; display: none; }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <h1>🪶 ${bill.name}</h1>
-    <p>Tap everything you ordered</p>
-  </div>
+  const uniquePeople = [...new Set((selections || []).map(s => s.participant_name))];
+  const peopleCount = Math.max(uniquePeople.length, 1);
+  const myTax = ((bill.tax || 0) / peopleCount).toFixed(2);
+  const myTip = ((bill.tip || 0) / peopleCount).toFixed(2);
 
-  <div class="name-section">
-    <input type="text" id="userName" placeholder="Your name" autocomplete="off" />
-  </div>
+  const itemsHTML = (items || []).map((item, i) => {
+    const claimers = (selections || []).filter(s => s.item_id === item.id).map(s => s.participant_name);
+    const claimersHTML = claimers.length > 0
+      ? `<div class="item-claimers">${claimers.map(c => `<span class="claimer">${c}</span>`).join('')}</div>`
+      : '';
+    return `<div class="item-card animate-in" id="item-${item.id}" data-price="${item.price}" onclick="toggleItem('${item.id}', ${item.price})" style="animation-delay:${i * 0.05}s">
+      <div class="item-check">✓</div>
+      <div class="item-body">
+        <div class="item-name">${item.name}</div>
+        ${claimersHTML}
+      </div>
+      <div class="item-price">$${parseFloat(item.price).toFixed(2)}</div>
+    </div>`;
+  }).join('');
 
-  <div class="items">
-    <h2>Items</h2>
-    ${items.map(item => {
-      const claimers = (selections || []).filter(s => s.item_id === item.id).map(s => s.participant_name);
-      return `<div class="item" id="item-${item.id}" onclick="toggleItem('${item.id}', ${item.price})">
-        <div class="item-left">
-          <div class="item-check">✓</div>
-          <div>
-            <div class="item-name">${item.name}</div>
-            ${claimers.length > 0 ? `<div class="item-claimers">${claimers.join(', ')}</div>` : ''}
-          </div>
+  const billContent = `
+    <div class="bill-info animate-in">
+      <div class="bill-name">${bill.name}</div>
+      <div class="bill-meta">
+        <div class="bill-tag">Total <span>$${parseFloat(bill.total || 0).toFixed(2)}</span></div>
+        <div class="bill-tag">${(items || []).length} items</div>
+        ${uniquePeople.length > 0 ? `<div class="bill-tag">${uniquePeople.length} confirmed</div>` : ''}
+      </div>
+    </div>
+
+    <div class="progress-wrap animate-in">
+      <div class="progress-label">
+        <span>People confirmed</span>
+        <span><span style="color:var(--sms)">${uniquePeople.length}</span> so far</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill" style="width:${Math.min(uniquePeople.length * 25, 100)}%"></div>
+      </div>
+    </div>
+
+    <div class="name-section animate-in">
+      <label class="name-label" for="userName">Your name</label>
+      <div class="name-input-wrap">
+        <input type="text" id="userName" class="name-input" placeholder="Enter your name..." autocomplete="off" autocorrect="off" />
+      </div>
+    </div>
+
+    <div class="section-label animate-in">
+      <h2>Tap everything you ordered</h2>
+      <div class="count"><span id="selectedCount">0</span> selected</div>
+    </div>
+
+    <div class="items-list">
+      ${itemsHTML || '<div class="empty-state">No items found on this bill.</div>'}
+    </div>
+
+    <div class="extras-section animate-in">
+      <div class="extras-title">Shared charges</div>
+      <div class="extras-card">
+        <div class="extra-row">
+          <div class="extra-label">Tax <span class="extra-note">(split evenly)</span></div>
+          <div class="extra-value">$${parseFloat(bill.tax || 0).toFixed(2)}</div>
         </div>
-        <div class="item-price">${formatMoney(item.price)}</div>
-      </div>`;
-    }).join('')}
-  </div>
+        <div class="extra-row">
+          <div class="extra-label">Tip <span class="extra-note">(split evenly)</span></div>
+          <div class="extra-value">$${parseFloat(bill.tip || 0).toFixed(2)}</div>
+        </div>
+      </div>
+    </div>
 
-  <div class="summary">
-    <div class="summary-row"><span>Items</span><span id="itemsTotal">$0.00</span></div>
-    <div class="summary-row"><span>Tax (your share)</span><span>${formatMoney((bill.tax || 0) / Math.max((selections || []).map(s => s.participant_name).filter((v,i,a)=>a.indexOf(v)===i).length, 1))}</span></div>
-    <div class="summary-row"><span>Tip (your share)</span><span>${formatMoney((bill.tip || 0) / Math.max((selections || []).map(s => s.participant_name).filter((v,i,a)=>a.indexOf(v)===i).length, 1))}</span></div>
-    <div class="summary-row total"><span>Your Total</span><span id="yourTotal">$0.00</span></div>
-  </div>
+    <div class="summary-section animate-in">
+      <div class="summary-card">
+        <div class="summary-row">
+          <div class="summary-label">Your items</div>
+          <div class="summary-value" id="itemsSubtotal">$0.00</div>
+        </div>
+        <div class="summary-row">
+          <div class="summary-label">Tax (your share)</div>
+          <div class="summary-value">$${myTax}</div>
+        </div>
+        <div class="summary-row">
+          <div class="summary-label">Tip (your share)</div>
+          <div class="summary-value">$${myTip}</div>
+        </div>
+        <div class="summary-total">
+          <div class="summary-total-label">Your Total</div>
+          <div class="summary-total-value" id="myTotalAmount">$${(parseFloat(myTax) + parseFloat(myTip)).toFixed(2)}</div>
+        </div>
+      </div>
+    </div>
 
-  <button class="submit-btn" id="submitBtn" onclick="submitSelections()">Confirm My Order</button>
-  <div class="toast" id="toast"></div>
+    <div id="billIdData" data-value="${billId}" style="display:none"></div>
+    <div id="taxAmount" data-value="${bill.tax || 0}" style="display:none"></div>
+    <div id="tipAmount" data-value="${bill.tip || 0}" style="display:none"></div>
+    <div id="peopleCount" data-value="${peopleCount}" style="display:none"></div>
+  `;
 
-  <script>
-    const selected = new Set();
-    const tax = ${bill.tax || 0};
-    const tip = ${bill.tip || 0};
-    let participantCount = ${Math.max((selections || []).map(s => s.participant_name).filter((v,i,a)=>a.indexOf(v)===i).length, 1)};
-
-    function formatMoney(n) { return '$' + parseFloat(n).toFixed(2); }
-
-    function toggleItem(itemId, price) {
-      const el = document.getElementById('item-' + itemId);
-      if (selected.has(itemId)) { selected.delete(itemId); el.classList.remove('selected'); }
-      else { selected.add(itemId); el.classList.add('selected'); }
-      updateTotal();
-    }
-
-    function updateTotal() {
-      let total = 0;
-      selected.forEach(id => {
-        const el = document.getElementById('item-' + id);
-        const price = parseFloat(el.querySelector('.item-price').textContent.replace('$',''));
-        total += price;
-      });
-      document.getElementById('itemsTotal').textContent = formatMoney(total);
-      const myTax = tax / participantCount;
-      const myTip = tip / participantCount;
-      document.getElementById('yourTotal').textContent = formatMoney(total + myTax + myTip);
-    }
-
-    function showToast(msg) {
-      const t = document.getElementById('toast');
-      t.textContent = msg;
-      t.style.display = 'block';
-      setTimeout(() => { t.style.display = 'none'; }, 3000);
-    }
-
-    async function submitSelections() {
-      const name = document.getElementById('userName').value.trim();
-      if (!name) { showToast('Enter your name first!'); return; }
-      if (selected.size === 0) { showToast('Select at least one item!'); return; }
-      const btn = document.getElementById('submitBtn');
-      btn.disabled = true;
-      btn.textContent = 'Saving...';
-      try {
-        const res = await fetch('/bill/${billId}/select', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, items: Array.from(selected) })
-        });
-        const data = await res.json();
-        if (data.success) {
-          btn.textContent = '✅ Saved!';
-          showToast('Your selections saved!');
-          setTimeout(() => location.reload(), 1500);
-        } else {
-          btn.disabled = false;
-          btn.textContent = 'Confirm My Order';
-          showToast('Something went wrong, try again');
-        }
-      } catch(e) {
-        btn.disabled = false;
-        btn.textContent = 'Confirm My Order';
-        showToast('Something went wrong, try again');
-      }
-    }
-  </script>
-</body>
-</html>`;
-
-  res.send(html);
+  let template = fs.readFileSync(path.join(__dirname, 'public', 'bill.html'), 'utf8');
+  template = template.replace('BILL_CONTENT_PLACEHOLDER', billContent);
+  template = template.replace('Loading...', billId);
+  res.send(template);
 });
 
 // ─── SAVE SELECTIONS ─────────────────────────────────────────────────────────
@@ -610,10 +571,8 @@ app.post('/bill/:billId/select', async (req, res) => {
     const { data: bill } = await supabase.from('bills').select('*').eq('id', billId).single();
     if (!bill) return res.json({ success: false });
 
-    // Remove previous selections by this person
     await supabase.from('item_selections').delete().eq('bill_id', billId).eq('participant_name', name.toLowerCase());
 
-    // Insert new selections
     const rows = items.map(itemId => ({
       bill_id: billId,
       item_id: itemId,
@@ -621,7 +580,6 @@ app.post('/bill/:billId/select', async (req, res) => {
     }));
     await supabase.from('item_selections').insert(rows);
 
-    // Notify bill creator
     const { data: receiptItems } = await supabase.from('receipt_items').select('*').eq('bill_id', billId);
     const { data: allSelections } = await supabase.from('item_selections').select('*').eq('bill_id', billId);
 
