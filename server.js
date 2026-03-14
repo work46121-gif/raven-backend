@@ -680,7 +680,16 @@ app.post('/demo/scan-receipt', async (req, res) => {
     const { image, mediaType } = req.body;
     if (!image) return res.json({ success: false, error: 'No image provided' });
 
-    const message = await getAnthropic().messages.create({
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    console.log(`🔍 ANTHROPIC_API_KEY present: ${!!apiKey}, length: ${apiKey?.length}`);
+
+    if (!apiKey) {
+      return res.json({ success: false, error: 'ANTHROPIC_API_KEY not set in environment' });
+    }
+
+    const client = new Anthropic({ apiKey });
+
+    const message = await client.messages.create({
       model: 'claude-opus-4-5',
       max_tokens: 1024,
       messages: [{
