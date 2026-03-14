@@ -663,6 +663,51 @@ app.post('/demo/create', async (req, res) => {
   }
 });
 
+// ─── DEMO RECEIPT SCAN ───────────────────────────────────────────────────────
+
+app.post('/demo/scan-receipt', async (req, res) => {
+  try {
+    const { image, mediaType } = req.body;
+    if (!image) return res.json({ success: false, error: 'No image provided' });
+
+    const message = await anthropic.messages.create({
+      model: 'claude-opus-4-5',
+      max_tokens: 1024,
+      messages: [{
+        role: 'user',
+        content: [
+          {
+            type: 'image',
+            source: { type: 'base64', media_type: mediaType || 'image/jpeg', data: image }
+          },
+          {
+            type: 'text',
+            text: `Parse this receipt and return ONLY a JSON object with this exact structure, no other text:
+{
+  "items": [{"name": "Item Name", "price": 0.00}],
+  "subtotal": 0.00,
+  "tax": 0.00,
+  "tip": 0.00,
+  "total": 0.00
+}
+Include only ordered items with their prices. If tip is not on receipt, set to 0.`
+          }
+        ]
+      }]
+    });
+
+    const text = message.content[0].text.trim();
+    const clean = text.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(clean);
+
+    console.log(`✅ Demo receipt scanned: ${parsed.items?.length} items, total $${parsed.total}`);
+    res.json({ success: true, ...parsed });
+  } catch (err) {
+    console.error('Demo scan error:', err);
+    res.json({ success: false, error: err.message });
+  }
+});
+
 // ─── WAITLIST ─────────────────────────────────────────────────────────────────
 
 app.post('/waitlist', async (req, res) => {
