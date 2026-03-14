@@ -2,9 +2,9 @@
   "name": "raven",
   "version": "1.0.0",
   "description": "RAVEN — SMS + Discord bill-splitting bot",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node server.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.43.4",
