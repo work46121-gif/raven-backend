@@ -71,6 +71,7 @@ async function sendSMS(to, body) {
 
 async function handleSplit(fromPhone, text) {
   try {
+    console.log('🔍 handleSplit called');
     const match = text.match(/SPLIT\s+\$?([\d.]+)\s+(.*?)(\s+@\w+.*)?$/i);
     if (!match) {
       return `🪶 RAVEN\n\nUsage: SPLIT $120 Dinner @Jake @Mia @Leo\n\nInclude the total, a name, and tag everyone who owes.`;
@@ -80,16 +81,31 @@ async function handleSplit(fromPhone, text) {
     const afterAmount = text.replace(/split\s+\$?[\d.]+\s*/i, '').trim();
     const billName = afterAmount.replace(/@\w+/g, '').trim() || 'Bill';
 
-    if (isNaN(total) || total <= 0) return `🪶 RAVEN\n\nInvalid amount. Try: SPLIT $120 Dinner @Jake @Mia`;
-    if (mentions.length === 0) return `🪶 RAVEN\n\nNo one tagged. Try: SPLIT $120 Dinner @Jake @Mia`;
+    console.log(`🔍 Parsed: total=${total}, billName=${billName}, mentions=${mentions}`);
+
+    if (isNaN(total) || total <= 0) return `🪶 RAVEN\n\nInvalid amount.`;
+    if (mentions.length === 0) return `🪶 RAVEN\n\nNo one tagged.`;
 
     const perPerson = total / mentions.length;
     const billId = generateBillId();
 
+    console.log('🔍 Inserting bill into Supabase...');
     const { error: billError } = await supabase.from('bills').insert({
       id: billId, creator_phone: fromPhone, name: billName, total, per_person: perPerson
     });
+    console.log('🔍 Bill insert done. Error:', billError);
     if (billError) throw billError;
+
+    console.log('🔍 Inserting participants...');
+    const participantRows = mentions.map(name => ({
+      bill_id: billId,
+      phone: `unknown_${name.toLowerCase()}_${billId}`,
+      name,
+      amount: perPerson,
+      paid: false
+    }));
+    const { error: partError } = await supabase.from('participants').insert(participantRows);
+    console.log('🔍 Participants insert done. Error:', partError);
 
     const participantRows = mentions.map(name => ({
       bill_id: billId,
