@@ -13,7 +13,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
-// Twilio — graceful init, won't crash with placeholder creds
+// Twilio
 let twilioClient = null;
 const TWILIO_READY = process.env.TWILIO_ACCOUNT_SID !== 'placeholder' &&
                      process.env.TWILIO_AUTH_TOKEN !== 'placeholder' &&
@@ -81,10 +81,10 @@ async function handleSplit(fromPhone, text) {
     const afterAmount = text.replace(/split\s+\$?[\d.]+\s*/i, '').trim();
     const billName = afterAmount.replace(/@\w+/g, '').trim() || 'Bill';
 
-    console.log(`🔍 Parsed: total=${total}, billName=${billName}, mentions=${mentions}`);
+    console.log(`🔍 Parsed: total=${total}, billName=${billName}, mentions=${JSON.stringify(mentions)}`);
 
-    if (isNaN(total) || total <= 0) return `🪶 RAVEN\n\nInvalid amount.`;
-    if (mentions.length === 0) return `🪶 RAVEN\n\nNo one tagged.`;
+    if (isNaN(total) || total <= 0) return `🪶 RAVEN\n\nInvalid amount. Try: SPLIT $120 Dinner @Jake @Mia`;
+    if (mentions.length === 0) return `🪶 RAVEN\n\nNo one tagged. Try: SPLIT $120 Dinner @Jake @Mia`;
 
     const perPerson = total / mentions.length;
     const billId = generateBillId();
@@ -106,15 +106,6 @@ async function handleSplit(fromPhone, text) {
     }));
     const { error: partError } = await supabase.from('participants').insert(participantRows);
     console.log('🔍 Participants insert done. Error:', partError);
-
-    const participantRows = mentions.map(name => ({
-      bill_id: billId,
-      phone: `unknown_${name.toLowerCase()}_${billId}`,
-      name,
-      amount: perPerson,
-      paid: false
-    }));
-    await supabase.from('participants').insert(participantRows);
 
     let response = `🪶 RAVEN — Bill Created!\n\n📋 ${billName}\n💰 Total: ${formatMoney(total)}\n👤 Each owes: ${formatMoney(perPerson)}\n🆔 Bill ID: ${billId}\n\n`;
     mentions.forEach(name => { response += `⏳ ${name} — ${formatMoney(perPerson)}\n`; });
@@ -160,6 +151,7 @@ async function handlePaidByName(fromPhone, billId, name, bill) {
     await supabase.from('participants').update({ paid: true, paid_at: new Date().toISOString(), phone: fromPhone }).eq('id', participant.id);
     return await buildPaidResponse(bill, billId, participant, fromPhone);
   } catch (err) {
+    console.error('PAID BY NAME error:', err);
     return `🪶 RAVEN\n\nSomething went wrong. Try again.`;
   }
 }
@@ -211,6 +203,7 @@ async function handleRemind(fromPhone, text) {
     if (reminded > 0) response += `\n✅ Auto-pinged ${reminded} people`;
     return response;
   } catch (err) {
+    console.error('REMIND error:', err);
     return `🪶 RAVEN\n\nSomething went wrong. Try again.`;
   }
 }
@@ -233,6 +226,7 @@ async function handleStatus(fromPhone, text) {
     response += `\n💵 Collected: ${formatMoney(totalCollected)} / ${formatMoney(bill.total)}`;
     return response;
   } catch (err) {
+    console.error('STATUS error:', err);
     return `🪶 RAVEN\n\nSomething went wrong. Try again.`;
   }
 }
@@ -249,6 +243,7 @@ async function handleBills(fromPhone) {
     });
     return response + `Reply STATUS [ID] for details`;
   } catch (err) {
+    console.error('BILLS error:', err);
     return `🪶 RAVEN\n\nSomething went wrong. Try again.`;
   }
 }
@@ -264,7 +259,7 @@ app.post('/sms', async (req, res) => {
   const rawBody = (req.body.Body || '').trim();
   const body = rawBody.toUpperCase();
   console.log(`📨 SMS from ${fromPhone}: ${rawBody}`);
-   try { await supabase.from('message_log').insert({ from_phone: fromPhone, body: rawBody }); } catch (_) {}
+  try { await supabase.from('message_log').insert({ from_phone: fromPhone, body: rawBody }); } catch (_) {}
 
   let reply = '';
   if (body.startsWith('SPLIT')) reply = await handleSplit(fromPhone, rawBody);
@@ -280,8 +275,8 @@ app.post('/sms', async (req, res) => {
   res.type('text/xml').send(twiml.toString());
 });
 
+// ─── WAITLIST ─────────────────────────────────────────────────────────────────
 
-// Waitlist endpoint
 app.post('/waitlist', async (req, res) => {
   const { email, timestamp, source } = req.body;
   if (!email || !email.includes('@')) {
@@ -293,13 +288,13 @@ app.post('/waitlist', async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error('Waitlist error:', err);
-    res.json({ success: true }); // Still return success to user
+    res.json({ success: true });
   }
 });
 
 app.get('/', (req, res) => {
-  res.json({ 
-    status: 'RAVEN is live 🪶', 
+  res.json({
+    status: 'RAVEN is live 🪶',
     version: '1.0.0',
     twilio: TWILIO_READY ? 'connected' : 'pending — add real Twilio credentials'
   });
