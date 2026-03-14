@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>🪶 RAVEN — Split the Bill</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Epilogue:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --black: #06060A;
+      --dark: #0C0C12;
+      --dark2: #13131A;
+      --dark3: #1A1A24;
+      --dark4: #20202E;
+      --border: rgba(255,255,255,0.07);
+      --border2: rgba(255,255,255,0.12);
+      --white: #F0EEF8;
+      --muted: #6E6B80;
+      --muted2: #9896A8;
+      --raven: #7C3AED;
+      --raven2: #A855F7;
+      --raven3: #C084FC;
+      --sms: #30D158;
+      --sms-dim: rgba(48,209,88,0.12);
+      --sms-glow: rgba(48,209,88,0.25);
+      --ember: #FF6B35;
+      --red: #FF4444;
+    }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Epilogue', sans-serif;
+      background: var(--black);
+      color: var(--white);
+      min-height: 100vh;
+      padding-bottom: 120px;
+    }
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 900;
+      opacity: 0.35;
+    }
+    .header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(6,6,10,0.95);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 20px;
+    }
+    .header-inner {
+      max-width: 480px;
+      margin: 0 auto;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .header-brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+    }
+    .header-logo {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 20px;
+      letter-spacing: 0.2em;
+      background: linear-gradient(135deg, var(--white) 20%, var(--raven3));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .header-bill-id {
+      font-size: 11px;
+      color: var(--muted);
+      background: var(--dark3);
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      border-radius: 20px;
+      letter-spacing: 0.08em;
+      font-weight: 600;
+    }
+    .bill-info {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 24px 20px 0;
+    }
+    .bill-name {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 36px;
+      letter-spacing: 0.04em;
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+    .bill-meta {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .bill-tag {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .bill-tag span { color: var(--white); font-weight: 600; }
+    .progress-wrap {
+      max-width: 480px;
+      margin: 20px auto 0;
+      padding: 0 20px;
+    }
+    .progress-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 8px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .progress-bar {
+      height: 3px;
+      background: var(--dark3);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--sms), var(--raven2));
+      border-radius: 2px;
+      transition: width 0.5s ease;
+    }
+    .name-section {
+      max-width: 480px;
+      margin: 24px auto 0;
+      padding: 0 20px;
+    }
+    .name-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      margin-bottom: 8px;
+      display: block;
+    }
+    .name-input {
+      width: 100%;
+      padding: 14px 16px;
+      background: var(--dark2);
+      border: 1px solid var(--border2);
+      border-radius: 12px;
+      color: var(--white);
+      font-family: 'Epilogue', sans-serif;
+      font-size: 16px;
+      font-weight: 500;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .name-input:focus {
+      border-color: var(--sms);
+      box-shadow: 0 0 0 3px rgba(48,209,88,0.1);
+    }
+    .name-input::placeholder { color: var(--muted); font-weight: 400; }
+    .section-label {
+      max-width: 480px;
+      margin: 28px auto 0;
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .section-label h2 {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .section-label .count { font-size: 11px; color: var(--muted); }
+    .section-label .count span { color: var(--sms); font-weight: 700; }
+    .items-list {
+      max-width: 480px;
+      margin: 10px auto 0;
+      padding: 0 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .item-card {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 16px;
+      background: var(--dark2);
+      border: 2px solid var(--border);
+      border-radius: 14px;
+      cursor: pointer;
+      transition: all 0.18s ease;
+      position: relative;
+      overflow: hidden;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    .item-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 0% 50%, rgba(48,209,88,0.06), transparent 70%);
+      opacity: 0;
+      transition: opacity 0.18s;
+    }
+    .item-card:active { transform: scale(0.98); }
+    .item-card.selected { border-color: var(--sms); background: var(--dark3); }
+    .item-card.selected::before { opacity: 1; }
+    .item-check {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      border: 2px solid var(--border2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: all 0.18s;
+      font-size: 13px;
+      color: transparent;
+    }
+    .item-card.selected .item-check {
+      background: var(--sms);
+      border-color: var(--sms);
+      color: #000;
+      font-weight: 700;
+    }
+    .item-body { flex: 1; min-width: 0; }
+    .item-name {
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--white);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .item-claimers {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 3px;
+    }
+    .item-price {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 20px;
+      letter-spacing: 0.04em;
+      color: var(--raven3);
+      flex-shrink: 0;
+      transition: color 0.18s;
+    }
+    .item-card.selected .item-price { color: var(--sms); }
+    .extras-section {
+      max-width: 480px;
+      margin: 28px au
