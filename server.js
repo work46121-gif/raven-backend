@@ -325,6 +325,344 @@ async function handlePaidByName(fromPhone, billId, name, bill) {
 }
 
 async function buildPaidResponse(bill, billId, participant, fromPhone) {
-  const { data: allParts } = await supabase.from('participants').sele
+  const { data: allParts } = await supabase.from('participants').select('*').eq('bill_id', billId);
+  const paidCount = allParts.filter(p => p.paid).length;
+  const totalCount = allParts.length;
+  let response = `🪶 RAVEN — Payment Confirmed!\n\n✅ ${participant.name} paid ${formatMoney(participant.amount)} for ${bill.name}\n\n`;
+  allParts.forEach(p => { response += p.paid ? `✅ ${p.name} — Paid\n` : `⏳ ${p.name} — ${formatMoney(p.amount)} owed\n`; });
+  if (paidCount === totalCount) {
+    response += `\n🎉 Everyone's settled up!`;
+    await supabase.from('bills').update({ status: 'completed' }).eq('id', billId);
+  } else {
+    response += `\n${paidCount}/${totalCount} paid`;
+  }
+  if (bill.creator_phone !== fromPhone) {
+    await sendSMS(bill.creator_phone, `🪶 RAVEN — ${participant.name} paid ${formatMoney(participant.amount)} for ${bill.name} (${billId})\n${paidCount}/${totalCount} paid`);
+  }
+  return response;
+}
+
+async function handleRemind(fromPhone, text) {
+  try {
+    const parts = text.trim().split(/\s+/);
+    const billId = parts[1]?.toUpperCase();
+    if (!billId) return `🪶 RAVEN\n\nUsage: REMIND [Bill ID]`;
+    const { data: bill } = await supabase.from('bills').select('*').eq('id', billId).single();
+    if (!bill) return `🪶 RAVEN\n\nBill ${billId} not found.`;
+    if (bill.creator_phone !== fromPhone) return `🪶 RAVEN\n\nOnly the bill creator can send reminders.`;
+    const { data: unpaid } = await supabase.from('participants').select('*').eq('bill_id', billId).eq('paid', false);
+    if (!unpaid || unpaid.length === 0) return `🪶 RAVEN\n\nEveryone paid ${bill.name} already! 🎉`;
+    let reminded = 0;
+    for (const p of unpaid) {
+      if (p.phone && !p.phone.startsWith('unknown_')) {
+        await sendSMS(p.phone, `🪶 RAVEN — Reminder!\n\nHey ${p.name}, you still owe ${formatMoney(p.amount)} for ${bill.name}.\n\nReply: PAID ${billId} ${p.name}`);
+        reminded++;
+      }
+    }
+    const names = unpaid.map(p => p.name).join(', ');
+    let response = `🪶 RAVEN — Reminders Sent!\n\n📋 ${bill.name} (${billId})\n⏳ Still owe: ${names}`;
+    if (reminded > 0) response += `\n✅ Auto-pinged ${reminded} people`;
+    return response;
+  } catch (err) {
+    return `🪶 RAVEN\n\nSomething went wrong. Try again.`;
+  }
+}
+
+async function handleStatus(fromPhone, text) {
+  try {
+    const parts = text.trim().split(/\s+/);
+    const billId = parts[1]?.toUpperCase();
+    if (!billId) return `🪶 RAVEN\n\nUsage: STATUS [Bill ID]`;
+    const { data: bill } = await supabase.from('bills').select('*').eq('id', billId).single();
+    if (!bill) return `🪶 RAVEN\n\nBill ${billId} not found.`;
+    const { data: participants } = await supabase.from('participants').select('*').eq('bill_id', billId);
+    const paidCount = participants.filter(p => p.paid).length;
+    const totalCollected = participants.filter(p => p.paid).reduce((sum, p) => sum + parseFloat(p.amount), 0);
+    let response = `🪶 RAVEN — Bill Status\n\n📋 ${bill.name}\n💰 Total: ${formatMoney(bill.total)}\n📊 ${paidCount}/${participants.length} paid\n\n`;
+    participants.forEach(p => { response += p.paid ? `✅ ${p.name} — Paid\n` : `⏳ ${p.name} — ${formatMoney(p.amount)} owed\n`; });
+    response += `\n💵 Collected: ${formatMoney(totalCollected)} / ${formatMoney(bill.total)}`;
+    return response;
+  } catch (err) {
+    return `🪶 RAVEN\n\nSomething went wrong. Try again.`;
+  }
+}
+
+async function handleBills(fromPhone) {
+  try {
+    const { data: bills } = await supabase.from('bills').select('*, participants(*)').eq('creator_phone', fromPhone).eq('status', 'active').order('created_at', { ascending: false }).limit(5);
+    if (!bills || bills.length === 0) return `🪶 RAVEN\n\nNo active bills.\n\nCreate one: SPLIT $120 Dinner @Jake @Mia`;
+    let response = `🪶 RAVEN — Your Bills\n\n`;
+    bills.forEach(b => {
+      const paidCount = b.participants.filter(p => p.paid).length;
+      response += `📋 ${b.name} (${b.id})\n   ${formatMoney(b.total)} · ${paidCount}/${b.participants.length} paid\n\n`;
+    });
+    return response + `Reply STATUS [ID] for details`;
+  } catch (err) {
+    return `🪶 RAVEN\n\nSomething went wrong. Try again.`;
+  }
+}
+
+function handleHelp() {
+  return `🪶 RAVEN Commands\n\nADD Jake 3477887944\nCONTACTS\nREMOVE Jake\n\nSPLIT $120 Dinner @Jake @Mia\nPAID B7K2 Jake\nREMIND B7K2\nSTATUS B7K2\nBILLS\n\n📸 Send a receipt photo to split by item!\n\nRequest Automatically Via Every Network 🪶`;
+}
+
+// ─── WEBHOOK ─────────────────────────────────────────────────────────────────
+
+app.post('/sms', async (req, res) => {
+  const fromPhone = normalizePhone(req.body.From || '');
+  const rawBody = (req.body.Body || '').trim();
+  const body = rawBody.toUpperCase();
+  const numMedia = parseInt(req.body.NumMedia || '0');
+  const mediaUrl = req.body.MediaUrl0;
+  const mediaType = req.body.MediaContentType0 || '';
+
+  console.log(`📨 SMS from ${fromPhone}: ${rawBody} | media: ${numMedia}`);
+  try { await supabase.from('message_log').insert({ from_phone: fromPhone, body: rawBody }); } catch (_) {}
+
+  let reply = '';
+
+  // Handle image/receipt
+  if (numMedia > 0 && mediaType.startsWith('image/')) {
+    const billName = rawBody || 'Receipt Bill';
+    const result = await handleReceiptImage(fromPhone, mediaUrl, billName);
+    if (result) reply = result;
+    else {
+      const twiml = new twilio.twiml.MessagingResponse();
+      res.type('text/xml').send(twiml.toString());
+      return;
+    }
+  } else if (body.startsWith('ADD')) reply = await handleAdd(fromPhone, rawBody);
+  else if (body.startsWith('REMOVE')) reply = await handleRemoveContact(fromPhone, rawBody);
+  else if (body.startsWith('CONTACTS')) reply = await handleContacts(fromPhone);
+  else if (body.startsWith('SPLIT')) reply = await handleSplit(fromPhone, rawBody);
+  else if (body.startsWith('PAID')) reply = await handlePaid(fromPhone, rawBody);
+  else if (body.startsWith('REMIND')) reply = await handleRemind(fromPhone, rawBody);
+  else if (body.startsWith('STATUS')) reply = await handleStatus(fromPhone, rawBody);
+  else if (body.startsWith('BILLS')) reply = await handleBills(fromPhone);
+  else if (body.startsWith('HELP') || body === '?') reply = handleHelp();
+  else reply = `🪶 RAVEN\n\nHey! I split bills over text.\n\nTry: SPLIT $60 Dinner @Jake @Mia\nOr send a 📸 receipt photo!\n\nReply HELP for all commands.`;
+
+  const twiml = new twilio.twiml.MessagingResponse();
+  twiml.message(reply);
+  res.type('text/xml').send(twiml.toString());
+});
+
+// ─── BILL UI ─────────────────────────────────────────────────────────────────
+
+app.get('/bill/:billId', async (req, res) => {
+  const { billId } = req.params;
+  const { data: bill } = await supabase.from('bills').select('*').eq('id', billId).single();
+  if (!bill) return res.status(404).send('Bill not found');
+
+  const { data: items } = await supabase.from('receipt_items').select('*').eq('bill_id', billId);
+  const { data: selections } = await supabase.from('item_selections').select('*').eq('bill_id', billId);
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🪶 RAVEN — ${bill.name}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a0a; color: #fff; min-height: 100vh; }
+    .header { background: #111; padding: 20px; text-align: center; border-bottom: 1px solid #222; }
+    .header h1 { font-size: 24px; }
+    .header p { color: #888; margin-top: 4px; font-size: 14px; }
+    .name-section { padding: 20px; }
+    .name-section input { width: 100%; padding: 14px; border-radius: 12px; border: 1px solid #333; background: #1a1a1a; color: #fff; font-size: 16px; outline: none; }
+    .name-section input:focus { border-color: #7c3aed; }
+    .items { padding: 0 20px 20px; }
+    .items h2 { font-size: 16px; color: #888; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
+    .item { display: flex; align-items: center; justify-content: space-between; padding: 16px; background: #1a1a1a; border-radius: 12px; margin-bottom: 8px; border: 2px solid transparent; cursor: pointer; transition: all 0.2s; }
+    .item.selected { border-color: #7c3aed; background: #1e1030; }
+    .item-left { display: flex; align-items: center; gap: 12px; }
+    .item-check { width: 24px; height: 24px; border-radius: 50%; border: 2px solid #444; display: flex; align-items: center; justify-content: center; transition: all 0.2s; flex-shrink: 0; }
+    .item.selected .item-check { background: #7c3aed; border-color: #7c3aed; }
+    .item-name { font-size: 16px; }
+    .item-claimers { font-size: 12px; color: #888; margin-top: 2px; }
+    .item-price { font-size: 16px; font-weight: 600; color: #a78bfa; }
+    .summary { margin: 0 20px 20px; padding: 16px; background: #1a1a1a; border-radius: 12px; }
+    .summary-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; color: #888; }
+    .summary-row.total { color: #fff; font-size: 18px; font-weight: 700; border-top: 1px solid #333; margin-top: 8px; padding-top: 12px; }
+    .submit-btn { margin: 0 20px 40px; width: calc(100% - 40px); padding: 16px; background: #7c3aed; border: none; border-radius: 12px; color: #fff; font-size: 18px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+    .submit-btn:hover { background: #6d28d9; }
+    .submit-btn:disabled { background: #333; cursor: not-allowed; }
+    .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #7c3aed; color: #fff; padding: 12px 24px; border-radius: 24px; font-size: 14px; display: none; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🪶 ${bill.name}</h1>
+    <p>Tap everything you ordered</p>
+  </div>
+
+  <div class="name-section">
+    <input type="text" id="userName" placeholder="Your name" autocomplete="off" />
+  </div>
+
+  <div class="items">
+    <h2>Items</h2>
+    ${items.map(item => {
+      const claimers = (selections || []).filter(s => s.item_id === item.id).map(s => s.participant_name);
+      return `<div class="item" id="item-${item.id}" onclick="toggleItem('${item.id}', ${item.price})">
+        <div class="item-left">
+          <div class="item-check">✓</div>
+          <div>
+            <div class="item-name">${item.name}</div>
+            ${claimers.length > 0 ? `<div class="item-claimers">${claimers.join(', ')}</div>` : ''}
+          </div>
+        </div>
+        <div class="item-price">${formatMoney(item.price)}</div>
+      </div>`;
+    }).join('')}
+  </div>
+
+  <div class="summary">
+    <div class="summary-row"><span>Items</span><span id="itemsTotal">$0.00</span></div>
+    <div class="summary-row"><span>Tax (your share)</span><span>${formatMoney((bill.tax || 0) / Math.max((selections || []).map(s => s.participant_name).filter((v,i,a)=>a.indexOf(v)===i).length, 1))}</span></div>
+    <div class="summary-row"><span>Tip (your share)</span><span>${formatMoney((bill.tip || 0) / Math.max((selections || []).map(s => s.participant_name).filter((v,i,a)=>a.indexOf(v)===i).length, 1))}</span></div>
+    <div class="summary-row total"><span>Your Total</span><span id="yourTotal">$0.00</span></div>
+  </div>
+
+  <button class="submit-btn" id="submitBtn" onclick="submitSelections()">Confirm My Order</button>
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const selected = new Set();
+    const tax = ${bill.tax || 0};
+    const tip = ${bill.tip || 0};
+    let participantCount = ${Math.max((selections || []).map(s => s.participant_name).filter((v,i,a)=>a.indexOf(v)===i).length, 1)};
+
+    function formatMoney(n) { return '$' + parseFloat(n).toFixed(2); }
+
+    function toggleItem(itemId, price) {
+      const el = document.getElementById('item-' + itemId);
+      if (selected.has(itemId)) { selected.delete(itemId); el.classList.remove('selected'); }
+      else { selected.add(itemId); el.classList.add('selected'); }
+      updateTotal();
+    }
+
+    function updateTotal() {
+      let total = 0;
+      selected.forEach(id => {
+        const el = document.getElementById('item-' + id);
+        const price = parseFloat(el.querySelector('.item-price').textContent.replace('$',''));
+        total += price;
+      });
+      document.getElementById('itemsTotal').textContent = formatMoney(total);
+      const myTax = tax / participantCount;
+      const myTip = tip / participantCount;
+      document.getElementById('yourTotal').textContent = formatMoney(total + myTax + myTip);
+    }
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.style.display = 'block';
+      setTimeout(() => { t.style.display = 'none'; }, 3000);
+    }
+
+    async function submitSelections() {
+      const name = document.getElementById('userName').value.trim();
+      if (!name) { showToast('Enter your name first!'); return; }
+      if (selected.size === 0) { showToast('Select at least one item!'); return; }
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+      btn.textContent = 'Saving...';
+      try {
+        const res = await fetch('/bill/${billId}/select', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, items: Array.from(selected) })
+        });
+        const data = await res.json();
+        if (data.success) {
+          btn.textContent = '✅ Saved!';
+          showToast('Your selections saved!');
+          setTimeout(() => location.reload(), 1500);
+        } else {
+          btn.disabled = false;
+          btn.textContent = 'Confirm My Order';
+          showToast('Something went wrong, try again');
+        }
+      } catch(e) {
+        btn.disabled = false;
+        btn.textContent = 'Confirm My Order';
+        showToast('Something went wrong, try again');
+      }
+    }
+  </script>
+</body>
+</html>`;
+
+  res.send(html);
+});
+
+// ─── SAVE SELECTIONS ─────────────────────────────────────────────────────────
+
+app.post('/bill/:billId/select', async (req, res) => {
+  try {
+    const { billId } = req.params;
+    const { name, items } = req.body;
+    if (!name || !items || items.length === 0) return res.json({ success: false });
+
+    const { data: bill } = await supabase.from('bills').select('*').eq('id', billId).single();
+    if (!bill) return res.json({ success: false });
+
+    // Remove previous selections by this person
+    await supabase.from('item_selections').delete().eq('bill_id', billId).eq('participant_name', name.toLowerCase());
+
+    // Insert new selections
+    const rows = items.map(itemId => ({
+      bill_id: billId,
+      item_id: itemId,
+      participant_name: name.toLowerCase()
+    }));
+    await supabase.from('item_selections').insert(rows);
+
+    // Notify bill creator
+    const { data: receiptItems } = await supabase.from('receipt_items').select('*').eq('bill_id', billId);
+    const { data: allSelections } = await supabase.from('item_selections').select('*').eq('bill_id', billId);
+
+    let myTotal = 0;
+    items.forEach(itemId => {
+      const item = receiptItems.find(i => i.id === itemId);
+      if (item) myTotal += parseFloat(item.price);
+    });
+
+    const uniquePeople = [...new Set(allSelections.map(s => s.participant_name))];
+    const myTax = (bill.tax || 0) / Math.max(uniquePeople.length, 1);
+    const myTip = (bill.tip || 0) / Math.max(uniquePeople.length, 1);
+    myTotal += myTax + myTip;
+
+    await sendSMS(bill.creator_phone, `🪶 RAVEN — ${name} selected their items for ${bill.name}\n💰 Their total: ${formatMoney(myTotal)}\n\n${uniquePeople.length} people have selected so far.`);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Select error:', err);
+    res.json({ success: false });
+  }
+});
+
+// ─── WAITLIST ─────────────────────────────────────────────────────────────────
+
+app.post('/waitlist', async (req, res) => {
+  const { email, timestamp, source } = req.body;
+  if (!email || !email.includes('@')) return res.status(400).json({ error: 'Invalid email' });
+  try {
+    await supabase.from('waitlist').insert({ email, source: source || 'website', created_at: timestamp || new Date().toISOString() });
+    console.log('Waitlist signup:', email);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Waitlist error:', err);
+    res.json({ success: true });
+  }
+});
+
+app.get('/', (req, res) => {
+  res.json({ status: 'RAVEN is live 🪶', version: '2.0.0', twilio: TWILIO_READY ? 'connected' : 'pending' });
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🪶 RAVEN SMS server running on port ${PORT}`));
