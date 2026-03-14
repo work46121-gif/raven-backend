@@ -248,7 +248,7 @@ app.post('/sms', async (req, res) => {
   const rawBody = (req.body.Body || '').trim();
   const body = rawBody.toUpperCase();
   console.log(`📨 SMS from ${fromPhone}: ${rawBody}`);
-  await supabase.from('message_log').insert({ from_phone: fromPhone, body: rawBody }).catch(() => {});
+   try { await supabase.from('message_log').insert({ from_phone: fromPhone, body: rawBody }); } catch (_) {}
 
   let reply = '';
   if (body.startsWith('SPLIT')) reply = await handleSplit(fromPhone, rawBody);
