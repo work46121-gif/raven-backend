@@ -564,7 +564,23 @@ app.get('/bill/:billId', async (req, res) => {
     <div id="peopleCount" data-value="${peopleCount}" style="display:none"></div>
   `;
 
+  const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : `https://raven-backend-production-fb1f.up.railway.app`;
+
+  const ogTags = `
+    <meta property="og:title" content="🪶 ${bill.name} — You've been spotted by RAVEN" />
+    <meta property="og:description" content="Tap to pick what you ordered and see what you owe. Total: $${parseFloat(bill.total || 0).toFixed(2)}" />
+    <meta property="og:image" content="https://work46121-gif.github.io/raven-site/raven-hero.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:url" content="${baseUrl}/bill/${billId}" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://work46121-gif.github.io/raven-site/raven-hero.png" />`;
+
   let template = fs.readFileSync(path.join(__dirname, 'public', 'bill.html'), 'utf8');
+  template = template.replace('</head>', `${ogTags}\n  </head>`);
   template = template.replace('BILL_CONTENT_PLACEHOLDER', billContent);
   template = template.replace('Loading...', billId);
   res.send(template);
