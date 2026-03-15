@@ -1052,10 +1052,25 @@ app.get('/trip/:tripId', async (req, res) => {
 </div>
 
 <!-- COVER PHOTO -->
-${trip.cover_image ? `<div style="max-width:560px;margin:0 auto;padding:0 20px;padding-top:20px;position:relative;z-index:1"><div style="width:100%;height:180px;border-radius:16px;overflow:hidden;border:1px solid var(--border)"><img src="data:image/jpeg;base64,${trip.cover_image}" style="width:100%;height:100%;object-fit:cover"></div></div>` : ''}
+${trip.cover_image
+  ? `<div style="max-width:560px;margin:0 auto;padding:0 20px;padding-top:16px;position:relative;z-index:1">
+      <div style="position:relative;width:100%;height:190px;border-radius:16px;overflow:hidden;border:1px solid var(--border)">
+        <img src="data:image/jpeg;base64,${trip.cover_image}" id="cover-img" style="width:100%;height:100%;object-fit:cover">
+        <button onclick="document.getElementById('cover-upload').click()" style="position:absolute;bottom:10px;right:10px;padding:7px 14px;background:rgba(0,0,0,0.7);border:1px solid rgba(255,255,255,0.2);border-radius:8px;color:#fff;font-family:'Epilogue',sans-serif;font-size:12px;font-weight:600;cursor:pointer;backdrop-filter:blur(8px)">📷 Change</button>
+        <input id="cover-upload" type="file" accept="image/*" style="display:none" onchange="uploadCover(this)">
+      </div>
+    </div>`
+  : `<div style="max-width:560px;margin:16px auto 0;padding:0 20px;position:relative;z-index:1">
+      <div onclick="document.getElementById('cover-upload').click()" style="width:100%;height:100px;border:2px dashed rgba(124,58,237,0.3);border-radius:16px;display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;background:rgba(124,58,237,0.03);transition:all 0.2s">
+        <span style="font-size:20px">🖼</span>
+        <span style="font-size:13px;color:var(--muted);font-weight:500">Add a cover photo for this trip</span>
+      </div>
+      <input id="cover-upload" type="file" accept="image/*" style="display:none" onchange="uploadCover(this)">
+    </div>`
+}
 
 <!-- TRIP HERO -->
-<div class="sec" style="margin-top:${trip.cover_image ? '16px' : '24px'}">
+<div class="sec" style="margin-top:16px">
   <div style="display:inline-flex;align-items:center;gap:6px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);padding:4px 12px;border-radius:12px;font-size:10px;font-weight:700;color:var(--green);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:12px">
     <span style="width:5px;height:5px;border-radius:50%;background:var(--green);animation:blink 2s infinite"></span>
     Trip Hub · Live
@@ -1073,12 +1088,37 @@ ${trip.cover_image ? `<div style="max-width:560px;margin:0 auto;padding:0 20px;p
   <div style="display:flex;align-items:center;margin-top:14px;margin-bottom:6px">
     ${people.map((p, i) => `<div style="width:32px;height:32px;border-radius:50%;background:${avatarColors[i % avatarColors.length]};border:2px solid var(--black);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0;margin-left:${i===0?'0':'-8px'}" title="${p}">${p[0].toUpperCase()}</div>`).join('')}
     <button onclick="openAddMembers()" style="width:32px;height:32px;border-radius:50%;background:var(--dark2);border:2px dashed rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;cursor:pointer;margin-left:4px;flex-shrink:0;font-size:14px;color:var(--muted);transition:all 0.15s;-webkit-tap-highlight-color:transparent" title="Add members">+</button>
-    <button onclick="openInviteModal()" style="padding:5px 12px;margin-left:10px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.25);border-radius:20px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:11px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent">📨 Invite</button>
+    <button onclick="openInviteModal()" style="padding:5px 14px;margin-left:10px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.25);border-radius:20px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:11px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent">📨 Invite</button>
   </div>
 </div>
 
-<!-- COUNTDOWN -->
-${countdownHtml ? `<div class="sec" style="margin-top:16px">${countdownHtml}</div>` : ''}
+<!-- COUNTDOWN — always rendered, shown if trip_date set -->
+<div class="sec" style="margin-top:16px">
+  ${trip.trip_date ? (() => {
+    const tripDateMs = new Date(trip.trip_date + 'T12:00:00').getTime();
+    const nowMs = Date.now();
+    const diff = tripDateMs - nowMs;
+    if (diff > 0) {
+      const days = Math.ceil(diff / (1000*60*60*24));
+      return `<div style="background:linear-gradient(135deg,rgba(124,58,237,0.12),rgba(48,209,88,0.08));border:1px solid rgba(124,58,237,0.22);border-radius:16px;padding:20px;text-align:center">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#C084FC;font-weight:700;margin-bottom:8px">✈️ Countdown to Trip</div>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:72px;letter-spacing:0.02em;line-height:1;color:#F0EEF8;margin-bottom:4px">${days}</div>
+        <div style="font-size:13px;color:#9896A8">day${days !== 1 ? 's' : ''} to go</div>
+        <div style="font-size:12px;color:#6E6B80;margin-top:4px">${new Date(trip.trip_date + 'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</div>
+      </div>`;
+    } else {
+      const daysPast = Math.abs(Math.floor(diff / (1000*60*60*24)));
+      return `<div style="background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.18);border-radius:16px;padding:16px;text-align:center">
+        <div style="font-size:13px;color:#30D158;font-weight:600">✅ Trip was ${daysPast > 0 ? daysPast + ' days ago' : 'today'} · ${new Date(trip.trip_date + 'T12:00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</div>
+      </div>`;
+    }
+  })() : `<div style="background:var(--dark2);border:1px dashed rgba(255,255,255,0.08);border-radius:14px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between">
+    <div style="font-size:13px;color:var(--muted)">📅 No trip date set</div>
+    <div style="font-size:11px;color:var(--muted);font-style:italic">Set date in dashboard to see countdown</div>
+  </div>`}
+</div>
+
+
 
 <!-- WHO OWES WHAT -->
 <div class="sec" style="margin-top:20px">
@@ -1199,23 +1239,30 @@ ${countdownHtml ? `<div class="sec" style="margin-top:16px">${countdownHtml}</di
 <div class="modal-overlay" id="invite-modal" onclick="if(event.target.id==='invite-modal')closeInvite()">
   <div class="modal-sheet">
     <div class="modal-handle"></div>
-    <div class="modal-title">Share & Invite</div>
-    <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
-      <div style="background:var(--dark2);border:1px solid var(--border);border-radius:12px;padding:14px 16px">
-        <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);font-weight:700;margin-bottom:8px">📋 Trip Link (for existing members)</div>
-        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted2);word-break:break-all;margin-bottom:10px">${tripUrl}</div>
-        <button onclick="copyLink('${tripUrl}')" style="width:100%;padding:10px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.25);border-radius:8px;color:var(--green);font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📋 Copy Trip Link</button>
-      </div>
-      <div style="background:var(--dark2);border:1px solid rgba(124,58,237,0.2);border-radius:12px;padding:14px 16px">
-        <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--purple3,#C084FC);font-weight:700;margin-bottom:6px">📨 Invite Link (requires signup)</div>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.5">Send this to someone new — they'll be prompted to create a RAVEN account before joining.</div>
-        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted2);word-break:break-all;margin-bottom:10px">${inviteUrl}</div>
-        <div style="display:flex;gap:8px">
-          <button onclick="copyLink('${inviteUrl}')" style="flex:1;padding:10px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.25);border-radius:8px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:12px;font-weight:700;cursor:pointer">📋 Copy Invite</button>
-          <button onclick="shareNative('${inviteUrl}','${trip.name.replace(/'/g,"\\'")}')" style="flex:1;padding:10px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.25);border-radius:8px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:12px;font-weight:700;cursor:pointer">📤 Share via...</button>
-        </div>
+    <div class="modal-title">Invite to Trip</div>
+
+    <!-- TRIP LINK -->
+    <div style="background:var(--dark2);border:1px solid var(--border2);border-radius:14px;padding:16px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted2);margin-bottom:6px">📋 Trip Link</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">For people already added to the trip</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted2);background:var(--dark3);border-radius:8px;padding:8px 12px;margin-bottom:10px;word-break:break-all">${tripUrl}</div>
+      <div style="display:flex;gap:8px">
+        <button onclick="copyAndToast('${tripUrl}','✅ Trip link copied!')" style="flex:1;padding:11px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.25);border-radius:9px;color:var(--green);font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📋 Copy</button>
+        <button onclick="shareNative('${tripUrl}','${trip.name.replace(/'/g,"\\'")}')" style="flex:1;padding:11px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.25);border-radius:9px;color:var(--green);font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📤 Share</button>
       </div>
     </div>
+
+    <!-- INVITE LINK -->
+    <div style="background:var(--dark2);border:1px solid rgba(124,58,237,0.25);border-radius:14px;padding:16px;margin-bottom:16px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--purple3,#C084FC);margin-bottom:6px">📨 Invite Link (New Members)</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Requires creating a RAVEN account — send to group chat</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted2);background:var(--dark3);border-radius:8px;padding:8px 12px;margin-bottom:10px;word-break:break-all">${inviteUrl}</div>
+      <div style="display:flex;gap:8px">
+        <button onclick="copyAndToast('${inviteUrl}','📨 Invite link copied! Paste in your group chat')" style="flex:1;padding:11px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.3);border-radius:9px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📋 Copy Invite</button>
+        <button onclick="shareNative('${inviteUrl}','Join '+${JSON.stringify(trip.name)}+' on RAVEN')" style="flex:1;padding:11px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.3);border-radius:9px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📤 Share</button>
+      </div>
+    </div>
+
     <button class="btn-outline" onclick="closeInvite()">Done</button>
   </div>
 </div>
@@ -1248,7 +1295,34 @@ ${countdownHtml ? `<div class="sec" style="margin-top:16px">${countdownHtml}</di
   function closeAddMembers(){document.getElementById('add-members-modal').classList.remove('open')}
 
   function copyLink(url){navigator.clipboard.writeText(url).then(()=>toast('✈️ Link copied!')).catch(()=>prompt('Copy:',url));}
-  function shareNative(url,name){if(navigator.share)navigator.share({title:'Join '+name+' on RAVEN',url}).catch(()=>{});else copyLink(url);}
+  function copyAndToast(url,msg){navigator.clipboard.writeText(url).then(()=>toast(msg)).catch(()=>{prompt('Copy this link:',url);toast(msg);});}
+  function shareNative(url,title){if(navigator.share)navigator.share({title,url}).catch(()=>copyLink(url));else copyAndToast(url,'📋 Copied!');}
+
+  async function uploadCover(input){
+    const file=input.files[0];if(!file)return;
+    const reader=new FileReader();
+    reader.onload=async e=>{
+      const resized=await new Promise(res=>{
+        const img=new Image();img.onload=function(){
+          const tw=800,th=400;let{width:w,height:h}=img;
+          const scale=Math.max(tw/w,th/h);w=Math.round(w*scale);h=Math.round(h*scale);
+          const c=document.createElement('canvas');c.width=tw;c.height=th;
+          c.getContext('2d').drawImage(img,(tw-w)/2,(th-h)/2,w,h);
+          res(c.toDataURL('image/jpeg',0.88));
+        };img.src=e.target.result;
+      });
+      const existingImg=document.getElementById('cover-img');
+      if(existingImg)existingImg.src=resized;
+      toast('Saving cover photo...');
+      try{
+        const r=await fetch(BACKEND+'/trip/'+TRIP_ID+'/cover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,image:resized.split(',')[1]})});
+        const d=await r.json();
+        if(d.success){toast('🖼 Cover saved!');setTimeout(()=>location.reload(),1200);}
+        else toast(d.error||'Error',false);
+      }catch(e){toast('Network error',false);}
+    };
+    reader.readAsDataURL(file);
+  }
 
   function addNewMember(){
     const inp=document.getElementById('new-member-input');
@@ -1391,6 +1465,20 @@ app.post('/trip/:tripId/comment', async (req, res) => {
     res.json({ success: true });
   } catch(err) { res.json({ success: false, error: err.message }); }
 });
+
+// ── TRIP COVER PHOTO ──────────────────────────────────────────────────────────
+app.post('/trip/:tripId/cover', async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const { token, image } = req.body;
+    const { data: trip } = await supabase.from('trips').select('share_token').eq('id', tripId).single();
+    if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
+    if (!image) return res.json({ success: false, error: 'No image' });
+    await supabase.from('trips').update({ cover_image: image }).eq('id', tripId);
+    res.json({ success: true });
+  } catch(err) { res.json({ success: false, error: err.message }); }
+});
+
 
 
 // ── ADD MEMBERS TO TRIP ────────────────────────────────────────────────────────
