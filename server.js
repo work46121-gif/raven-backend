@@ -742,27 +742,22 @@ app.get('/bill/:billId', async (req, res) => {
       container.innerHTML = '<div style="color:#6E6B80;font-size:12px;padding:8px;width:100%">Searching...</div>';
       gifTimer = setTimeout(async () => {
         try {
-          // Giphy public beta key — free for development
-          const key = 'dc6zaTOxFJmzC';
-          const res = await fetch('https://api.giphy.com/v1/gifs/search?api_key='+key+'&q='+encodeURIComponent(q)+'&limit=12&rating=g');
+          const res = await fetch('/gif-search?q='+encodeURIComponent(q));
           const data = await res.json();
           container.innerHTML = '';
-          if (!data.data || data.data.length === 0) {
-            container.innerHTML = '<div style="color:#6E6B80;font-size:12px;padding:8px;width:100%">No GIFs found</div>';
+          if (!data.gifs || data.gifs.length === 0) {
+            container.innerHTML = '<div style="color:#6E6B80;font-size:12px;padding:8px;width:100%">No GIFs found — try a different search</div>';
             return;
           }
-          data.data.forEach(g => {
-            const url = g.images?.fixed_height_small?.url || g.images?.downsized?.url;
-            const fullUrl = g.images?.fixed_height?.url || url;
-            if (!url) return;
+          data.gifs.forEach(g => {
+            if (!g.preview) return;
             const img = document.createElement('img');
-            img.src = url;
-            img.style.cssText = 'width:calc(33.3% - 3px);border-radius:6px;cursor:pointer;object-fit:cover;height:80px;flex-shrink:0;transition:opacity 0.15s';
-            img.addEventListener('mouseover', () => img.style.opacity='0.8');
-            img.addEventListener('mouseout', () => img.style.opacity='1');
+            img.src = g.preview;
+            img.alt = g.title;
+            img.style.cssText = 'width:calc(33.3% - 3px);border-radius:6px;cursor:pointer;object-fit:cover;height:80px;flex-shrink:0';
             img.addEventListener('click', () => {
-              selectedGif = fullUrl || url;
-              document.getElementById('gif-preview-text').textContent = '🎭 GIF selected: '+g.title.substring(0,30);
+              selectedGif = g.full || g.preview;
+              document.getElementById('gif-preview-text').textContent = '🎭 '+g.title.substring(0,25);
               document.getElementById('gif-clear').style.display = 'inline';
               document.getElementById('gif-panel').style.display = 'none';
             });
@@ -818,6 +813,41 @@ app.get('/bill/:billId', async (req, res) => {
 </html>`;
 
   res.send(html);
+});
+
+
+// ─── GIF SEARCH PROXY ────────────────────────────────────────────────────────
+
+app.get('/gif-search', async (req, res) => {
+  const q = req.query.q || 'reaction';
+  try {
+    const response = await fetch(
+      'https://api.giphy.com/v1/gifs/search?api_key=jCYGiGFkCvGMwqG0IHVLqaaxEDKIDHs4&q='+encodeURIComponent(q)+'&limit=12&rating=g&lang=en'
+    );
+    const data = await response.json();
+    const gifs = (data.data || []).map(g => ({
+      id: g.id,
+      title: g.title,
+      preview: g.images?.fixed_height_small?.url || g.images?.downsized_small?.mp4 || '',
+      full: g.images?.fixed_height?.url || g.images?.downsized?.url || ''
+    }));
+    res.json({ success: true, gifs });
+  } catch(err) {
+    // Fallback to Tenor if Giphy fails
+    try {
+      const r2 = await fetch('https://tenor.googleapis.com/v2/search?q='+encodeURIComponent(q)+'&key=AIzaSyD-9tSrke72I6e_a6aHG0-KoE0byR_fFw0&limit=12&media_filter=tinygif');
+      const d2 = await r2.json();
+      const gifs = (d2.results || []).map(g => ({
+        id: g.id,
+        title: g.content_description || q,
+        preview: g.media_formats?.tinygif?.url || '',
+        full: g.media_formats?.gif?.url || g.media_formats?.tinygif?.url || ''
+      }));
+      res.json({ success: true, gifs });
+    } catch(e2) {
+      res.json({ success: false, gifs: [] });
+    }
+  }
 });
 
 // ─── BILL COMMENTS ────────────────────────────────────────────────────────────
