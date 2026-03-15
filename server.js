@@ -488,7 +488,24 @@ app.get('/bill/:billId', async (req, res) => {
   const { data: items } = await supabase.from('receipt_items').select('*').eq('bill_id', billId);
   const { data: selections } = await supabase.from('item_selections').select('*').eq('bill_id', billId);
   const { data: participants } = await supabase.from('participants').select('*').eq('bill_id', billId).order('name');
-  const { data: creatorProfile } = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle,applepay').eq('email', bill.creator_phone).maybeSingle();
+  // Creator phone is actually their email for dashboard-created bills
+  // Try email match first, then fall back to searching by phone
+  let creatorProfile = null;
+  try {
+    const emailMatch = await supabase.from('profiles')
+      .select('first_name,venmo,cashapp,zelle,applepay')
+      .eq('email', bill.creator_phone)
+      .maybeSingle();
+    creatorProfile = emailMatch.data;
+    if (!creatorProfile) {
+      // Try phone match as fallback
+      const phoneMatch = await supabase.from('profiles')
+        .select('first_name,venmo,cashapp,zelle,applepay')
+        .eq('phone', bill.creator_phone)
+        .maybeSingle();
+      creatorProfile = phoneMatch.data;
+    }
+  } catch(e) { console.log('Profile fetch error:', e.message); }
 
   const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
     ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
@@ -598,8 +615,8 @@ app.get('/bill/:billId', async (req, res) => {
   <div id="creatorProfile" data-value='${profileJson}' style="display:none"></div>
 
   <!-- Pay Modal -->
-  <div id="pay-modal" style="display:none;position:fixed;inset:0;z-index:999" onclick="if(event.target.id==='pay-modal')closePayModal()">
-    <div style="position:absolute;inset:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(10px)"></div>
+  <div id="pay-modal" style="display:none;position:fixed;inset:0;z-index:999">
+    <div onclick="closePayModal()" style="position:absolute;inset:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(10px);cursor:pointer"></div>
     <div style="position:absolute;bottom:0;left:0;right:0;display:flex;justify-content:center">
       <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:24px 24px 0 0;padding:28px 20px 52px;width:100%;max-width:480px">
         <div style="width:36px;height:4px;background:rgba(255,255,255,0.12);border-radius:2px;margin:0 auto 20px"></div>
