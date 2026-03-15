@@ -582,17 +582,33 @@ app.get('/bill/:billId', async (req, res) => {
   ${participantsHTML}
   ${itemsHTML}
 
+  <!-- Comments Section -->
+  <div style="max-width:500px;margin:24px auto 0;padding:0 20px">
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:10px">Comments</div>
+    <div id="comments-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+      <div style="color:#6E6B80;font-size:13px;text-align:center;padding:12px 0" id="no-comments-msg">No comments yet</div>
+    </div>
+    <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:14px;overflow:hidden">
+      <input id="comment-name" type="text" placeholder="Your name" autocomplete="off" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#F0EEF8;font-family:inherit;font-size:14px;outline:none" />
+      <textarea id="comment-text" placeholder="Add a comment about this bill... e.g. Can we double-check if this is correct?" rows="3" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#F0EEF8;font-family:inherit;font-size:14px;outline:none;resize:none;line-height:1.5"></textarea>
+      <button onclick="postComment()" style="width:100%;padding:13px;background:rgba(48,209,88,0.12);border:none;color:#30D158;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='rgba(48,209,88,0.2)'" onmouseout="this.style.background='rgba(48,209,88,0.12)'">💬 Post Comment</button>
+    </div>
+  </div>
+
   <div id="creatorProfile" data-value='${profileJson}' style="display:none"></div>
 
   <!-- Pay Modal -->
-  <div id="pay-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(10px);z-index:999;align-items:flex-end;justify-content:center" onclick="if(event.target===this)this.style.display='none'">
-    <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:24px 24px 0 0;padding:28px 20px 48px;width:100%;max-width:480px">
-      <div style="width:36px;height:4px;background:rgba(255,255,255,0.12);border-radius:2px;margin:0 auto 20px"></div>
-      <div style="font-size:20px;font-weight:700;margin-bottom:4px">Pay <span id="pm-name"></span></div>
-      <div style="font-size:42px;font-weight:800;color:#30D158;margin-bottom:20px;letter-spacing:-0.02em" id="pm-amount">$0.00</div>
-      <div id="pm-methods" style="margin-bottom:14px"></div>
-      <button id="pm-mark-btn" style="width:100%;padding:14px;background:transparent;border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:#9896A8;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:8px">✓ Mark as paid (other method)</button>
-      <button onclick="document.getElementById('pay-modal').style.display='none'" style="width:100%;padding:12px;background:transparent;border:none;color:#6E6B80;font-family:inherit;font-size:13px;cursor:pointer">I'll pay later</button>
+  <div id="pay-modal" style="display:none;position:fixed;inset:0;z-index:999" onclick="if(event.target.id==='pay-modal')closePayModal()">
+    <div style="position:absolute;inset:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(10px)"></div>
+    <div style="position:absolute;bottom:0;left:0;right:0;display:flex;justify-content:center">
+      <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:24px 24px 0 0;padding:28px 20px 52px;width:100%;max-width:480px">
+        <div style="width:36px;height:4px;background:rgba(255,255,255,0.12);border-radius:2px;margin:0 auto 20px"></div>
+        <div style="font-size:20px;font-weight:700;margin-bottom:4px">Pay <span id="pm-name"></span></div>
+        <div style="font-size:42px;font-weight:800;color:#30D158;margin-bottom:20px;letter-spacing:-0.02em" id="pm-amount">$0.00</div>
+        <div id="pm-methods" style="margin-bottom:14px"></div>
+        <button id="pm-mark-btn" style="width:100%;padding:14px;background:transparent;border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:#9896A8;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:8px">✓ Mark as paid (other method)</button>
+        <button onclick="closePayModal()" style="width:100%;padding:12px;background:transparent;border:none;color:#6E6B80;font-family:inherit;font-size:13px;cursor:pointer">I'll pay later</button>
+      </div>
     </div>
   </div>
 
@@ -633,7 +649,7 @@ app.get('/bill/:billId', async (req, res) => {
 
       document.getElementById('pm-methods').innerHTML = methods.join('');
       document.getElementById('pm-mark-btn').onclick = () => markPaid(participantId, name);
-      document.getElementById('pay-modal').style.display = 'flex';
+      document.getElementById('pay-modal').style.display = 'block';
     }
 
     async function markPaid(participantId, name) {
@@ -656,7 +672,62 @@ app.get('/bill/:billId', async (req, res) => {
       } catch(e) { alert('Error. Please try again.'); }
     }
 
-    function showToast(msg) {
+    function closePayModal() {
+      document.getElementById('pay-modal').style.display = 'none';
+    }
+
+    const BILL_ID = '${billId}';
+
+    async function loadComments() {
+      try {
+        const res = await fetch('/bill/' + BILL_ID + '/comments');
+        const data = await res.json();
+        renderComments(data.comments || []);
+      } catch(e) {}
+    }
+
+    function renderComments(comments) {
+      const list = document.getElementById('comments-list');
+      const noMsg = document.getElementById('no-comments-msg');
+      if (comments.length === 0) {
+        if (noMsg) noMsg.style.display = 'block';
+        return;
+      }
+      if (noMsg) noMsg.style.display = 'none';
+      list.innerHTML = comments.map(c => {
+        const date = new Date(c.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+        return '<div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:14px 16px">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
+          '<span style="font-size:13px;font-weight:700;color:#F0EEF8">' + (c.name || 'Anonymous') + '</span>' +
+          '<span style="font-size:11px;color:#6E6B80">' + date + '</span>' +
+          '</div>' +
+          '<div style="font-size:14px;color:#9896A8;line-height:1.5">' + c.body + '</div>' +
+          '</div>';
+      }).join('');
+    }
+
+    async function postComment() {
+      const name = document.getElementById('comment-name').value.trim();
+      const body = document.getElementById('comment-text').value.trim();
+      if (!body) { showToast('Please write a comment first'); return; }
+      try {
+        const res = await fetch('/bill/' + BILL_ID + '/comments', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ name: name || 'Anonymous', body })
+        });
+        const data = await res.json();
+        if (data.success) {
+          document.getElementById('comment-text').value = '';
+          loadComments();
+          showToast('✅ Comment posted!');
+        }
+      } catch(e) { showToast('Error posting comment'); }
+    }
+
+    loadComments();
+
+        function showToast(msg) {
       let t = document.getElementById('toast');
       if (!t) { t = document.createElement('div'); t.id = 'toast'; t.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1A1A24;border:1px solid rgba(48,209,88,0.3);color:#30D158;padding:10px 20px;border-radius:20px;font-size:13px;font-weight:600;z-index:9999;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.5)'; document.body.appendChild(t); }
       t.textContent = msg;
@@ -670,6 +741,69 @@ app.get('/bill/:billId', async (req, res) => {
   res.send(html);
 });
 
+
+
+// ─── BILL COMMENTS ────────────────────────────────────────────────────────────
+
+app.get('/bill/:billId/comments', async (req, res) => {
+  try {
+    const { billId } = req.params;
+    const { data } = await supabase
+      .from('bill_comments')
+      .select('*')
+      .eq('bill_id', billId)
+      .order('created_at', { ascending: true });
+    res.json({ success: true, comments: data || [] });
+  } catch(err) {
+    res.json({ success: false, comments: [] });
+  }
+});
+
+app.post('/bill/:billId/comments', async (req, res) => {
+  try {
+    const { billId } = req.params;
+    const { name, body } = req.body;
+    if (!body?.trim()) return res.json({ success: false, error: 'Empty comment' });
+
+    await supabase.from('bill_comments').insert({
+      bill_id: billId,
+      name: name?.trim() || 'Anonymous',
+      body: body.trim(),
+      created_at: new Date().toISOString()
+    });
+
+    const { data: bill } = await supabase.from('bills').select('name, creator_phone').eq('id', billId).single();
+    if (bill?.creator_phone && !bill.creator_phone.includes('@')) {
+      await sendSMS(bill.creator_phone,
+        `🪶 RAVEN — New comment on ${bill.name}:\n\n"${body.trim().substring(0, 100)}"\n— ${name || 'Anonymous'}`
+      );
+    }
+
+    res.json({ success: true });
+  } catch(err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+app.post('/bill/:billId/mark-paid', async (req, res) => {
+  try {
+    const { billId } = req.params;
+    const { participantId, name } = req.body;
+    const { data: bill } = await supabase.from('bills').select('*').eq('id', billId).single();
+    if (!bill) return res.json({ success: false, error: 'Bill not found' });
+    await supabase.from('participants')
+      .update({ paid: true, paid_at: new Date().toISOString() })
+      .eq('id', participantId);
+    if (bill.creator_phone && !bill.creator_phone.includes('@')) {
+      await sendSMS(bill.creator_phone,
+        `🪶 RAVEN — ${name} marked themselves as paid for ${bill.name}!\n\nReply STATUS ${billId} for the full update.`
+      );
+    }
+    res.json({ success: true });
+  } catch(err) {
+    res.json({ success: false, error: err.message });
+  }
+});
 
 // ─── SAVE SELECTIONS ─────────────────────────────────────────────────────────
 
