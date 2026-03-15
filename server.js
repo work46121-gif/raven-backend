@@ -48,6 +48,14 @@ if (TWILIO_READY) {
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
 
+
+function generateShareToken() {
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let token = '';
+  for (let i = 0; i < 16; i++) token += chars[Math.floor(Math.random() * chars.length)];
+  return token;
+}
+
 function generateBillId() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let id = '';
@@ -144,7 +152,6 @@ Include only ordered items with their prices. If tip is not on receipt, set to 0
         ]
       }]
     });
-    const text = message.content[0].text.trim();
     const clean = text.replace(/```json|```/g, '').trim();
     return JSON.parse(clean);
   } catch (err) {
@@ -167,13 +174,15 @@ async function handleReceiptImage(fromPhone, mediaUrl, billName) {
     const billId = generateBillId();
     const name = billName || 'Receipt Bill';
 
+    const shareToken = generateShareToken();
     const { error: billError } = await supabase.from('bills').insert({
       id: billId,
       creator_phone: fromPhone,
       name,
       total: parsed.total || 0,
       per_person: 0,
-      status: 'selecting'
+      status: 'selecting',
+      share_token: shareToken
     });
     if (billError) throw billError;
 
@@ -194,7 +203,7 @@ async function handleReceiptImage(fromPhone, mediaUrl, billName) {
       ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
       : `https://raven-backend-production-fb1f.up.railway.app`;
 
-    const billUrl = `${baseUrl}/bill/${billId}`;
+    const billUrl = `${baseUrl}/bill/${billId}?t=${shareToken}`;
 
     await sendSMS(fromPhone, `🪶 RAVEN — Receipt Scanned!\n\n📋 ${name}\n💰 Total: ${formatMoney(parsed.total)}\n🧾 ${parsed.items.length} items found\n\nShare this link so everyone can pick what they ordered:\n${billUrl}\n\n🆔 Bill ID: ${billId}`);
 
@@ -277,8 +286,9 @@ async function handleSplit(fromPhone, text) {
     const perPerson = total / mentions.length;
     const billId = generateBillId();
 
+    const splitToken = generateShareToken();
     const { error: billError } = await supabase.from('bills').insert({
-      id: billId, creator_phone: fromPhone, name: billName, total, per_person: perPerson
+      id: billId, creator_phone: fromPhone, name: billName, total, per_person: perPerson, share_token: splitToken
     });
     if (billError) throw billError;
 
@@ -462,8 +472,19 @@ app.post('/sms', async (req, res) => {
 
 app.get('/bill/:billId', async (req, res) => {
   const { billId } = req.params;
+  const { token } = req.query;
   const { data: bill } = await supabase.from('bills').select('*').eq('id', billId).single();
   if (!bill) return res.status(404).send('Bill not found');
+
+  // Token validation — bills with a share_token require it
+  if (bill.share_token && bill.share_token !== token) {
+    return res.status(403).send(`
+      <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+      <title>RAVEN — Access Denied</title>
+      <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Helvetica Neue',sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px}.wrap{max-width:360px}.icon{font-size:48px;margin-bottom:20px}.title{font-size:28px;font-weight:700;margin-bottom:10px}.sub{color:#6E6B80;font-size:15px;line-height:1.6}</style>
+      </head><body><div class="wrap"><div class="icon">🔒</div><div class="title">Private Bill</div><div class="sub">This bill link is invalid or expired. Ask the bill creator to share the correct link with you.</div></div></body></html>
+    `);
+  }
 
   const { data: items } = await supabase.from('receipt_items').select('*').eq('bill_id', billId);
   const { data: selections } = await supabase.from('item_selections').select('*').eq('bill_id', billId);
@@ -488,6 +509,12 @@ app.get('/bill/:billId', async (req, res) => {
     </div>`;
   }).join('');
 
+  const receiptImgHTML = bill.receipt_image
+    ? `<div style="max-width:480px;margin:0 auto 0;padding:16px 20px 0">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:8px">Receipt</div>
+        <img src="data:image/jpeg;base64,${bill.receipt_image}" style="width:100%;border-radius:14px;display:block;object-fit:contain;background:#111;border:1px solid rgba(255,255,255,0.07)">
+      </div>` : '';
+
   const billContent = `
     <div class="bill-info animate-in">
       <div class="bill-name">${bill.name}</div>
@@ -497,6 +524,7 @@ app.get('/bill/:billId', async (req, res) => {
         ${uniquePeople.length > 0 ? `<div class="bill-tag">${uniquePeople.length} confirmed</div>` : ''}
       </div>
     </div>
+    ${receiptImgHTML}
 
     <div class="progress-wrap animate-in">
       <div class="progress-label">
@@ -748,43 +776,21 @@ Include only ordered items with their prices. If tip is not on receipt, set to 0
 
 app.post('/remind-dashboard', async (req, res) => {
   try {
-    const { billId, userEmail } = req.body;
+    const { billId } = req.body;
     if (!billId) return res.status(400).json({ error: 'Missing billId' });
-
     const { data: bill } = await supabase.from('bills').select('*').eq('id', billId).single();
     if (!bill) return res.status(404).json({ error: 'Bill not found' });
-
-    const { data: unpaid } = await supabase
-      .from('participants')
-      .select('*')
-      .eq('bill_id', billId)
-      .eq('paid', false);
-
-    if (!unpaid || unpaid.length === 0) {
-      return res.json({ success: true, reminded: 0, message: 'Everyone already paid!' });
-    }
-
+    const { data: unpaid } = await supabase.from('participants').select('*').eq('bill_id', billId).eq('paid', false);
+    if (!unpaid || unpaid.length === 0) return res.json({ success: true, reminded: 0 });
     let reminded = 0;
     for (const p of unpaid) {
       if (p.phone && !p.phone.startsWith('unknown_')) {
-        await sendSMS(p.phone,
-          `🪶 RAVEN — Reminder!
-
-Hey ${p.name}, you still owe $${parseFloat(p.amount).toFixed(2)} for ${bill.name}.
-
-Reply: PAID ${billId} ${p.name}
-
-Thanks! 🙏`
-        );
+        await sendSMS(p.phone, `🪶 RAVEN — Reminder!\n\nHey ${p.name}, you still owe $${parseFloat(p.amount).toFixed(2)} for ${bill.name}.\n\nReply: PAID ${billId} ${p.name}\n\nThanks! 🙏`);
         reminded++;
       }
     }
-
-    const names = unpaid.map(p => p.name).join(', ');
-    console.log(`🔔 Dashboard reminder sent for bill ${billId} — ${unpaid.length} unpaid (${reminded} SMS sent)`);
-    res.json({ success: true, reminded, unpaid: unpaid.length, names });
+    res.json({ success: true, reminded, unpaid: unpaid.length });
   } catch (err) {
-    console.error('Remind dashboard error:', err);
     res.status(500).json({ error: err.message });
   }
 });
