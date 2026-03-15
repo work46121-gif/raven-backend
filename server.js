@@ -157,7 +157,6 @@ Rules:
         ]
       }]
     });
-    const text = message.content[0].text.trim();
     const clean = text.replace(/```json|```/g, '').trim();
     return JSON.parse(clean);
   } catch (err) {
@@ -635,7 +634,6 @@ app.get('/bill/:billId', async (req, res) => {
     </div>
     <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:14px;overflow:hidden">
       <input id="cname" type="text" placeholder="Your name" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#F0EEF8;font-family:inherit;font-size:14px;outline:none"/>
-      <div id="gif-preview-wrap" style="display:none;padding:8px 12px 0;"></div>
       <textarea id="cbody" placeholder="Add a comment... e.g. Can we double-check the tip?" rows="2" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#F0EEF8;font-family:inherit;font-size:14px;outline:none;resize:none;line-height:1.5"></textarea>
       <div style="display:flex;border-bottom:1px solid rgba(255,255,255,0.07)">
         <button onclick="toggleGif()" style="flex:0;padding:12px 16px;background:transparent;border:none;color:#6E6B80;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">🎭 GIF</button>
@@ -732,8 +730,6 @@ app.get('/bill/:billId', async (req, res) => {
 
     function clearGif() {
       selectedGif = null;
-      const prevWrap = document.getElementById('gif-preview-wrap');
-      if (prevWrap) { prevWrap.innerHTML = ''; prevWrap.style.display = 'none'; }
       document.getElementById('gif-preview-text').textContent = '';
       document.getElementById('gif-clear').style.display = 'none';
       document.getElementById('gif-panel').style.display = 'none';
@@ -758,21 +754,12 @@ app.get('/bill/:billId', async (req, res) => {
             const img = document.createElement('img');
             img.src = g.preview;
             img.alt = g.title;
-            img.style.cssText = 'width:calc(33.3% - 3px);border-radius:6px;cursor:pointer;object-fit:cover;height:80px;flex-shrink:0;border:2px solid transparent;transition:border-color 0.15s';
-            img.addEventListener('mouseover', () => img.style.borderColor = '#30D158');
-            img.addEventListener('mouseout', () => img.style.borderColor = 'transparent');
+            img.style.cssText = 'width:calc(33.3% - 3px);border-radius:6px;cursor:pointer;object-fit:cover;height:80px;flex-shrink:0';
             img.addEventListener('click', () => {
               selectedGif = g.full || g.preview;
-              const prevWrap = document.getElementById('gif-preview-wrap');
-              if (prevWrap) {
-                prevWrap.innerHTML = '<div style="position:relative;display:inline-block;margin-bottom:8px;">'
-                  + '<img src="' + g.preview + '" style="max-height:120px;border-radius:8px;display:block;">'
-                  + '<button onclick="clearGif()" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.7);border:none;color:#fff;border-radius:50%;width:20px;height:20px;cursor:pointer;font-size:12px;line-height:1;">×</button>'
-                  + '</div>';
-                prevWrap.style.display = 'block';
-              }
+              document.getElementById('gif-preview-text').textContent = '🎭 '+g.title.substring(0,25);
+              document.getElementById('gif-clear').style.display = 'inline';
               document.getElementById('gif-panel').style.display = 'none';
-              toast('GIF selected ✓');
             });
             container.appendChild(img);
           });
@@ -793,25 +780,19 @@ app.get('/bill/:billId', async (req, res) => {
         if(none)none.style.display='none';
         list.innerHTML=comments.map(c=>{
           const dt=new Date(c.created_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
-          const gifHtml = c.gif_url ? '<img src="'+c.gif_url+'" style="width:100%;max-width:300px;border-radius:8px;margin-top:8px;display:block;" onerror="this.style.display=\'none\'">' : '';
-          const bodyHtml = c.body ? '<div style="font-size:14px;color:#9896A8;line-height:1.5;margin-bottom:'+(c.gif_url?'6px':'0')+'">'+c.body+'</div>' : '';
-          return '<div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:14px 16px">'
-            + '<div style="display:flex;justify-content:space-between;margin-bottom:6px">'
-            + '<span style="font-size:13px;font-weight:700">'+(c.name||'Anonymous')+'</span>'
-            + '<span style="font-size:11px;color:#6E6B80">'+dt+'</span></div>'
-            + bodyHtml + gifHtml + '</div>';
+          const gifHtml = c.gif_url ? '<img src="'+c.gif_url+'" style="width:100%;border-radius:8px;margin-top:8px;max-height:200px;object-fit:cover">' : ''; return '<div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:14px 16px"><div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px;font-weight:700">'+(c.name||'Anonymous')+'</span><span style="font-size:11px;color:#6E6B80">'+dt+'</span></div>'+(c.body?'<div style="font-size:14px;color:#9896A8;line-height:1.5">'+c.body+'</div>':'')+gifHtml+'</div>';
         }).join('');
-      }catch(e){console.error('loadC error:',e);}
+      }catch(e){}
     }
 
     async function postC(){
       const name=document.getElementById('cname').value.trim();
       const body=document.getElementById('cbody').value.trim();
-      if(!body && !selectedGif){toast('Write something or pick a GIF first');return;}
+      if(!body){toast('Write something first');return;}
       const btn=document.getElementById('csub');
       btn.textContent='Posting...';btn.disabled=true;
       try{
-        const r=await fetch('/bill/'+BID+'/comments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name||'Anonymous',body:body||'',gif_url:selectedGif||null})});
+        const r=await fetch('/bill/'+BID+'/comments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name||'Anonymous',body,gif_url:selectedGif||null})});
         const d=await r.json();
         if(d.success){document.getElementById('cbody').value='';document.getElementById('cname').value='';clearGif();await loadC();toast('✅ Posted!');}
         else toast('Error: '+(d.error||'try again'));
@@ -847,8 +828,8 @@ app.get('/gif-search', async (req, res) => {
     const gifs = (data.data || []).map(g => ({
       id: g.id,
       title: g.title,
-      preview: g.images?.fixed_height_small?.url || g.images?.preview_gif?.url || g.images?.downsized_small?.url || '',
-      full: g.images?.fixed_height?.url || g.images?.downsized?.url || g.images?.original?.url || ''
+      preview: g.images?.fixed_height_small?.url || g.images?.downsized_small?.mp4 || '',
+      full: g.images?.fixed_height?.url || g.images?.downsized?.url || ''
     }));
     res.json({ success: true, gifs });
   } catch(err) {
@@ -882,14 +863,16 @@ app.get('/bill/:billId/comments', async (req, res) => {
 app.post('/bill/:billId/comments', async (req, res) => {
   try {
     const { billId } = req.params;
-    const { name, body } = req.body;
-    if (!body?.trim()) return res.json({ success: false, error: 'Empty comment' });
-    const { gif_url } = req.body;
-    const { error: ie } = await supabase.from('bill_comments').insert({ bill_id: billId, name: name?.trim()||'Anonymous', body: body.trim(), gif_url: gif_url||null, created_at: new Date().toISOString() });
+    const { name, body, gif_url } = req.body;
+    if (!body?.trim() && !gif_url) return res.json({ success: false, error: 'Empty comment' });
+    const { error: ie } = await supabase.from('bill_comments').insert({ bill_id: billId, name: name?.trim()||'Anonymous', body: body?.trim()||'', gif_url: gif_url||null, created_at: new Date().toISOString() });
     if (ie) return res.json({ success: false, error: ie.message });
     const { data: bill } = await supabase.from('bills').select('name,creator_phone').eq('id', billId).single();
     if (bill?.creator_phone && !bill.creator_phone.includes('@')) {
-      await sendSMS(bill.creator_phone, `🪶 RAVEN — New comment on ${bill.name}:\n"${body.trim().substring(0,100)}"\n— ${name||'Anonymous'}`);
+      const msg = body?.trim()
+        ? `🪶 RAVEN — New comment on ${bill.name}:\n"${body.trim().substring(0,100)}"\n— ${name||'Anonymous'}`
+        : `🪶 RAVEN — ${name||'Anonymous'} sent a GIF on ${bill.name}`;
+      await sendSMS(bill.creator_phone, msg);
     }
     res.json({ success: true });
   } catch(err) { res.json({ success: false, error: err.message }); }
