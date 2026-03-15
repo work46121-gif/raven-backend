@@ -672,29 +672,46 @@ app.get('/bill/:billId', async (req, res) => {
       try {
         const b64 = document.getElementById('cp-data').value || '';
         if (b64) profile = JSON.parse(atob(b64));
-      } catch(e) { console.error('Profile parse error:', e); }
+      } catch(e) {}
       document.getElementById('pm-name').textContent = name;
       document.getElementById('pm-amount').textContent = '$' + parseFloat(amount).toFixed(2);
       const amt = parseFloat(amount).toFixed(2);
-      const m = [];
+      const methods = document.getElementById('pm-methods');
+      methods.innerHTML = '';
+
+      function makeRow(color, label, sub, href, copyVal) {
+        const a = document.createElement(href ? 'a' : 'button');
+        a.className = 'pm-row';
+        if (href) { a.href = href; a.target = '_blank'; }
+        else { a.style.width='100%'; a.style.textAlign='left'; a.style.cursor='pointer'; }
+        if (copyVal) { a.addEventListener('click', function(e){ e.preventDefault(); navigator.clipboard.writeText(copyVal).then(()=>toast('Copied: '+copyVal)).catch(()=>toast(copyVal)); }); }
+        a.innerHTML = '<div class="pm-icon" style="background:'+color+'">'+label+'</div><div class="pm-info"><b>'+sub[0]+'</b><span>'+sub[1]+'</span></div><span style="color:#6E6B80">→</span>';
+        methods.appendChild(a);
+      }
+
+      let count = 0;
       if (profile.venmo && profile.venmo.trim()) {
         const h = profile.venmo.startsWith('@') ? profile.venmo : '@'+profile.venmo;
-        m.push('<a href="https://venmo.com/'+profile.venmo.replace('@','')+'" target="_blank" class="pm-row"><div class="pm-icon" style="background:#008CFF">V</div><div class="pm-info"><b>Venmo</b><span>'+h+'</span></div><span style="color:#6E6B80">→</span></a>');
+        makeRow('#008CFF','V',['Venmo',h],'https://venmo.com/'+profile.venmo.replace('@',''),null);
+        count++;
       }
       if (profile.cashapp && profile.cashapp.trim()) {
         const t = profile.cashapp.startsWith('$') ? profile.cashapp : '$'+profile.cashapp;
-        m.push('<a href="https://cash.app/'+profile.cashapp.replace('$','')+'/'+amt+'" target="_blank" class="pm-row"><div class="pm-icon" style="background:#00D632">$</div><div class="pm-info"><b>Cash App</b><span>'+t+'</span></div><span style="color:#6E6B80">→</span></a>');
+        makeRow('#00D632','$',['Cash App',t],'https://cash.app/'+profile.cashapp.replace('$','')+'/'+amt,null);
+        count++;
       }
       if (profile.zelle && profile.zelle.trim()) {
-        m.push('<button onclick="copyAndToast(\''+profile.zelle+'\')" class="pm-row" style="width:100%;text-align:left;cursor:pointer"><div class="pm-icon" style="background:#6D1ED4">Z</div><div class="pm-info"><b>Zelle</b><span>'+profile.zelle+' · tap to copy</span></div><span style="color:#6E6B80">→</span></button>');
+        makeRow('#6D1ED4','Z',['Zelle',profile.zelle+' · tap to copy'],null,profile.zelle);
+        count++;
       }
       if (profile.applepay && profile.applepay.trim()) {
-        m.push('<button onclick="copyAndToast(\''+profile.applepay+'\')" class="pm-row" style="width:100%;text-align:left;cursor:pointer"><div class="pm-icon" style="background:#333;border:1px solid #555;font-size:9px">Pay</div><div class="pm-info"><b>Apple Pay</b><span>'+profile.applepay+' · tap to copy</span></div><span style="color:#6E6B80">→</span></button>');
+        makeRow('#333',['Pay'],['Apple Pay',profile.applepay+' · tap to copy'],null,profile.applepay);
+        count++;
       }
-      if (m.length === 0) m.push('<p style="color:#6E6B80;text-align:center;padding:16px 0;font-size:13px">No payment methods set up by bill creator yet.</p>');
-      document.getElementById('pm-methods').innerHTML = m.join('');
-      const _pid = pid; const _name = name;
-      document.getElementById('pm-mark').onclick = () => doMarkPaid(_pid, _name);
+      if (count === 0) {
+        methods.innerHTML = '<p style="color:#6E6B80;text-align:center;padding:16px 0;font-size:13px">No payment methods added yet.</p>';
+      }
+      document.getElementById('pm-mark').onclick = function(){ doMarkPaid(pid, name); };
       document.getElementById('pay-modal').style.display = 'block';
     }
 
