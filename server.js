@@ -1173,5 +1173,23 @@ app.get('/', (req, res) => {
   res.json({ status: 'RAVEN is live 🪶', version: '2.0.0', twilio: TWILIO_READY ? 'connected' : 'pending' });
 });
 
+// ─── WAITLIST ─────────────────────────────────────────────────────────────────
+app.post('/waitlist', async (req, res) => {
+  try {
+    const { email, source } = req.body;
+    if (!email || !email.includes('@')) return res.json({ success: false, error: 'Invalid email' });
+    const { error } = await supabase.from('waitlist').upsert(
+      { email: email.toLowerCase().trim(), source: source || 'website', created_at: new Date().toISOString() },
+      { onConflict: 'email' }
+    );
+    if (error) console.error('Waitlist insert error:', error);
+    res.json({ success: true });
+  } catch(err) {
+    console.error('Waitlist error:', err);
+    res.json({ success: true }); // always return success to user
+  }
+});
+
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🪶 RAVEN SMS server running on port ${PORT}`));
