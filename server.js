@@ -144,6 +144,7 @@ Include only ordered items with their prices. If tip is not on receipt, set to 0
         ]
       }]
     });
+    const text = message.content[0].text.trim();
     const clean = text.replace(/```json|```/g, '').trim();
     return JSON.parse(clean);
   } catch (err) {
@@ -740,6 +741,51 @@ Include only ordered items with their prices. If tip is not on receipt, set to 0
   } catch (err) {
     console.error('Demo scan error:', err);
     res.json({ success: false, error: err.message });
+  }
+});
+
+// ─── REMIND FROM DASHBOARD ───────────────────────────────────────────────────
+
+app.post('/remind-dashboard', async (req, res) => {
+  try {
+    const { billId, userEmail } = req.body;
+    if (!billId) return res.status(400).json({ error: 'Missing billId' });
+
+    const { data: bill } = await supabase.from('bills').select('*').eq('id', billId).single();
+    if (!bill) return res.status(404).json({ error: 'Bill not found' });
+
+    const { data: unpaid } = await supabase
+      .from('participants')
+      .select('*')
+      .eq('bill_id', billId)
+      .eq('paid', false);
+
+    if (!unpaid || unpaid.length === 0) {
+      return res.json({ success: true, reminded: 0, message: 'Everyone already paid!' });
+    }
+
+    let reminded = 0;
+    for (const p of unpaid) {
+      if (p.phone && !p.phone.startsWith('unknown_')) {
+        await sendSMS(p.phone,
+          `🪶 RAVEN — Reminder!
+
+Hey ${p.name}, you still owe $${parseFloat(p.amount).toFixed(2)} for ${bill.name}.
+
+Reply: PAID ${billId} ${p.name}
+
+Thanks! 🙏`
+        );
+        reminded++;
+      }
+    }
+
+    const names = unpaid.map(p => p.name).join(', ');
+    console.log(`🔔 Dashboard reminder sent for bill ${billId} — ${unpaid.length} unpaid (${reminded} SMS sent)`);
+    res.json({ success: true, reminded, unpaid: unpaid.length, names });
+  } catch (err) {
+    console.error('Remind dashboard error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
