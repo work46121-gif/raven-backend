@@ -687,36 +687,55 @@ app.get('/bill/:billId', async (req, res) => {
       const mc = document.getElementById('pmethods');
       mc.innerHTML = '';
       let n = 0;
-      function row(bg, icon, title, sub, href, copy) {
+
+      function row(bg, icon, title, sub, href, copy, method) {
         const el = document.createElement(href?'a':'button');
         el.className = 'pm-row';
-        if(href){el.href=href;el.target='_blank';}
-        if(copy){el.addEventListener('click',function(e){e.preventDefault();navigator.clipboard.writeText(copy).then(()=>toast('Copied: '+copy)).catch(()=>prompt('Copy:',copy));});}
+        if(href){ el.href=href; el.target='_blank'; }
+        if(copy){ el.addEventListener('click',function(e){ e.preventDefault(); navigator.clipboard.writeText(copy).then(()=>toast('Copied: '+copy)).catch(()=>prompt('Copy:',copy)); }); }
+        // When any payment method is tapped, record it
+        el.addEventListener('click', function() {
+          setTimeout(() => markPaid(pid, name, method), 300);
+        });
         el.innerHTML = '<div class="pm-icon" style="background:'+bg+'">'+icon+'</div><div class="pm-info"><b>'+title+'</b><span>'+sub+'</span></div><span style="color:#6E6B80;font-size:16px">→</span>';
         mc.appendChild(el);
         n++;
       }
-      if(p.venmo&&p.venmo.trim()){const h='@'+p.venmo.replace('@','');row('#008CFF','V','Venmo',h+' · $'+amt,'venmo://paycharge?txn=pay&recipients='+p.venmo.replace('@','')+'&amount='+amt+'&note=Bill',null);}
-      if(p.cashapp&&p.cashapp.trim()){const tag=p.cashapp.replace('$','');const t='$'+tag;row('#00D632','$','Cash App',t+' · $'+amt,'https://cash.app/$'+tag+'/'+amt,null);}
-      if(p.zelle&&p.zelle.trim()){row('#6D1ED4','Z','Zelle',p.zelle+' · tap to copy',null,p.zelle);}
+
+      if(p.venmo&&p.venmo.trim()){const h='@'+p.venmo.replace('@','');row('#008CFF','V','Venmo',h+' · $'+amt,'venmo://paycharge?txn=pay&recipients='+p.venmo.replace('@','')+'&amount='+amt+'&note=Bill',null,'Venmo');}
+      if(p.cashapp&&p.cashapp.trim()){const tag=p.cashapp.replace('$','');const t='$'+tag;row('#00D632','$','Cash App',t+' · $'+amt,'https://cash.app/$'+tag+'/'+amt,null,'Cash App');}
+      if(p.zelle&&p.zelle.trim()){row('#6D1ED4','Z','Zelle',p.zelle+' · tap to copy',null,p.zelle,'Zelle');}
       if(p.applepay&&p.applepay.trim()){
         const ap=p.applepay.trim();
         const dig=ap.replace(/\D/g,'');
-        const e164=dig.length===10?'1'+dig:(dig.length===11&&dig[0]==='1'?dig:dig);if(dig.length>=7){const sms='sms:+'+e164+'&body='+encodeURIComponent('Sending $'+amt+' via Apple Pay');const el=document.createElement('a');el.className='pm-row';el.href=sms;el.innerHTML='<div class="pm-icon" style="background:#222;border:1px solid #444">Pay</div><div class="pm-info"><b>Apple Pay</b><span>Opens iMessage to '+ap+'</span></div><span style="color:#6E6B80;font-size:16px">→</span>';mc.appendChild(el);n++;}
-        else{row('#222','Pay','Apple Pay',ap+' · tap to copy',null,ap);}
+        const e164=dig.length===10?'1'+dig:(dig.length===11&&dig[0]==='1'?dig:dig);
+        if(dig.length>=7){
+          const sms='sms:+'+e164+'&body='+encodeURIComponent('Sending $'+amt+' via Apple Pay');
+          const el=document.createElement('a');
+          el.className='pm-row'; el.href=sms;
+          el.addEventListener('click', function(){ setTimeout(() => markPaid(pid, name, 'Apple Pay'), 300); });
+          el.innerHTML='<div class="pm-icon" style="background:#222;border:1px solid #444">Pay</div><div class="pm-info"><b>Apple Pay</b><span>Opens iMessage to '+ap+'</span></div><span style="color:#6E6B80;font-size:16px">→</span>';
+          mc.appendChild(el); n++;
+        } else { row('#222','Pay','Apple Pay',ap+' · tap to copy',null,ap,'Apple Pay'); }
       }
       if(n===0){mc.innerHTML='<p style="color:#6E6B80;text-align:center;padding:16px 0;font-size:13px">No payment methods set up yet.</p>';}
-      document.getElementById('pmark').onclick=function(){markPaid(pid,name);};
+      document.getElementById('pmark').onclick=function(){ markPaid(pid, name, 'Other'); };
       document.getElementById('pmod').style.display='block';
     }
 
-    function closePay(){document.getElementById('pmod').style.display='none';}
+    function closePay(){ document.getElementById('pmod').style.display='none'; }
 
-    async function markPaid(pid,name){
+    async function markPaid(pid, name, method) {
       try{
-        const r=await fetch('/bill/'+BID+'/mark-paid',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({participantId:pid,name})});
+        const r=await fetch('/bill/'+BID+'/mark-paid',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({participantId:pid, name, payment_method: method||null})});
         const d=await r.json();
-        if(d.success){closePay();document.getElementById('paybtn-'+pid)?.remove();const s=document.getElementById('pstatus-'+pid);if(s)s.textContent='✅ Paid';toast('✅ Marked as paid!');}
+        if(d.success){
+          closePay();
+          document.getElementById('paybtn-'+pid)?.remove();
+          const s=document.getElementById('pstatus-'+pid);
+          if(s) s.textContent='✅ Paid' + (method && method !== 'Other' ? ' via '+method : '');
+          toast('✅ Marked as paid!');
+        }
       }catch(e){alert('Error. Try again.');}
     }
 
@@ -891,12 +910,17 @@ app.post('/bill/:billId/comments', async (req, res) => {
 app.post('/bill/:billId/mark-paid', async (req, res) => {
   try {
     const { billId } = req.params;
-    const { participantId, name } = req.body;
+    const { participantId, name, payment_method } = req.body;
     const { data: bill } = await supabase.from('bills').select('*').eq('id', billId).single();
     if (!bill) return res.json({ success: false, error: 'Bill not found' });
-    await supabase.from('participants').update({ paid: true, paid_at: new Date().toISOString() }).eq('id', participantId);
+    await supabase.from('participants').update({
+      paid: true,
+      paid_at: new Date().toISOString(),
+      ...(payment_method ? { payment_method } : {})
+    }).eq('id', participantId);
     if (bill.creator_phone && !bill.creator_phone.includes('@')) {
-      await sendSMS(bill.creator_phone, `🪶 RAVEN — ${name} marked as paid for ${bill.name}!`);
+      const methodStr = payment_method ? ` via ${payment_method}` : '';
+      await sendSMS(bill.creator_phone, `🪶 RAVEN — ${name} marked as paid${methodStr} for ${bill.name}!`);
     }
     res.json({ success: true });
   } catch(err) { res.json({ success: false, error: err.message }); }
