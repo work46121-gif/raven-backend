@@ -862,16 +862,56 @@ app.get('/bill/:billId', async (req, res) => {
 app.get('/trip/:tripId', async (req, res) => {
   const { tripId } = req.params;
   const token = req.query.t;
+  const inviteMode = req.query.invite === '1';
+
   const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
   if (!trip) return res.status(404).send('<!DOCTYPE html><html><head><meta charset="UTF-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px}</style></head><body><div><div style="font-size:52px;margin-bottom:16px">🪶</div><h2 style="font-size:24px;margin-bottom:8px">Trip Not Found</h2><p style="color:#6E6B80">This trip link may have expired or been deleted.</p></div></body></html>');
-  if (trip.share_token && token !== trip.share_token) {
+
+  // Invite link uses invite_token; share link uses share_token
+  const validInvite = token === trip.invite_token;
+  const validShare = token === trip.share_token;
+  if (!validShare && !validInvite) {
     return res.status(403).send('<!DOCTYPE html><html><head><meta charset="UTF-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px}</style></head><body><div><div style="font-size:52px;margin-bottom:16px">🔒</div><h2 style="font-size:24px;margin-bottom:8px">Private Trip</h2><p style="color:#6E6B80">Ask the trip creator to share the correct link with you.</p></div></body></html>');
   }
 
+  // If invite link → show join page (redirects to signup)
+  if (validInvite && !validShare) {
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Join ✈️ ${trip.name} — RAVEN</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Epilogue:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Epilogue',sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center}
+    body::before{content:'';position:fixed;top:-200px;left:50%;transform:translateX(-50%);width:700px;height:500px;background:radial-gradient(ellipse,rgba(124,58,237,0.15) 0%,rgba(48,209,88,0.07) 50%,transparent 70%);pointer-events:none}
+  </style>
+</head>
+<body>
+  <div style="position:relative;z-index:1;max-width:400px;width:100%">
+    ${trip.cover_image ? `<div style="width:100%;height:160px;border-radius:20px;overflow:hidden;margin-bottom:24px;border:1px solid rgba(255,255,255,0.1)"><img src="data:image/jpeg;base64,${trip.cover_image}" style="width:100%;height:100%;object-fit:cover"></div>` : ''}
+    <div style="font-size:40px;margin-bottom:12px">✈️</div>
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:0.05em;margin-bottom:8px">${trip.name}</div>
+    <div style="font-size:14px;color:#6E6B80;margin-bottom:32px">You've been invited to join this trip hub on RAVEN</div>
+    <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:24px;margin-bottom:16px">
+      <div style="font-size:13px;color:#6E6B80;margin-bottom:16px">Create a free RAVEN account to join the trip, add receipts, and track who owes what.</div>
+      <a href="https://work46121-gif.github.io/raven-site/dashboard.html?join_trip=${tripId}&join_token=${trip.invite_token}" style="display:block;width:100%;padding:15px;background:#30D158;color:#000;border-radius:12px;font-family:'Epilogue',sans-serif;font-size:15px;font-weight:800;text-decoration:none;margin-bottom:10px">🪶 Create Account &amp; Join Trip</a>
+      <a href="https://work46121-gif.github.io/raven-site/dashboard.html?join_trip=${tripId}&join_token=${trip.invite_token}&signin=1" style="display:block;width:100%;padding:13px;background:transparent;border:1px solid rgba(255,255,255,0.12);color:#9896A8;border-radius:12px;font-family:'Epilogue',sans-serif;font-size:14px;font-weight:600;text-decoration:none">Already have an account? Sign In</a>
+    </div>
+    <div style="font-size:11px;color:#6E6B80">Powered by <b style="color:#C084FC">RAVEN</b> — Scan. Share. Settle.</div>
+  </div>
+</body>
+</html>`;
+    return res.send(html);
+  }
+
   const { data: receipts } = await supabase.from('trip_receipts').select('*').eq('trip_id', tripId).order('created_at', { ascending: false });
+  const { data: comments } = await supabase.from('trip_comments').select('*').eq('trip_id', tripId).order('created_at', { ascending: true });
   const people = Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people || '[]');
 
-  // Build per-person totals
+  // Per-person totals
   const totals = {};
   people.forEach(p => { totals[p.toLowerCase()] = 0; });
   (receipts || []).forEach(r => {
@@ -884,10 +924,11 @@ app.get('/trip/:tripId', async (req, res) => {
     } catch(e) {}
   });
   const grandTotal = Object.values(totals).reduce((s, v) => s + v, 0);
+
   const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : `https://raven-backend-production-fb1f.up.railway.app`;
   const tripUrl = `${baseUrl}/trip/${tripId}?t=${trip.share_token}`;
+  const inviteUrl = `${baseUrl}/trip/${tripId}?t=${trip.invite_token}&invite=1`;
 
-  // Avatar colors for members
   const avatarColors = [
     'linear-gradient(135deg,#7C3AED,#A855F7)',
     'linear-gradient(135deg,#E8633A,#FF6B35)',
@@ -899,7 +940,31 @@ app.get('/trip/:tripId', async (req, res) => {
     'linear-gradient(135deg,#84CC16,#10B981)',
   ];
 
-  const receiptRowsHtml = (receipts || []).map((r, ri) => {
+  // Countdown
+  let countdownHtml = '';
+  if (trip.trip_date) {
+    const tripDateMs = new Date(trip.trip_date).getTime();
+    const nowMs = Date.now();
+    const diff = tripDateMs - nowMs;
+    if (diff > 0) {
+      const days = Math.ceil(diff / (1000*60*60*24));
+      countdownHtml = `
+      <div style="background:linear-gradient(135deg,rgba(124,58,237,0.12),rgba(48,209,88,0.08));border:1px solid rgba(124,58,237,0.2);border-radius:16px;padding:20px;text-align:center;margin-bottom:0">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.14em;color:#C084FC;font-weight:700;margin-bottom:8px">✈️ Countdown to Trip</div>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:64px;letter-spacing:0.04em;line-height:1;color:#F0EEF8">${days}</div>
+        <div style="font-size:14px;color:#9896A8;margin-top:4px">day${days !== 1 ? 's' : ''} to go · ${new Date(trip.trip_date).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</div>
+      </div>`;
+    } else {
+      const daysPast = Math.abs(Math.floor(diff / (1000*60*60*24)));
+      countdownHtml = `
+      <div style="background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.18);border-radius:16px;padding:16px;text-align:center;margin-bottom:0">
+        <div style="font-size:13px;color:#30D158;font-weight:600">✅ Trip happened ${daysPast > 0 ? daysPast + ' days ago' : 'today'} · ${new Date(trip.trip_date).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</div>
+      </div>`;
+    }
+  }
+
+  // Receipt rows
+  const receiptRowsHtml = (receipts || []).map(r => {
     let splitsHtml = '';
     try {
       const sp = typeof r.splits === 'string' ? JSON.parse(r.splits) : (r.splits || {});
@@ -907,16 +972,29 @@ app.get('/trip/:tripId', async (req, res) => {
         `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(255,255,255,0.05);border-radius:6px;font-size:11px;color:#9896A8">${p} <b style="color:#F0EEF8">$${parseFloat(a).toFixed(2)}</b></span>`
       ).join('');
     } catch(e) {}
-    const date = new Date(r.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
     return `<div style="padding:16px;border-bottom:1px solid rgba(255,255,255,0.05)">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
-        <div>
-          <div style="font-weight:700;font-size:14px;margin-bottom:2px">${r.name||'Receipt'}</div>
-          <div style="font-size:11px;color:#6E6B80">${date}</div>
-        </div>
+        <div><div style="font-weight:700;font-size:14px;margin-bottom:2px">${r.name||'Receipt'}</div>
+        <div style="font-size:11px;color:#6E6B80">${new Date(r.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div></div>
         <span style="font-size:17px;font-weight:800;color:#30D158;font-family:monospace;flex-shrink:0;margin-left:12px">$${parseFloat(r.total||0).toFixed(2)}</span>
       </div>
       ${splitsHtml ? `<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px">${splitsHtml}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  // Comments HTML
+  const commentsHtml = (comments || []).map(c => {
+    const initials = c.author_name ? c.author_name[0].toUpperCase() : '?';
+    const timeStr = new Date(c.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+    return `<div style="display:flex;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)">
+      <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#30D158);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0">${initials}</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
+          <span style="font-size:13px;font-weight:700">${c.author_name || 'Anonymous'}</span>
+          <span style="font-size:11px;color:#6E6B80">${timeStr}</span>
+        </div>
+        <div style="font-size:14px;line-height:1.6;color:#E0DEF0;word-break:break-word">${c.body || ''}</div>
+      </div>
     </div>`;
   }).join('');
 
@@ -927,90 +1005,45 @@ app.get('/trip/:tripId', async (req, res) => {
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
   <title>✈️ ${trip.name} — RAVEN</title>
   <meta property="og:title" content="✈️ ${trip.name}">
-  <meta property="og:description" content="You're invited to the trip hub — add receipts, track who owes what.">
-  <meta property="og:image" content="https://work46121-gif.github.io/raven-site/raven-hero.png">
+  <meta property="og:description" content="Trip hub — add receipts, track who owes what.">
+  ${trip.cover_image ? `<meta property="og:image" content="data:image/jpeg;base64,${trip.cover_image.substring(0,100)}">` : ''}
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Epilogue:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     :root{--black:#06060A;--dark:#0C0C12;--dark2:#13131A;--dark3:#1A1A24;--border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);--white:#F0EEF8;--muted:#6E6B80;--muted2:#9896A8;--green:#30D158;--purple:#7C3AED;--purple2:#A855F7;--orange:#FF6B35}
-    body{font-family:'Epilogue',sans-serif;background:var(--black);color:var(--white);min-height:100vh;padding-bottom:40px}
-    body::before{content:'';position:fixed;top:-200px;left:50%;transform:translateX(-50%);width:800px;height:600px;background:radial-gradient(ellipse,rgba(124,58,237,0.12) 0%,rgba(48,209,88,0.06) 50%,transparent 70%);pointer-events:none;z-index:0}
-
-    /* HEADER */
+    body{font-family:'Epilogue',sans-serif;background:var(--black);color:var(--white);min-height:100vh;padding-bottom:60px}
+    body::before{content:'';position:fixed;top:-200px;left:50%;transform:translateX(-50%);width:800px;height:600px;background:radial-gradient(ellipse,rgba(124,58,237,0.1) 0%,rgba(48,209,88,0.05) 50%,transparent 70%);pointer-events:none;z-index:0}
     .hdr{position:sticky;top:0;background:rgba(6,6,10,0.95);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid var(--border);z-index:100}
-    .hdr-inner{max-width:560px;margin:0 auto;height:58px;display:flex;align-items:center;justify-content:space-between;padding:0 20px}
+    .hdr-inner{max-width:560px;margin:0 auto;height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 20px}
     .hdr-logo{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:0.15em;background:linear-gradient(135deg,var(--white),var(--purple2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-decoration:none}
     .hdr-id{font-size:10px;color:var(--muted);background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:12px;font-weight:600;letter-spacing:0.08em}
-
-    /* HERO BAND */
-    .trip-hero{max-width:560px;margin:0 auto;padding:28px 20px 0;position:relative;z-index:1}
-    .trip-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);padding:4px 12px;border-radius:12px;font-size:10px;font-weight:700;color:var(--green);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:12px}
-    .trip-badge-dot{width:5px;height:5px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
-    @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(1.4)}}
-    .trip-name{font-family:'Bebas Neue',sans-serif;font-size:38px;letter-spacing:0.04em;line-height:1;margin-bottom:8px}
-    .trip-stats{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-    .trip-stat-sep{width:3px;height:3px;border-radius:50%;background:var(--border2)}
-
-    /* MEMBER AVATARS */
-    .member-row{display:flex;align-items:center;gap:-6px;margin-top:16px;margin-bottom:4px}
-    .member-av{width:32px;height:32px;border-radius:50%;border:2px solid var(--black);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;margin-left:-8px;flex-shrink:0}
-    .member-av:first-child{margin-left:0}
-    .member-add-btn{width:32px;height:32px;border-radius:50%;background:var(--dark2);border:2px dashed rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;cursor:pointer;margin-left:4px;flex-shrink:0;font-size:14px;color:var(--muted);transition:all 0.15s}
-    .member-add-btn:hover{border-color:var(--green);color:var(--green)}
-
-    /* SECTIONS */
-    .sec{max-width:560px;margin:24px auto 0;padding:0 20px;position:relative;z-index:1}
+    .sec{max-width:560px;margin:20px auto 0;padding:0 20px;position:relative;z-index:1}
     .sec-lbl{font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:var(--muted);font-weight:700;margin-bottom:10px}
     .card{background:var(--dark);border:1px solid var(--border);border-radius:16px;overflow:hidden}
-    .card-glow{box-shadow:0 0 0 1px rgba(48,209,88,0.08),0 20px 60px rgba(0,0,0,0.4)}
-
-    /* WHO OWES WHAT */
-    .owe-row{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)}
-    .owe-row:last-child{border-bottom:none}
-    .owe-person{display:flex;align-items:center;gap:10px}
-    .owe-av{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0}
-    .owe-name{font-weight:600;font-size:14px}
-    .owe-amt{font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:var(--green)}
-    .owe-total-row{display:flex;justify-content:space-between;padding:12px 16px;background:rgba(48,209,88,0.04);border-top:1px solid rgba(48,209,88,0.12)}
-    .owe-total-label{font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--muted2)}
-    .owe-total-val{font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:var(--green)}
-
-    /* BUTTONS */
-    .btn-green{width:100%;padding:15px;background:var(--green);color:#000;border:none;border-radius:12px;font-family:'Epilogue',sans-serif;font-size:15px;font-weight:800;cursor:pointer;transition:all 0.2s;letter-spacing:0.02em}
+    .btn-green{width:100%;padding:15px;background:var(--green);color:#000;border:none;border-radius:12px;font-family:'Epilogue',sans-serif;font-size:15px;font-weight:800;cursor:pointer;transition:all 0.2s}
     .btn-green:hover{background:#3ddd68;transform:translateY(-1px)}
     .btn-outline{width:100%;padding:13px;background:transparent;border:1px solid var(--border2);border-radius:12px;color:var(--muted2);font-family:'Epilogue',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.15s}
     .btn-outline:hover{border-color:rgba(255,255,255,0.25);color:var(--white)}
     .btn-purple{width:100%;padding:13px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.25);border-radius:12px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.15s}
     .btn-purple:hover{background:rgba(124,58,237,0.25)}
-
-    /* RECEIPT FORM */
+    .btn-sm{padding:8px 14px;border-radius:8px;font-family:'Epilogue',sans-serif;font-size:12px;font-weight:600;cursor:pointer;border:none;transition:all 0.15s}
     input,textarea{background:var(--dark2);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:'Epilogue',sans-serif;font-size:14px;outline:none;padding:12px 16px;width:100%;transition:border-color 0.2s}
     input:focus,textarea:focus{border-color:var(--purple)}
     .split-btn{flex:1;padding:10px;border-radius:8px;font-family:'Epilogue',sans-serif;font-size:13px;font-weight:600;cursor:pointer;background:var(--dark3);border:1px solid var(--border);color:var(--muted2);transition:all 0.15s}
-    .split-btn.active-e{background:rgba(48,209,88,0.12);border-color:rgba(48,209,88,0.3);color:var(--green)}
-    .split-btn.active-i{background:rgba(124,58,237,0.12);border-color:rgba(124,58,237,0.3);color:var(--purple2)}
-
-    /* INVITE MODAL */
+    .split-btn.ae{background:rgba(48,209,88,0.12);border-color:rgba(48,209,88,0.3);color:var(--green)}
+    .split-btn.ai{background:rgba(124,58,237,0.12);border-color:rgba(124,58,237,0.3);color:var(--purple2)}
     .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);backdrop-filter:blur(12px);z-index:500;align-items:flex-end;justify-content:center}
     .modal-overlay.open{display:flex}
-    .modal-sheet{background:var(--dark);border:1px solid var(--border2);border-radius:24px 24px 0 0;padding:28px 24px 52px;width:100%;max-width:520px}
-    .modal-handle{width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 22px}
+    .modal-sheet{background:var(--dark);border:1px solid var(--border2);border-radius:24px 24px 0 0;padding:24px 20px 52px;width:100%;max-width:520px;max-height:85vh;overflow-y:auto}
+    .modal-handle{width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 20px}
     .modal-title{font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:0.05em;margin-bottom:4px}
-    .modal-sub{font-size:13px;color:var(--muted);margin-bottom:20px}
-
-    /* ADD MEMBER MODAL */
-    .member-chip{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--dark2);border:1px solid var(--border);border-radius:10px}
-    .member-chip-name{font-size:14px;font-weight:600;display:flex;align-items:center;gap:9px}
-    .member-chip-remove{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;opacity:0.6;padding:0}
-    .member-chip-remove:hover{opacity:1;color:#FF4444}
-
+    .modal-sub{font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.6}
     @keyframes spin{to{transform:rotate(360deg)}}
-    .spinner{width:16px;height:16px;border:2px solid rgba(124,58,237,0.3);border-top-color:var(--purple2);border-radius:50%;animation:spin 0.8s linear infinite}
+    .spinner{width:16px;height:16px;border:2px solid rgba(124,58,237,0.3);border-top-color:var(--purple2);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0}
   </style>
 </head>
 <body>
 
-<!-- HEADER -->
 <div class="hdr">
   <div class="hdr-inner">
     <a href="https://work46121-gif.github.io/raven-site/" class="hdr-logo">🪶 RAVEN</a>
@@ -1018,44 +1051,53 @@ app.get('/trip/:tripId', async (req, res) => {
   </div>
 </div>
 
+<!-- COVER PHOTO -->
+${trip.cover_image ? `<div style="max-width:560px;margin:0 auto;padding:0 20px;padding-top:20px;position:relative;z-index:1"><div style="width:100%;height:180px;border-radius:16px;overflow:hidden;border:1px solid var(--border)"><img src="data:image/jpeg;base64,${trip.cover_image}" style="width:100%;height:100%;object-fit:cover"></div></div>` : ''}
+
 <!-- TRIP HERO -->
-<div class="trip-hero">
-  <div class="trip-badge"><span class="trip-badge-dot"></span>Trip Hub · Live</div>
-  <div class="trip-name">✈️ ${trip.name}</div>
-  <div class="trip-stats">
+<div class="sec" style="margin-top:${trip.cover_image ? '16px' : '24px'}">
+  <div style="display:inline-flex;align-items:center;gap:6px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);padding:4px 12px;border-radius:12px;font-size:10px;font-weight:700;color:var(--green);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:12px">
+    <span style="width:5px;height:5px;border-radius:50%;background:var(--green);animation:blink 2s infinite"></span>
+    Trip Hub · Live
+  </div>
+  <div style="font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:0.04em;line-height:1;margin-bottom:8px">✈️ ${trip.name}</div>
+  <div style="font-size:13px;color:var(--muted);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
     <span>${people.length} people</span>
-    <span class="trip-stat-sep"></span>
+    <span style="width:3px;height:3px;border-radius:50%;background:var(--border2)"></span>
     <span>${(receipts||[]).length} receipt${(receipts||[]).length !== 1 ? 's' : ''}</span>
-    <span class="trip-stat-sep"></span>
+    <span style="width:3px;height:3px;border-radius:50%;background:var(--border2)"></span>
     <span style="color:var(--green);font-weight:600">$${grandTotal.toFixed(2)} total</span>
   </div>
 
   <!-- MEMBER AVATARS -->
-  <div class="member-row">
-    ${people.map((p, i) => `<div class="member-av" style="background:${avatarColors[i % avatarColors.length]}" title="${p}">${p[0].toUpperCase()}</div>`).join('')}
-    <button class="member-add-btn" onclick="openAddMembers()" title="Add members">+</button>
+  <div style="display:flex;align-items:center;margin-top:14px;margin-bottom:6px">
+    ${people.map((p, i) => `<div style="width:32px;height:32px;border-radius:50%;background:${avatarColors[i % avatarColors.length]};border:2px solid var(--black);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0;margin-left:${i===0?'0':'-8px'}" title="${p}">${p[0].toUpperCase()}</div>`).join('')}
+    <button onclick="openAddMembers()" style="width:32px;height:32px;border-radius:50%;background:var(--dark2);border:2px dashed rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;cursor:pointer;margin-left:4px;flex-shrink:0;font-size:14px;color:var(--muted);transition:all 0.15s;-webkit-tap-highlight-color:transparent" title="Add members">+</button>
+    <button onclick="openInviteModal()" style="padding:5px 12px;margin-left:10px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.25);border-radius:20px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:11px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent">📨 Invite</button>
   </div>
-  <div style="font-size:11px;color:var(--muted);margin-top:6px">Tap <b style="color:var(--muted2)">+</b> to add more people to this trip</div>
 </div>
+
+<!-- COUNTDOWN -->
+${countdownHtml ? `<div class="sec" style="margin-top:16px">${countdownHtml}</div>` : ''}
 
 <!-- WHO OWES WHAT -->
 <div class="sec" style="margin-top:20px">
   <div class="sec-lbl">Who Owes What</div>
-  <div class="card card-glow">
+  <div class="card" style="box-shadow:0 0 0 1px rgba(48,209,88,0.08),0 20px 60px rgba(0,0,0,0.4)">
     ${people.map((p, i) => `
-    <div class="owe-row">
-      <div class="owe-person">
-        <div class="owe-av" style="background:${avatarColors[i % avatarColors.length]}">${p[0].toUpperCase()}</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:34px;height:34px;border-radius:50%;background:${avatarColors[i % avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0">${p[0].toUpperCase()}</div>
         <div>
-          <div class="owe-name">${p}</div>
-          ${totals[p.toLowerCase()] > 0 ? '<div style="font-size:11px;color:var(--muted)">outstanding</div>' : '<div style="font-size:11px;color:var(--green)">all settled ✓</div>'}
+          <div style="font-weight:600;font-size:14px">${p}</div>
+          <div style="font-size:11px;color:${totals[p.toLowerCase()] > 0 ? 'var(--muted)' : 'var(--green)'}">${totals[p.toLowerCase()] > 0 ? 'outstanding' : 'all settled ✓'}</div>
         </div>
       </div>
-      <div class="owe-amt" style="${totals[p.toLowerCase()] <= 0 ? 'color:var(--muted2)' : ''}">$${(totals[p.toLowerCase()]||0).toFixed(2)}</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${totals[p.toLowerCase()] > 0 ? 'var(--green)' : 'var(--muted2)'}">$${(totals[p.toLowerCase()]||0).toFixed(2)}</div>
     </div>`).join('')}
-    <div class="owe-total-row">
-      <span class="owe-total-label">Grand Total</span>
-      <span class="owe-total-val">$${grandTotal.toFixed(2)}</span>
+    <div style="display:flex;justify-content:space-between;padding:12px 16px;background:rgba(48,209,88,0.04);border-top:1px solid rgba(48,209,88,0.12)">
+      <span style="font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--muted2)">Grand Total</span>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:var(--green)">$${grandTotal.toFixed(2)}</span>
     </div>
   </div>
 </div>
@@ -1063,7 +1105,7 @@ app.get('/trip/:tripId', async (req, res) => {
 <!-- ACTION BUTTONS -->
 <div class="sec" style="margin-top:16px;display:flex;flex-direction:column;gap:10px">
   <button class="btn-green" id="add-receipt-btn" onclick="openReceiptForm()">📸 Add a Receipt</button>
-  <button class="btn-purple" onclick="copyTripLink('${tripUrl}')">🔗 Share Trip Link</button>
+  <button class="btn-purple" onclick="openInviteModal()">🔗 Share Trip Link</button>
 </div>
 
 <!-- RECEIPT FORM -->
@@ -1071,13 +1113,10 @@ app.get('/trip/:tripId', async (req, res) => {
   <div class="sec" style="margin-top:16px">
     <div class="sec-lbl">New Receipt</div>
     <div class="card" style="padding:20px;display:flex;flex-direction:column;gap:14px">
-      <div>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600">Receipt Name</div>
-        <input id="r-name" type="text" placeholder="e.g. Dinner at Casa Marina">
-      </div>
+      <div><div style="font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600">Receipt Name</div><input id="r-name" type="text" placeholder="e.g. Dinner at Casa Marina"></div>
       <div>
         <div style="font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:600">Photo — AI scans automatically</div>
-        <div id="r-drop" style="border:2px dashed rgba(48,209,88,0.25);border-radius:12px;padding:20px;text-align:center;cursor:pointer;transition:all 0.2s;position:relative;overflow:hidden" onclick="document.getElementById('r-file').click()">
+        <div id="r-drop" style="border:2px dashed rgba(48,209,88,0.25);border-radius:12px;padding:20px;text-align:center;cursor:pointer;transition:all 0.2s" onclick="document.getElementById('r-file').click()">
           <div id="r-empty" style="color:var(--muted);font-size:13px">📸 Tap to upload receipt photo</div>
           <img id="r-preview" style="display:none;max-width:100%;border-radius:8px;max-height:220px;object-fit:contain">
         </div>
@@ -1086,17 +1125,14 @@ app.get('/trip/:tripId', async (req, res) => {
       <div id="r-scan-status" style="display:none"></div>
       <div>
         <div style="font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:600">Split type</div>
-        <div style="display:flex;gap:8px">
-          <button class="split-btn active-e" id="r-btn-e" onclick="setSplit('even')">⚖️ Split Evenly</button>
-          <button class="split-btn" id="r-btn-i" onclick="setSplit('itemized')">📋 Itemized</button>
-        </div>
+        <div style="display:flex;gap:8px"><button class="split-btn ae" id="r-btn-e" onclick="setSplit('even')">⚖️ Even</button><button class="split-btn" id="r-btn-i" onclick="setSplit('itemized')">📋 Itemized</button></div>
       </div>
       <div id="r-even-sec">
         <div style="font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600">Total Amount</div>
         <div style="position:relative"><span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--muted)">$</span><input id="r-total" type="number" placeholder="0.00" step="0.01" style="padding-left:28px" oninput="updateEven()"></div>
         <div id="r-even-prev" style="margin-top:10px;display:none;background:var(--dark2);border-radius:10px;padding:10px 14px">
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);font-weight:600;margin-bottom:8px">Per Person</div>
-          ${people.map(p => `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:var(--muted2)">${p}</span><span id="ep-${p.toLowerCase().replace(/\s+/g,'_')}" style="color:var(--green);font-weight:600">$0.00</span></div>`).join('')}
+          ${people.map(p => `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px"><span style="color:var(--muted2)">${p}</span><span id="ep-${p.toLowerCase().replace(/\s+/g,'_')}" style="color:var(--green);font-weight:600">$0.00</span></div>`).join('')}
         </div>
       </div>
       <div id="r-item-sec" style="display:none">
@@ -1119,8 +1155,24 @@ app.get('/trip/:tripId', async (req, res) => {
 <div class="sec" style="margin-top:20px">
   <div class="sec-lbl">All Receipts (${(receipts||[]).length})</div>
   ${(receipts||[]).length === 0
-    ? '<div style="text-align:center;padding:32px 20px;color:var(--muted);font-size:14px;background:var(--dark);border:1px solid var(--border);border-radius:16px"><div style="font-size:36px;margin-bottom:12px">🧾</div><div style="font-weight:600;color:var(--muted2);margin-bottom:4px">No receipts yet</div><div>Be the first to add one!</div></div>'
+    ? '<div style="text-align:center;padding:28px 20px;color:var(--muted);font-size:14px;background:var(--dark);border:1px solid var(--border);border-radius:16px"><div style="font-size:32px;margin-bottom:10px">🧾</div><div style="font-weight:600;color:var(--muted2);margin-bottom:4px">No receipts yet</div><div>Be the first to add one!</div></div>'
     : `<div class="card">${receiptRowsHtml}</div>`}
+</div>
+
+<!-- COMMENTS SECTION -->
+<div class="sec" style="margin-top:24px">
+  <div class="sec-lbl">Comments (${(comments||[]).length})</div>
+  <div class="card" id="comments-card">
+    ${(comments||[]).length === 0
+      ? `<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px">No comments yet — say something! 👋</div>`
+      : commentsHtml}
+  </div>
+  <!-- POST COMMENT -->
+  <div style="margin-top:12px;background:var(--dark);border:1px solid var(--border2);border-radius:14px;overflow:hidden">
+    <input id="comment-author" type="text" placeholder="Your name" style="border-radius:0;border:none;border-bottom:1px solid var(--border);background:transparent;padding:12px 16px;font-size:14px">
+    <textarea id="comment-body" placeholder="Add a comment..." rows="2" style="border-radius:0;border:none;border-bottom:1px solid var(--border);background:transparent;resize:none;padding:12px 16px;font-size:14px;line-height:1.5"></textarea>
+    <button onclick="postComment()" style="width:100%;padding:13px;background:rgba(48,209,88,0.1);border:none;color:var(--green);font-family:'Epilogue',sans-serif;font-size:14px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent">💬 Post Comment</button>
+  </div>
 </div>
 
 <!-- ADD MEMBERS MODAL -->
@@ -1128,152 +1180,139 @@ app.get('/trip/:tripId', async (req, res) => {
   <div class="modal-sheet">
     <div class="modal-handle"></div>
     <div class="modal-title">Add Members</div>
-    <div class="modal-sub">Add more people to this trip. Anyone with the link can add receipts.</div>
+    <div class="modal-sub">Add more people to this trip. They'll appear in all receipt splits going forward.</div>
     <div style="display:flex;gap:8px;margin-bottom:14px">
       <input id="new-member-input" type="text" placeholder="Enter name" style="flex:1" onkeydown="if(event.key==='Enter')addNewMember()">
       <button onclick="addNewMember()" style="padding:12px 18px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.25);border-radius:10px;color:var(--green);font-family:'Epilogue',sans-serif;font-size:14px;font-weight:700;cursor:pointer;flex-shrink:0">+ Add</button>
     </div>
-    <div id="new-members-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px;max-height:200px;overflow-y:auto">
-      ${people.map((p, i) => `<div class="member-chip"><div class="member-chip-name"><div class="owe-av" style="background:${avatarColors[i % avatarColors.length]};width:28px;height:28px;font-size:11px">${p[0].toUpperCase()}</div>${p}</div><span style="font-size:11px;color:var(--muted)">existing</span></div>`).join('')}
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);font-weight:600;margin-bottom:8px">Current Members</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
+      ${people.map((p, i) => `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--dark2);border:1px solid var(--border);border-radius:10px"><div style="display:flex;align-items:center;gap:9px"><div style="width:28px;height:28px;border-radius:50%;background:${avatarColors[i % avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff">${p[0].toUpperCase()}</div><span style="font-size:13px;font-weight:600">${p}</span></div><span style="font-size:11px;color:var(--muted)">existing</span></div>`).join('')}
     </div>
-    <div id="members-to-add" style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px"></div>
-    <button class="btn-green" id="save-members-btn" onclick="saveMembersToTrip()" style="display:none">✓ Save New Members</button>
-    <button class="btn-outline" onclick="closeAddMembers()" style="margin-top:10px">Close</button>
+    <div id="new-members-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px"></div>
+    <button class="btn-green" id="save-members-btn" onclick="saveMembersToTrip()" style="display:none;margin-bottom:10px">✓ Save New Members</button>
+    <button class="btn-outline" onclick="closeAddMembers()">Close</button>
   </div>
 </div>
 
-<!-- INVITE SHEET -->
+<!-- INVITE MODAL -->
 <div class="modal-overlay" id="invite-modal" onclick="if(event.target.id==='invite-modal')closeInvite()">
   <div class="modal-sheet">
     <div class="modal-handle"></div>
-    <div class="modal-title">Share Trip</div>
-    <div class="modal-sub">Send this link to anyone going on the trip — they can add receipts and see who owes what.</div>
-    <div style="background:var(--dark2);border:1px solid var(--border2);border-radius:12px;padding:14px 16px;margin-bottom:16px;word-break:break-all;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted2)">${tripUrl}</div>
-    <div style="display:flex;flex-direction:column;gap:10px">
-      <button class="btn-green" onclick="copyTripLinkDirect('${tripUrl}')">📋 Copy Link</button>
-      <button class="btn-outline" onclick="shareTripNative('${tripUrl}', '${trip.name.replace(/'/g,"\\'")}')">📤 Share via...</button>
-      <button class="btn-outline" onclick="closeInvite()">Close</button>
+    <div class="modal-title">Share & Invite</div>
+    <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
+      <div style="background:var(--dark2);border:1px solid var(--border);border-radius:12px;padding:14px 16px">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);font-weight:700;margin-bottom:8px">📋 Trip Link (for existing members)</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted2);word-break:break-all;margin-bottom:10px">${tripUrl}</div>
+        <button onclick="copyLink('${tripUrl}')" style="width:100%;padding:10px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.25);border-radius:8px;color:var(--green);font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📋 Copy Trip Link</button>
+      </div>
+      <div style="background:var(--dark2);border:1px solid rgba(124,58,237,0.2);border-radius:12px;padding:14px 16px">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--purple3,#C084FC);font-weight:700;margin-bottom:6px">📨 Invite Link (requires signup)</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.5">Send this to someone new — they'll be prompted to create a RAVEN account before joining.</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted2);word-break:break-all;margin-bottom:10px">${inviteUrl}</div>
+        <div style="display:flex;gap:8px">
+          <button onclick="copyLink('${inviteUrl}')" style="flex:1;padding:10px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.25);border-radius:8px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:12px;font-weight:700;cursor:pointer">📋 Copy Invite</button>
+          <button onclick="shareNative('${inviteUrl}','${trip.name.replace(/'/g,"\\'")}')" style="flex:1;padding:10px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.25);border-radius:8px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:12px;font-weight:700;cursor:pointer">📤 Share via...</button>
+        </div>
+      </div>
     </div>
+    <button class="btn-outline" onclick="closeInvite()">Done</button>
   </div>
 </div>
 
 <!-- TOAST -->
-<div id="toast" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--dark2);border:1px solid var(--border2);border-radius:12px;padding:12px 20px;font-size:13px;color:var(--white);z-index:1000;opacity:0;transition:all 0.3s cubic-bezier(0.34,1.56,0.64,1);white-space:nowrap;box-shadow:0 20px 60px rgba(0,0,0,0.5)"></div>
+<div id="toast" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--dark2);border:1px solid var(--border2);border-radius:12px;padding:12px 20px;font-size:13px;color:var(--white);z-index:9999;opacity:0;transition:all 0.3s cubic-bezier(0.34,1.56,0.64,1);white-space:nowrap;box-shadow:0 20px 60px rgba(0,0,0,0.5)"></div>
+
+<style>
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.4}}
+</style>
 
 <script>
   const TRIP_ID='${tripId}',TRIP_TOKEN='${trip.share_token}',BACKEND='${baseUrl}';
   let PEOPLE=${JSON.stringify(people)};
-  let splitType='even',tripItems=[],imgBase64=null;
-  let newMembersToAdd=[];
-
-  function toast(msg,color='#30D158'){
-    const t=document.getElementById('toast');
-    t.textContent=msg;t.style.borderColor=color==='red'?'rgba(255,68,68,0.3)':'rgba(48,209,88,0.3)';
-    t.style.opacity='1';t.style.transform='translateX(-50%) translateY(0)';
-    setTimeout(()=>{t.style.opacity='0';t.style.transform='translateX(-50%) translateY(80px)'},3200);
-  }
-
-  function openReceiptForm(){
-    document.getElementById('receipt-form').style.display='block';
-    document.getElementById('add-receipt-btn').style.display='none';
-    document.getElementById('receipt-form').scrollIntoView({behavior:'smooth',block:'start'});
-  }
-  function closeReceiptForm(){
-    document.getElementById('receipt-form').style.display='none';
-    document.getElementById('add-receipt-btn').style.display='block';
-  }
-
-  function copyTripLink(url){
-    navigator.clipboard.writeText(url).then(()=>toast('✈️ Trip link copied!')).catch(()=>openInviteModal());
-    openInviteModal();
-  }
-  function openInviteModal(){document.getElementById('invite-modal').classList.add('open')}
-  function closeInvite(){document.getElementById('invite-modal').classList.remove('open')}
-  function copyTripLinkDirect(url){navigator.clipboard.writeText(url).then(()=>{toast('✈️ Link copied!');closeInvite()}).catch(()=>prompt('Copy this link:',url))}
-  function shareTripNative(url,name){
-    if(navigator.share)navigator.share({title:'✈️ '+name+' — RAVEN Trip Hub',text:'Join our trip hub and add receipts!',url}).catch(()=>{});
-    else copyTripLinkDirect(url);
-  }
-
-  // ── ADD MEMBERS ──
-  function openAddMembers(){
-    newMembersToAdd=[];
-    renderNewMembers();
-    document.getElementById('add-members-modal').classList.add('open');
-  }
-  function closeAddMembers(){document.getElementById('add-members-modal').classList.remove('open')}
-
-  function addNewMember(){
-    const input=document.getElementById('new-member-input');
-    const name=input.value.trim();
-    if(!name)return;
-    if(PEOPLE.map(p=>p.toLowerCase()).includes(name.toLowerCase())){toast('Already in this trip','red');return}
-    if(newMembersToAdd.map(p=>p.toLowerCase()).includes(name.toLowerCase())){toast('Already added','red');return}
-    newMembersToAdd.push(name);
-    input.value='';
-    renderNewMembers();
-  }
-
-  function removeNewMember(name){
-    newMembersToAdd=newMembersToAdd.filter(p=>p!==name);
-    renderNewMembers();
-  }
-
+  let splitType='even',tripItems=[],imgBase64=null,newMembers=[];
   const avatarColors=${JSON.stringify(avatarColors)};
 
+  function toast(msg,ok=true){
+    const t=document.getElementById('toast');
+    t.textContent=msg;t.style.borderColor=ok?'rgba(48,209,88,0.3)':'rgba(255,68,68,0.3)';
+    t.style.opacity='1';t.style.transform='translateX(-50%) translateY(0)';
+    setTimeout(()=>{t.style.opacity='0';t.style.transform='translateX(-50%) translateY(80px)'},3000);
+  }
+
+  function openReceiptForm(){document.getElementById('receipt-form').style.display='block';document.getElementById('add-receipt-btn').style.display='none';setTimeout(()=>document.getElementById('receipt-form').scrollIntoView({behavior:'smooth',block:'start'}),50);}
+  function closeReceiptForm(){document.getElementById('receipt-form').style.display='none';document.getElementById('add-receipt-btn').style.display='block';}
+  function openInviteModal(){document.getElementById('invite-modal').classList.add('open')}
+  function closeInvite(){document.getElementById('invite-modal').classList.remove('open')}
+  function openAddMembers(){newMembers=[];renderNewMembers();document.getElementById('add-members-modal').classList.add('open')}
+  function closeAddMembers(){document.getElementById('add-members-modal').classList.remove('open')}
+
+  function copyLink(url){navigator.clipboard.writeText(url).then(()=>toast('✈️ Link copied!')).catch(()=>prompt('Copy:',url));}
+  function shareNative(url,name){if(navigator.share)navigator.share({title:'Join '+name+' on RAVEN',url}).catch(()=>{});else copyLink(url);}
+
+  function addNewMember(){
+    const inp=document.getElementById('new-member-input');
+    const name=inp.value.trim();if(!name)return;
+    if(PEOPLE.map(p=>p.toLowerCase()).includes(name.toLowerCase())){toast('Already on this trip',false);return;}
+    if(newMembers.map(p=>p.toLowerCase()).includes(name.toLowerCase())){toast('Already added',false);return;}
+    newMembers.push(name);inp.value='';renderNewMembers();
+  }
+  function removeNewMember(name){newMembers=newMembers.filter(p=>p!==name);renderNewMembers();}
   function renderNewMembers(){
-    const container=document.getElementById('members-to-add');
-    const saveBtn=document.getElementById('save-members-btn');
-    container.innerHTML=newMembersToAdd.map(function(name){
-      return '<div class="member-chip" style="border-color:rgba(48,209,88,0.2);background:rgba(48,209,88,0.05)">'
-        +'<div class="member-chip-name">'
-        +'<div class="owe-av" style="background:linear-gradient(135deg,#30D158,#0EA5E9);width:28px;height:28px;font-size:11px">'+name[0].toUpperCase()+'</div>'
-        +name
-        +'</div>'
-        +'<button class="member-chip-remove" onclick="removeNewMember(\''+name.replace(/'/g,"\\'")+'\')">\xd7</button>'
+    const c=document.getElementById('new-members-list');
+    const btn=document.getElementById('save-members-btn');
+    c.innerHTML=newMembers.map(function(n){
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:rgba(48,209,88,0.05);border:1px solid rgba(48,209,88,0.2);border-radius:10px">'
+        +'<div style="display:flex;align-items:center;gap:9px">'
+        +'<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#30D158,#0EA5E9);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff">'+n[0].toUpperCase()+'</div>'
+        +'<span style="font-size:13px;font-weight:600;color:#F0EEF8">'+n+'</span></div>'
+        +'<button onclick="removeNewMember(\''+n.replace(/\'/g,"\\'")+'\')" style="background:none;border:none;color:#6E6B80;cursor:pointer;font-size:18px;padding:0">\xd7</button>'
         +'</div>';
     }).join('');
-    saveBtn.style.display=newMembersToAdd.length>0?'block':'none';
+    btn.style.display=newMembers.length>0?'block':'none';
   }
-
   async function saveMembersToTrip(){
-    if(!newMembersToAdd.length)return;
-    const btn=document.getElementById('save-members-btn');
-    btn.textContent='Saving...';btn.disabled=true;
+    const btn=document.getElementById('save-members-btn');btn.textContent='Saving...';btn.disabled=true;
     try{
-      const res=await fetch(BACKEND+'/trip/'+TRIP_ID+'/add-members',{
-        method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({token:TRIP_TOKEN,members:newMembersToAdd})
-      });
-      const d=await res.json();
+      const r=await fetch(BACKEND+'/trip/'+TRIP_ID+'/add-members',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,members:newMembers})});
+      const d=await r.json();
       if(d.success){toast('✅ Members added!');setTimeout(()=>location.reload(),1200);}
-      else{toast(d.error||'Error adding members','red');btn.textContent='✓ Save New Members';btn.disabled=false;}
-    }catch(e){toast('Network error','red');btn.textContent='✓ Save New Members';btn.disabled=false;}
+      else{toast(d.error||'Error',false);btn.textContent='✓ Save';btn.disabled=false;}
+    }catch(e){toast('Network error',false);btn.textContent='✓ Save';btn.disabled=false;}
   }
 
-  // ── SPLIT TYPE ──
+  // COMMENTS
+  async function postComment(){
+    const author=document.getElementById('comment-author').value.trim();
+    const body=document.getElementById('comment-body').value.trim();
+    if(!author||!body){toast('Enter your name and a comment',false);return;}
+    try{
+      const r=await fetch(BACKEND+'/trip/'+TRIP_ID+'/comment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,author_name:author,body})});
+      const d=await r.json();
+      if(d.success){document.getElementById('comment-body').value='';toast('✅ Comment posted!');setTimeout(()=>location.reload(),1000);}
+      else toast(d.error||'Error posting',false);
+    }catch(e){toast('Network error',false);}
+  }
+
+  // SPLIT
   function setSplit(t){
     splitType=t;
     document.getElementById('r-even-sec').style.display=t==='even'?'block':'none';
     document.getElementById('r-item-sec').style.display=t==='itemized'?'block':'none';
-    document.getElementById('r-btn-e').className='split-btn'+(t==='even'?' active-e':'');
-    document.getElementById('r-btn-i').className='split-btn'+(t==='itemized'?' active-i':'');
+    document.getElementById('r-btn-e').className='split-btn'+(t==='even'?' ae':'');
+    document.getElementById('r-btn-i').className='split-btn'+(t==='itemized'?' ai':'');
   }
-
   function updateEven(){
     const v=parseFloat(document.getElementById('r-total').value)||0,per=v/PEOPLE.length;
     document.getElementById('r-even-prev').style.display=v>0?'block':'none';
     PEOPLE.forEach(p=>{const el=document.getElementById('ep-'+p.toLowerCase().replace(/\\s+/g,'_'));if(el)el.textContent='$'+per.toFixed(2);});
   }
-
   function addItem(){
     const n=document.getElementById('r-iname').value.trim(),p=parseFloat(document.getElementById('r-iprice').value);
     if(!n||isNaN(p)||p<=0)return;
     tripItems.push({id:Date.now(),name:n,price:p,assignees:[]});
-    document.getElementById('r-iname').value='';document.getElementById('r-iprice').value='';
-    renderItems();
+    document.getElementById('r-iname').value='';document.getElementById('r-iprice').value='';renderItems();
   }
-
   function renderItems(){
     document.getElementById('r-items-list').innerHTML=tripItems.map(item=>
       '<div style="background:var(--dark2);border:1px solid var(--border);border-radius:10px;padding:10px 12px">'
@@ -1286,21 +1325,14 @@ app.get('/trip/:tripId', async (req, res) => {
       +'</div></div>'
     ).join('');
   }
-
   function toggleAssign(id,p){const item=tripItems.find(i=>i.id===id);if(!item)return;if(item.assignees.includes(p))item.assignees=item.assignees.filter(a=>a!==p);else item.assignees.push(p);renderItems();}
 
   async function tripPhoto(input){
     const file=input.files[0];if(!file)return;
     const reader=new FileReader();
     reader.onload=async e=>{
-      document.getElementById('r-preview').src=e.target.result;
-      document.getElementById('r-preview').style.display='block';
-      document.getElementById('r-empty').style.display='none';
-      const resized=await new Promise(res=>{
-        const i=new Image();
-        i.onload=function(){let{width:w,height:h}=i;if(w>1600||h>1600){if(w>h){h=Math.round(h*1600/w);w=1600;}else{w=Math.round(w*1600/h);h=1600;}}const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(i,0,0,w,h);res(c.toDataURL('image/jpeg',0.88));};
-        i.src=e.target.result;
-      });
+      document.getElementById('r-preview').src=e.target.result;document.getElementById('r-preview').style.display='block';document.getElementById('r-empty').style.display='none';
+      const resized=await new Promise(res=>{const i=new Image();i.onload=function(){let{width:w,height:h}=i;if(w>1600||h>1600){if(w>h){h=Math.round(h*1600/w);w=1600;}else{w=Math.round(w*1600/h);h=1600;}}const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(i,0,0,w,h);res(c.toDataURL('image/jpeg',0.88));};i.src=e.target.result;});
       imgBase64=resized.split(',')[1];
       const st=document.getElementById('r-scan-status');st.style.display='block';
       st.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:8px"><div class="spinner"></div><span style="font-size:13px;color:#C084FC;font-weight:600">Scanning receipt with AI...</span></div>';
@@ -1326,19 +1358,19 @@ app.get('/trip/:tripId', async (req, res) => {
     let total=0,splits={};
     if(splitType==='even'){
       total=parseFloat(document.getElementById('r-total').value)||0;
-      if(total<=0){btn.textContent='Save Receipt';btn.disabled=false;toast('Enter a total amount','red');return;}
+      if(total<=0){btn.textContent='Save Receipt';btn.disabled=false;toast('Enter a total amount',false);return;}
       const per=total/PEOPLE.length;PEOPLE.forEach(p=>{splits[p]=per;});
     }else{
       PEOPLE.forEach(p=>{splits[p]=0;});
       tripItems.forEach(item=>{const as=item.assignees.length>0?item.assignees:PEOPLE;const sh=item.price/as.length;as.forEach(p=>{splits[p]=(splits[p]||0)+sh;});total+=item.price;});
-      if(total<=0){btn.textContent='Save Receipt';btn.disabled=false;toast('Add at least one item','red');return;}
+      if(total<=0){btn.textContent='Save Receipt';btn.disabled=false;toast('Add at least one item',false);return;}
     }
     try{
       const r=await fetch(BACKEND+'/trip/'+TRIP_ID+'/receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,total,splits,token:TRIP_TOKEN,items:splitType==='itemized'?tripItems:[]})});
       const d=await r.json();
       if(d.success){toast('✅ Receipt saved!');setTimeout(()=>location.reload(),1200);}
-      else{btn.textContent='Save Receipt';btn.disabled=false;toast(d.error||'Error saving','red');}
-    }catch(e){btn.textContent='Save Receipt';btn.disabled=false;toast('Network error','red');}
+      else{btn.textContent='Save Receipt';btn.disabled=false;toast(d.error||'Error',false);}
+    }catch(e){btn.textContent='Save Receipt';btn.disabled=false;toast('Network error',false);}
   }
 </script>
 </body>
@@ -1346,6 +1378,20 @@ app.get('/trip/:tripId', async (req, res) => {
 
   res.send(html);
 });
+
+// ── TRIP COMMENT ────────────────────────────────────────────────────────────────
+app.post('/trip/:tripId/comment', async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const { token, author_name, body } = req.body;
+    const { data: trip } = await supabase.from('trips').select('share_token').eq('id', tripId).single();
+    if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
+    if (!body?.trim()) return res.json({ success: false, error: 'Empty comment' });
+    await supabase.from('trip_comments').insert({ trip_id: tripId, author_name: author_name||'Anonymous', body: body.trim(), created_at: new Date().toISOString() });
+    res.json({ success: true });
+  } catch(err) { res.json({ success: false, error: err.message }); }
+});
+
 
 // ── ADD MEMBERS TO TRIP ────────────────────────────────────────────────────────
 app.post('/trip/:tripId/add-members', async (req, res) => {
