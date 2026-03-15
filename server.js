@@ -655,7 +655,7 @@ app.get('/bill/:billId', async (req, res) => {
       if(p.applepay&&p.applepay.trim()){
         const ap=p.applepay.trim();
         const dig=ap.replace(/\D/g,'');
-        if(dig.length>=7){const sms='sms:+'+dig+'&body='+encodeURIComponent('Sending $'+amt+' via Apple Pay');const el=document.createElement('a');el.className='pm-row';el.href=sms;el.innerHTML='<div class="pm-icon" style="background:#222;border:1px solid #444">Pay</div><div class="pm-info"><b>Apple Pay</b><span>Opens iMessage to '+ap+'</span></div><span style="color:#6E6B80;font-size:16px">→</span>';mc.appendChild(el);n++;}
+        const e164=dig.length===10?'1'+dig:(dig.length===11&&dig[0]==='1'?dig:dig);if(dig.length>=7){const sms='sms:+'+e164+'&body='+encodeURIComponent('Sending $'+amt+' via Apple Pay');const el=document.createElement('a');el.className='pm-row';el.href=sms;el.innerHTML='<div class="pm-icon" style="background:#222;border:1px solid #444">Pay</div><div class="pm-info"><b>Apple Pay</b><span>Opens iMessage to '+ap+'</span></div><span style="color:#6E6B80;font-size:16px">→</span>';mc.appendChild(el);n++;}
         else{row('#222','Pay','Apple Pay',ap+' · tap to copy',null,ap);}
       }
       if(n===0){mc.innerHTML='<p style="color:#6E6B80;text-align:center;padding:16px 0;font-size:13px">No payment methods set up yet.</p>';}
