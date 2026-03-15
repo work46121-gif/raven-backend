@@ -508,16 +508,44 @@ app.get('/bill/:billId', async (req, res) => {
   const receiptHTML = bill.receipt_image
     ? `<div style="padding:16px 20px 0;max-width:500px;margin:0 auto"><div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:8px">Receipt</div><img src="data:image/jpeg;base64,${bill.receipt_image}" style="width:100%;border-radius:14px;display:block"></div>` : '';
 
-  const participantItems = {};
+  // Build per-person item map with prices
+  const participantItems = {}; // name -> [{name, price, splitWith}]
   participants.forEach(p => { participantItems[p.name.toLowerCase()] = []; });
   if (items.length > 0 && selections.length > 0) {
-    selections.forEach(sel => {
-      const item = items.find(i => String(i.id) === String(sel.item_id));
-      const key = (sel.participant_name || '').toLowerCase();
-      if (item && participantItems[key] !== undefined) participantItems[key].push(item.name);
+    items.forEach(item => {
+      const claimers = selections.filter(s => String(s.item_id) === String(item.id)).map(s => s.participant_name);
+      claimers.forEach(claimer => {
+        const key = claimer.toLowerCase();
+        if (participantItems[key] !== undefined) {
+          participantItems[key].push({ name: item.name, price: parseFloat(item.price), splitWith: claimers.length });
+        }
+      });
     });
     const hasAny = Object.values(participantItems).some(a => a.length > 0);
-    if (!hasAny) participants.forEach(p => { participantItems[p.name.toLowerCase()] = items.map(i => i.name); });
+    if (!hasAny) {
+      participants.forEach(p => {
+        participantItems[p.name.toLowerCase()] = items.map(i => ({ name: i.name, price: parseFloat(i.price), splitWith: participants.length }));
+      });
+    }
+  }
+
+  function buildBreakdown(p, myItems, bill, participantCount) {
+    if (myItems.length === 0) return '';
+    const tax = parseFloat(bill.tax||0);
+    const tip = parseFloat(bill.tip||0);
+    const shared = participantCount > 0 ? (tax+tip)/participantCount : 0;
+    const itemsTotal = myItems.reduce((s,i) => s + i.price/i.splitWith, 0);
+    let rows = myItems.map(i => {
+      const share = (i.price/i.splitWith).toFixed(2);
+      const split = i.splitWith > 1 ? ` <span style="color:#9896A8;font-size:10px">(÷${i.splitWith})</span>` : '';
+      return `<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6E6B80">${i.name}${split}</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$${share}</span></div>`;
+    }).join('');
+    let shared_rows = '';
+    if (tax) shared_rows += `<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="font-size:11px;color:#6E6B80">Tax (split)</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$${(tax/participantCount).toFixed(2)}</span></div>`;
+    if (tip) shared_rows += `<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="font-size:11px;color:#6E6B80">Tip (split)</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$${(tip/participantCount).toFixed(2)}</span></div>`;
+    const divider = shared_rows ? `<div style="border-top:1px solid rgba(255,255,255,0.06);margin-top:4px;padding-top:4px">${shared_rows}</div>` : '';
+    const total = (itemsTotal + shared).toFixed(2);
+    return `<div style="margin-top:8px;background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px">${rows}${divider}<div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:4px;padding-top:5px;display:flex;justify-content:space-between"><span style="font-size:11px;font-weight:700;color:#F0EEF8">Total</span><span style="font-size:12px;font-weight:700;color:#30D158;font-family:monospace">$${total}</span></div></div>`;
   }
 
   const participantsHTML = participants.length > 0 ? `
@@ -526,16 +554,16 @@ app.get('/bill/:billId', async (req, res) => {
       <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:16px;overflow:hidden">
         ${participants.map(p => {
           const myItems = participantItems[p.name.toLowerCase()] || [];
-          const chips = myItems.map(n => `<span style="display:inline-block;padding:2px 8px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.2);border-radius:6px;font-size:11px;color:#C084FC;margin:2px 2px 0 0">${n}</span>`).join('');
           const safeName = p.name.replace(/"/g, '&quot;');
+          const breakdownHTML = buildBreakdown(p, myItems, bill, participants.length);
           return `<div id="prow-${p.id}" style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)">
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
               <div style="min-width:0;flex:1">
                 <div style="font-size:15px;font-weight:600;color:#F0EEF8">${p.name}</div>
                 <div id="pstatus-${p.id}" style="font-size:12px;color:${p.paid ? '#30D158' : '#6E6B80'};margin-top:2px">${p.paid ? '✅ Paid' : 'Owes $' + parseFloat(p.amount).toFixed(2)}</div>
-                ${chips ? `<div style="margin-top:6px">${chips}</div>` : ''}
+                ${breakdownHTML}
               </div>
-              ${!p.paid ? `<button onclick="showPay(this)" data-pid="${p.id}" data-name="${safeName}" data-amount="${parseFloat(p.amount).toFixed(2)}" id="paybtn-${p.id}" style="padding:9px 18px;background:#30D158;border:none;border-radius:10px;color:#000;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;flex-shrink:0">💳 Pay</button>` : '<span style="font-size:18px">✅</span>'}
+              ${!p.paid ? `<button onclick="showPay(this)" data-pid="${p.id}" data-name="${safeName}" data-amount="${parseFloat(p.amount).toFixed(2)}" id="paybtn-${p.id}" style="padding:9px 18px;background:#30D158;border:none;border-radius:10px;color:#000;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;flex-shrink:0;margin-top:2px">💳 Pay</button>` : '<span style="font-size:18px">✅</span>'}
             </div>
           </div>`;
         }).join('')}
@@ -599,14 +627,28 @@ app.get('/bill/:billId', async (req, res) => {
   ${participantsHTML}
   ${itemsListHTML}
 
-  <div style="max-width:500px;margin:24px auto 0;padding:0 20px">
+  <div style="max-width:500px;margin:24px auto 0;padding:0 20px 40px">
     <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:10px">Comments</div>
     <div id="clist" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
       <div id="no-c" style="color:#6E6B80;font-size:13px;text-align:center;padding:12px 0">No comments yet</div>
     </div>
     <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:14px;overflow:hidden">
       <input id="cname" type="text" placeholder="Your name" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#F0EEF8;font-family:inherit;font-size:14px;outline:none"/>
-      <textarea id="cbody" placeholder="Add a comment... e.g. Can we double-check the tip?" rows="3" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#F0EEF8;font-family:inherit;font-size:14px;outline:none;resize:none;line-height:1.5"></textarea>
+      <textarea id="cbody" placeholder="Add a comment... e.g. Can we double-check the tip?" rows="2" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#F0EEF8;font-family:inherit;font-size:14px;outline:none;resize:none;line-height:1.5"></textarea>
+      <div style="display:flex;border-bottom:1px solid rgba(255,255,255,0.07)">
+        <button onclick="toggleGif()" style="flex:0;padding:12px 16px;background:transparent;border:none;color:#6E6B80;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">🎭 GIF</button>
+        <div id="gif-selected" style="flex:1;padding:12px 8px;font-size:12px;color:#6E6B80;display:flex;align-items:center;gap:8px;overflow:hidden">
+          <span id="gif-preview-text" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></span>
+          <button id="gif-clear" onclick="clearGif()" style="display:none;background:rgba(255,68,68,0.15);border:none;color:#FF6B6B;font-size:11px;padding:2px 8px;border-radius:6px;cursor:pointer;flex-shrink:0">✕</button>
+        </div>
+      </div>
+      <!-- GIF search panel -->
+      <div id="gif-panel" style="display:none;border-bottom:1px solid rgba(255,255,255,0.07)">
+        <div style="padding:10px 12px;display:flex;gap:8px">
+          <input id="gif-search" type="text" placeholder="Search GIFs... e.g. money, thanks, funny" style="flex:1;padding:9px 12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#F0EEF8;font-family:inherit;font-size:13px;outline:none" oninput="searchGifs(this.value)"/>
+        </div>
+        <div id="gif-results" style="display:flex;flex-wrap:wrap;gap:4px;padding:0 12px 10px;max-height:200px;overflow-y:auto"></div>
+      </div>
       <button id="csub" onclick="postC()" style="width:100%;padding:13px;background:rgba(48,209,88,0.1);border:none;color:#30D158;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">💬 Post Comment</button>
     </div>
   </div>
@@ -673,7 +715,55 @@ app.get('/bill/:billId', async (req, res) => {
       }catch(e){alert('Error. Try again.');}
     }
 
-    async function loadC(){
+    // ── GIF ──
+    let selectedGif = null;
+    let gifTimer = null;
+
+    function toggleGif() {
+      const panel = document.getElementById('gif-panel');
+      panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+      if (panel.style.display === 'block') {
+        document.getElementById('gif-search').focus();
+        searchGifs('money');
+      }
+    }
+
+    function clearGif() {
+      selectedGif = null;
+      document.getElementById('gif-preview-text').textContent = '';
+      document.getElementById('gif-clear').style.display = 'none';
+      document.getElementById('gif-panel').style.display = 'none';
+    }
+
+    async function searchGifs(q) {
+      if (!q || q.length < 2) return;
+      clearTimeout(gifTimer);
+      gifTimer = setTimeout(async () => {
+        try {
+          const key = 'AIzaSyD-your-key'; // Tenor public beta key
+          const res = await fetch('https://tenor.googleapis.com/v2/search?q='+encodeURIComponent(q)+'&key=AIzaSyD-9tSrke72I6e_a6aHG0-KoE0byR_fFw0&limit=12&media_filter=gif');
+          const data = await res.json();
+          const container = document.getElementById('gif-results');
+          container.innerHTML = '';
+          (data.results||[]).forEach(g => {
+            const url = g.media_formats?.tinygif?.url || g.media_formats?.gif?.url;
+            if (!url) return;
+            const img = document.createElement('img');
+            img.src = url;
+            img.style.cssText = 'width:calc(33% - 3px);border-radius:6px;cursor:pointer;object-fit:cover;height:80px;flex-shrink:0';
+            img.addEventListener('click', () => {
+              selectedGif = url;
+              document.getElementById('gif-preview-text').textContent = '🎭 GIF selected';
+              document.getElementById('gif-clear').style.display = 'inline';
+              document.getElementById('gif-panel').style.display = 'none';
+            });
+            container.appendChild(img);
+          });
+        } catch(e) {}
+      }, 400);
+    }
+
+        async function loadC(){
       try{
         const r=await fetch('/bill/'+BID+'/comments');
         const d=await r.json();
@@ -684,7 +774,7 @@ app.get('/bill/:billId', async (req, res) => {
         if(none)none.style.display='none';
         list.innerHTML=comments.map(c=>{
           const dt=new Date(c.created_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
-          return '<div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:14px 16px"><div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px;font-weight:700">'+(c.name||'Anonymous')+'</span><span style="font-size:11px;color:#6E6B80">'+dt+'</span></div><div style="font-size:14px;color:#9896A8;line-height:1.5">'+c.body+'</div></div>';
+          const gifHtml = c.gif_url ? '<img src="'+c.gif_url+'" style="width:100%;border-radius:8px;margin-top:8px;max-height:200px;object-fit:cover">' : ''; return '<div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:14px 16px"><div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px;font-weight:700">'+(c.name||'Anonymous')+'</span><span style="font-size:11px;color:#6E6B80">'+dt+'</span></div>'+(c.body?'<div style="font-size:14px;color:#9896A8;line-height:1.5">'+c.body+'</div>':'')+gifHtml+'</div>';
         }).join('');
       }catch(e){}
     }
@@ -696,9 +786,9 @@ app.get('/bill/:billId', async (req, res) => {
       const btn=document.getElementById('csub');
       btn.textContent='Posting...';btn.disabled=true;
       try{
-        const r=await fetch('/bill/'+BID+'/comments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name||'Anonymous',body})});
+        const r=await fetch('/bill/'+BID+'/comments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name||'Anonymous',body,gif_url:selectedGif||null})});
         const d=await r.json();
-        if(d.success){document.getElementById('cbody').value='';document.getElementById('cname').value='';await loadC();toast('✅ Posted!');}
+        if(d.success){document.getElementById('cbody').value='';document.getElementById('cname').value='';clearGif();await loadC();toast('✅ Posted!');}
         else toast('Error: '+(d.error||'try again'));
       }catch(e){toast('Network error');}
       finally{btn.textContent='💬 Post Comment';btn.disabled=false;}
@@ -734,7 +824,8 @@ app.post('/bill/:billId/comments', async (req, res) => {
     const { billId } = req.params;
     const { name, body } = req.body;
     if (!body?.trim()) return res.json({ success: false, error: 'Empty comment' });
-    const { error: ie } = await supabase.from('bill_comments').insert({ bill_id: billId, name: name?.trim()||'Anonymous', body: body.trim(), created_at: new Date().toISOString() });
+    const { gif_url } = req.body;
+    const { error: ie } = await supabase.from('bill_comments').insert({ bill_id: billId, name: name?.trim()||'Anonymous', body: body.trim(), gif_url: gif_url||null, created_at: new Date().toISOString() });
     if (ie) return res.json({ success: false, error: ie.message });
     const { data: bill } = await supabase.from('bills').select('name,creator_phone').eq('id', billId).single();
     if (bill?.creator_phone && !bill.creator_phone.includes('@')) {
