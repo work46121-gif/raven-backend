@@ -867,6 +867,14 @@ app.get('/trip/:tripId', async (req, res) => {
   const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
   if (!trip) return res.status(404).send('<!DOCTYPE html><html><head><meta charset="UTF-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px}</style></head><body><div><div style="font-size:52px;margin-bottom:16px">🪶</div><h2 style="font-size:24px;margin-bottom:8px">Trip Not Found</h2><p style="color:#6E6B80">This trip link may have expired or been deleted.</p></div></body></html>');
 
+  // Auto-generate invite_token if trip doesn't have one yet
+  let inviteToken = trip.invite_token;
+  if (!inviteToken) {
+    inviteToken = Array.from({length:16}, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random()*36)]).join('');
+    await supabase.from('trips').update({ invite_token: inviteToken }).eq('id', tripId);
+    trip.invite_token = inviteToken;
+  }
+
   // Invite link uses invite_token; share link uses share_token
   const validInvite = token === trip.invite_token;
   const validShare = token === trip.share_token;
@@ -993,7 +1001,8 @@ app.get('/trip/:tripId', async (req, res) => {
           <span style="font-size:13px;font-weight:700">${c.author_name || 'Anonymous'}</span>
           <span style="font-size:11px;color:#6E6B80">${timeStr}</span>
         </div>
-        <div style="font-size:14px;line-height:1.6;color:#E0DEF0;word-break:break-word">${c.body || ''}</div>
+        ${c.body ? `<div style="font-size:14px;line-height:1.6;color:#E0DEF0;word-break:break-word;margin-bottom:${c.gif_url ? '8px' : '0'}">${c.body}</div>` : ''}
+        ${c.gif_url ? `<img src="${c.gif_url}" style="max-width:200px;border-radius:10px;display:block">` : ''}
       </div>
     </div>`;
   }).join('');
@@ -1207,11 +1216,44 @@ ${trip.cover_image
       ? `<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px">No comments yet — say something! 👋</div>`
       : commentsHtml}
   </div>
-  <!-- POST COMMENT -->
+  <!-- POST COMMENT BOX -->
   <div style="margin-top:12px;background:var(--dark);border:1px solid var(--border2);border-radius:14px;overflow:hidden">
     <input id="comment-author" type="text" placeholder="Your name" style="border-radius:0;border:none;border-bottom:1px solid var(--border);background:transparent;padding:12px 16px;font-size:14px">
-    <textarea id="comment-body" placeholder="Add a comment..." rows="2" style="border-radius:0;border:none;border-bottom:1px solid var(--border);background:transparent;resize:none;padding:12px 16px;font-size:14px;line-height:1.5"></textarea>
-    <button onclick="postComment()" style="width:100%;padding:13px;background:rgba(48,209,88,0.1);border:none;color:var(--green);font-family:'Epilogue',sans-serif;font-size:14px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent">💬 Post Comment</button>
+    <!-- GIF PREVIEW -->
+    <div id="gif-preview-wrap" style="display:none;padding:10px 12px;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;gap:8px">
+        <img id="gif-preview-img" style="height:80px;border-radius:8px;object-fit:cover">
+        <button onclick="clearGif()" style="padding:4px 10px;background:rgba(255,68,68,0.12);border:1px solid rgba(255,68,68,0.25);border-radius:6px;color:#FF6B6B;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">✕ Remove</button>
+      </div>
+    </div>
+    <textarea id="comment-body" placeholder="Add a comment..." rows="2" style="border-radius:0;border:none;border-bottom:1px solid var(--border);background:transparent;resize:none;padding:12px 16px;font-size:14px;line-height:1.5;width:100%;color:#F0EEF8;font-family:inherit;outline:none"></textarea>
+    <!-- GIF SEARCH PANEL -->
+    <div id="gif-panel" style="display:none;border-bottom:1px solid var(--border)">
+      <div style="padding:8px 12px;display:flex;gap:8px">
+        <input id="gif-search-input" type="text" placeholder="Search GIFs... 🎭" style="flex:1;padding:8px 12px;font-size:13px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#F0EEF8;font-family:inherit;outline:none" oninput="searchGifs(this.value)">
+      </div>
+      <div id="gif-results" style="display:flex;flex-wrap:wrap;gap:4px;padding:0 12px 10px;max-height:180px;overflow-y:auto"></div>
+    </div>
+    <div style="display:flex;border-top:1px solid var(--border)">
+      <button onclick="toggleGifPanel()" style="padding:12px 16px;background:transparent;border:none;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;-webkit-tap-highlight-color:transparent">🎭 GIF</button>
+      <button onclick="postComment()" style="flex:1;padding:13px;background:rgba(48,209,88,0.1);border:none;border-left:1px solid var(--border);color:var(--green);font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent">💬 Post</button>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS SECTION -->
+<div class="sec" style="margin-top:24px;margin-bottom:16px">
+  <div class="sec-lbl">Trip Settings</div>
+  <div class="card" style="padding:20px;display:flex;flex-direction:column;gap:14px">
+    <div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600">Trip Name</div>
+      <input id="settings-name" type="text" value="${trip.name.replace(/'/g,'&#39;').replace(/"/g,'&quot;')}" placeholder="Trip name">
+    </div>
+    <div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600">Trip Date (for countdown)</div>
+      <input id="settings-date" type="date" value="${trip.trip_date || ''}" style="color-scheme:dark">
+    </div>
+    <button onclick="saveSettings()" class="btn-green" style="padding:13px">💾 Save Changes</button>
   </div>
 </div>
 
@@ -1278,6 +1320,7 @@ ${trip.cover_image
   const TRIP_ID='${tripId}',TRIP_TOKEN='${trip.share_token}',BACKEND='${baseUrl}';
   let PEOPLE=${JSON.stringify(people)};
   let splitType='even',tripItems=[],imgBase64=null,newMembers=[];
+  let selectedGifUrl=null,gifTimer=null;
   const avatarColors=${JSON.stringify(avatarColors)};
 
   function toast(msg,ok=true){
@@ -1298,32 +1341,103 @@ ${trip.cover_image
   function copyAndToast(url,msg){navigator.clipboard.writeText(url).then(()=>toast(msg)).catch(()=>{prompt('Copy this link:',url);toast(msg);});}
   function shareNative(url,title){if(navigator.share)navigator.share({title,url}).catch(()=>copyLink(url));else copyAndToast(url,'📋 Copied!');}
 
-  async function uploadCover(input){
+  // ── COVER UPLOAD (fixed: use onload callback properly) ──
+  function uploadCover(input){
     const file=input.files[0];if(!file)return;
     const reader=new FileReader();
-    reader.onload=async e=>{
-      const resized=await new Promise(res=>{
-        const img=new Image();img.onload=function(){
-          const tw=800,th=400;let{width:w,height:h}=img;
-          const scale=Math.max(tw/w,th/h);w=Math.round(w*scale);h=Math.round(h*scale);
-          const c=document.createElement('canvas');c.width=tw;c.height=th;
-          c.getContext('2d').drawImage(img,(tw-w)/2,(th-h)/2,w,h);
-          res(c.toDataURL('image/jpeg',0.88));
-        };img.src=e.target.result;
-      });
-      const existingImg=document.getElementById('cover-img');
-      if(existingImg)existingImg.src=resized;
-      toast('Saving cover photo...');
-      try{
-        const r=await fetch(BACKEND+'/trip/'+TRIP_ID+'/cover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,image:resized.split(',')[1]})});
-        const d=await r.json();
-        if(d.success){toast('🖼 Cover saved!');setTimeout(()=>location.reload(),1200);}
-        else toast(d.error||'Error',false);
-      }catch(e){toast('Network error',false);}
+    reader.onload=function(e){
+      const dataUrl=e.target.result;
+      const img=new Image();
+      img.onload=function(){
+        const tw=800,th=400;
+        let{width:w,height:h}=img;
+        const scale=Math.max(tw/w,th/h);
+        w=Math.round(w*scale);h=Math.round(h*scale);
+        const c=document.createElement('canvas');c.width=tw;c.height=th;
+        c.getContext('2d').drawImage(img,(tw-w)/2,(th-h)/2,w,h);
+        const resized=c.toDataURL('image/jpeg',0.88);
+        // Show preview immediately
+        const existing=document.getElementById('cover-img');
+        if(existing){existing.src=resized;}
+        toast('Saving cover...');
+        fetch(BACKEND+'/trip/'+TRIP_ID+'/cover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,image:resized.split(',')[1]})})
+          .then(r=>r.json())
+          .then(d=>{if(d.success){toast('🖼 Cover saved!');setTimeout(()=>location.reload(),1200);}else toast(d.error||'Error',false);})
+          .catch(()=>toast('Network error',false));
+      };
+      img.src=dataUrl;
     };
     reader.readAsDataURL(file);
   }
 
+  // ── SETTINGS SAVE ──
+  async function saveSettings(){
+    const name=document.getElementById('settings-name').value.trim();
+    const date=document.getElementById('settings-date').value;
+    if(!name){toast('Trip name cannot be empty',false);return;}
+    try{
+      const r=await fetch(BACKEND+'/trip/'+TRIP_ID+'/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,name,trip_date:date||null})});
+      const d=await r.json();
+      if(d.success){toast('✅ Trip updated!');setTimeout(()=>location.reload(),1200);}
+      else toast(d.error||'Error',false);
+    }catch(e){toast('Network error',false);}
+  }
+
+  // ── GIF SUPPORT FOR COMMENTS ──
+  function toggleGifPanel(){
+    const p=document.getElementById('gif-panel');
+    p.style.display=p.style.display==='none'?'block':'none';
+    if(p.style.display==='block')document.getElementById('gif-search-input').focus();
+  }
+  function clearGif(){
+    selectedGifUrl=null;
+    document.getElementById('gif-preview-wrap').style.display='none';
+    document.getElementById('gif-preview-img').src='';
+  }
+  function selectGif(url){
+    selectedGifUrl=url;
+    document.getElementById('gif-preview-img').src=url;
+    document.getElementById('gif-preview-wrap').style.display='block';
+    document.getElementById('gif-panel').style.display='none';
+    document.getElementById('gif-search-input').value='';
+    document.getElementById('gif-results').innerHTML='';
+  }
+  function searchGifs(q){
+    clearTimeout(gifTimer);
+    if(!q.trim()){document.getElementById('gif-results').innerHTML='';return;}
+    gifTimer=setTimeout(async()=>{
+      try{
+        const r=await fetch(BACKEND+'/gif-search?q='+encodeURIComponent(q));
+        const d=await r.json();
+        document.getElementById('gif-results').innerHTML=(d.results||[]).map(g=>
+          '<img src="'+g.url+'" onclick="selectGif(\''+g.url+'\')" style="height:80px;width:auto;border-radius:6px;cursor:pointer;object-fit:cover;border:2px solid transparent;transition:border-color 0.15s" onmouseover="this.style.borderColor=\'#30D158\'" onmouseout="this.style.borderColor=\'transparent\'">'
+        ).join('');
+      }catch(e){}
+    },400);
+  }
+
+  // ── COMMENTS ──
+  async function postComment(){
+    const author=document.getElementById('comment-author').value.trim();
+    const body=document.getElementById('comment-body').value.trim();
+    if(!author){toast('Enter your name',false);return;}
+    if(!body&&!selectedGifUrl){toast('Add a message or GIF',false);return;}
+    try{
+      const r=await fetch(BACKEND+'/trip/'+TRIP_ID+'/comment',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({token:TRIP_TOKEN,author_name:author,body,gif_url:selectedGifUrl||null})
+      });
+      const d=await r.json();
+      if(d.success){
+        document.getElementById('comment-body').value='';
+        clearGif();
+        toast('✅ Posted!');
+        setTimeout(()=>location.reload(),900);
+      }else toast(d.error||'Error',false);
+    }catch(e){toast('Network error',false);}
+  }
+
+  // ── ADD MEMBERS ──
   function addNewMember(){
     const inp=document.getElementById('new-member-input');
     const name=inp.value.trim();if(!name)return;
@@ -1355,20 +1469,7 @@ ${trip.cover_image
     }catch(e){toast('Network error',false);btn.textContent='✓ Save';btn.disabled=false;}
   }
 
-  // COMMENTS
-  async function postComment(){
-    const author=document.getElementById('comment-author').value.trim();
-    const body=document.getElementById('comment-body').value.trim();
-    if(!author||!body){toast('Enter your name and a comment',false);return;}
-    try{
-      const r=await fetch(BACKEND+'/trip/'+TRIP_ID+'/comment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,author_name:author,body})});
-      const d=await r.json();
-      if(d.success){document.getElementById('comment-body').value='';toast('✅ Comment posted!');setTimeout(()=>location.reload(),1000);}
-      else toast(d.error||'Error posting',false);
-    }catch(e){toast('Network error',false);}
-  }
-
-  // SPLIT
+  // ── SPLIT ──
   function setSplit(t){
     splitType=t;
     document.getElementById('r-even-sec').style.display=t==='even'?'block':'none';
@@ -1401,27 +1502,37 @@ ${trip.cover_image
   }
   function toggleAssign(id,p){const item=tripItems.find(i=>i.id===id);if(!item)return;if(item.assignees.includes(p))item.assignees=item.assignees.filter(a=>a!==p);else item.assignees.push(p);renderItems();}
 
-  async function tripPhoto(input){
+  function tripPhoto(input){
     const file=input.files[0];if(!file)return;
     const reader=new FileReader();
-    reader.onload=async e=>{
-      document.getElementById('r-preview').src=e.target.result;document.getElementById('r-preview').style.display='block';document.getElementById('r-empty').style.display='none';
-      const resized=await new Promise(res=>{const i=new Image();i.onload=function(){let{width:w,height:h}=i;if(w>1600||h>1600){if(w>h){h=Math.round(h*1600/w);w=1600;}else{w=Math.round(w*1600/h);h=1600;}}const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(i,0,0,w,h);res(c.toDataURL('image/jpeg',0.88));};i.src=e.target.result;});
-      imgBase64=resized.split(',')[1];
-      const st=document.getElementById('r-scan-status');st.style.display='block';
-      st.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:8px"><div class="spinner"></div><span style="font-size:13px;color:#C084FC;font-weight:600">Scanning receipt with AI...</span></div>';
-      try{
-        const r=await fetch(BACKEND+'/demo/scan-receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:imgBase64,mediaType:file.type||'image/jpeg'})});
-        const d=await r.json();
-        if(d.success&&d.items?.length){
-          if(!document.getElementById('r-name').value&&d.bill_name)document.getElementById('r-name').value=d.bill_name;
-          const tot=d.total||d.items.reduce((s,i)=>s+i.price,0);
-          document.getElementById('r-total').value=tot.toFixed(2);updateEven();
-          tripItems=d.items.map((item,idx)=>({id:Date.now()+idx,name:item.name,price:parseFloat(item.price)||0,assignees:[]}));
-          setSplit('itemized');renderItems();
-          st.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:8px"><span>✅</span><span style="font-size:13px;color:#30D158;font-weight:600">'+d.items.length+' items found! Assign who ordered what.</span></div>';
-        }else throw new Error();
-      }catch(e){st.innerHTML='<div style="padding:10px 14px;background:rgba(255,68,68,0.07);border:1px solid rgba(255,68,68,0.2);border-radius:8px;font-size:13px;color:#FF6B6B">Could not scan — enter details manually</div>';}
+    reader.onload=function(e){
+      document.getElementById('r-preview').src=e.target.result;
+      document.getElementById('r-preview').style.display='block';
+      document.getElementById('r-empty').style.display='none';
+      const img=new Image();
+      img.onload=function(){
+        let{width:w,height:h}=img;
+        if(w>1600||h>1600){if(w>h){h=Math.round(h*1600/w);w=1600;}else{w=Math.round(w*1600/h);h=1600;}}
+        const c=document.createElement('canvas');c.width=w;c.height=h;
+        c.getContext('2d').drawImage(img,0,0,w,h);
+        imgBase64=c.toDataURL('image/jpeg',0.88).split(',')[1];
+        const st=document.getElementById('r-scan-status');st.style.display='block';
+        st.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:8px"><div class="spinner"></div><span style="font-size:13px;color:#C084FC;font-weight:600">Scanning receipt with AI...</span></div>';
+        fetch(BACKEND+'/demo/scan-receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:imgBase64,mediaType:file.type||'image/jpeg'})})
+          .then(r=>r.json())
+          .then(d=>{
+            if(d.success&&d.items&&d.items.length){
+              if(!document.getElementById('r-name').value&&d.bill_name)document.getElementById('r-name').value=d.bill_name;
+              const tot=d.total||d.items.reduce((s,i)=>s+i.price,0);
+              document.getElementById('r-total').value=tot.toFixed(2);updateEven();
+              tripItems=d.items.map((item,idx)=>({id:Date.now()+idx,name:item.name,price:parseFloat(item.price)||0,assignees:[]}));
+              setSplit('itemized');renderItems();
+              st.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:8px"><span>✅</span><span style="font-size:13px;color:#30D158;font-weight:600">'+d.items.length+' items found!</span></div>';
+            }else{st.innerHTML='<div style="padding:10px 14px;background:rgba(255,68,68,0.07);border:1px solid rgba(255,68,68,0.2);border-radius:8px;font-size:13px;color:#FF6B6B">Could not scan — enter manually</div>';}
+          })
+          .catch(()=>{document.getElementById('r-scan-status').style.display='none';});
+      };
+      img.src=e.target.result;
     };
     reader.readAsDataURL(file);
   }
@@ -1457,14 +1568,37 @@ ${trip.cover_image
 app.post('/trip/:tripId/comment', async (req, res) => {
   try {
     const { tripId } = req.params;
-    const { token, author_name, body } = req.body;
+    const { token, author_name, body, gif_url } = req.body;
     const { data: trip } = await supabase.from('trips').select('share_token').eq('id', tripId).single();
     if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
-    if (!body?.trim()) return res.json({ success: false, error: 'Empty comment' });
-    await supabase.from('trip_comments').insert({ trip_id: tripId, author_name: author_name||'Anonymous', body: body.trim(), created_at: new Date().toISOString() });
+    if (!body?.trim() && !gif_url) return res.json({ success: false, error: 'Empty comment' });
+    await supabase.from('trip_comments').insert({
+      trip_id: tripId,
+      author_name: author_name || 'Anonymous',
+      body: body?.trim() || '',
+      gif_url: gif_url || null,
+      created_at: new Date().toISOString()
+    });
     res.json({ success: true });
   } catch(err) { res.json({ success: false, error: err.message }); }
 });
+
+// ── TRIP SETTINGS ─────────────────────────────────────────────────────────────
+app.post('/trip/:tripId/settings', async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const { token, name, trip_date } = req.body;
+    const { data: trip } = await supabase.from('trips').select('share_token').eq('id', tripId).single();
+    if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
+    if (!name?.trim()) return res.json({ success: false, error: 'Name required' });
+    const update = { name: name.trim() };
+    if (trip_date) update.trip_date = trip_date;
+    else update.trip_date = null;
+    await supabase.from('trips').update(update).eq('id', tripId);
+    res.json({ success: true });
+  } catch(err) { res.json({ success: false, error: err.message }); }
+});
+
 
 // ── TRIP COVER PHOTO ──────────────────────────────────────────────────────────
 app.post('/trip/:tripId/cover', async (req, res) => {
