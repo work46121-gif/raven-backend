@@ -611,7 +611,7 @@ app.get('/bill/:billId', async (req, res) => {
 </head>
 <body>
   <div class="hdr"><div class="hdr-i">
-    <div style="font-size:18px;font-weight:900;letter-spacing:0.12em">🪶 RAVEN</div>
+    <div style="font-size:18px;font-weight:900;letter-spacing:0.12em"><a href="https://work46121-gif.github.io/raven-site/" style="text-decoration:none;color:inherit">🪶 RAVEN</a></div>
     <div style="font-size:11px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:20px;font-weight:600">${billId}</div>
   </div></div>
 
