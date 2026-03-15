@@ -530,7 +530,11 @@ app.get('/bill/:billId', async (req, res) => {
   }
 
   function buildBreakdown(p, myItems, bill, participantCount) {
-    if (myItems.length === 0) return '';
+    if (myItems.length === 0) {
+      const amount = parseFloat(p.amount||0);
+      if (amount <= 0) return '';
+      return '<div style="margin-top:6px;background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px"><div style="display:flex;justify-content:space-between"><span style="font-size:11px;font-weight:700;color:#F0EEF8">Total</span><span style="font-size:12px;font-weight:700;color:#30D158;font-family:monospace">$'+amount.toFixed(2)+'</span></div></div>';
+    }
     const tax = parseFloat(bill.tax||0);
     const tip = parseFloat(bill.tip||0);
     const shared = participantCount > 0 ? (tax+tip)/participantCount : 0;
