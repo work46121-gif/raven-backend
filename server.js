@@ -141,13 +141,18 @@ async function parseReceiptWithClaude(imageUrl) {
             type: 'text',
             text: `Parse this receipt and return ONLY a JSON object with this exact structure, no other text:
 {
+  "restaurant_name": "Restaurant or store name from the receipt",
   "items": [{"name": "Item Name", "price": 0.00}],
   "subtotal": 0.00,
   "tax": 0.00,
   "tip": 0.00,
   "total": 0.00
 }
-Include only ordered items with their prices. If tip is not on receipt, set to 0.`
+Rules:
+- restaurant_name: extract the business/restaurant name from the top of the receipt. If unclear, use a short descriptive name.
+- Include every ordered item with its price
+- If tip is not shown, set to 0
+- Return ONLY the JSON, no other text`
           }
         ]
       }]
@@ -748,13 +753,18 @@ app.post('/demo/scan-receipt', async (req, res) => {
             type: 'text',
             text: `Parse this receipt and return ONLY a JSON object with this exact structure, no other text:
 {
+  "restaurant_name": "Restaurant or store name from the receipt",
   "items": [{"name": "Item Name", "price": 0.00}],
   "subtotal": 0.00,
   "tax": 0.00,
   "tip": 0.00,
   "total": 0.00
 }
-Include only ordered items with their prices. If tip is not on receipt, set to 0.`
+Rules:
+- restaurant_name: extract the business/restaurant name from the top of the receipt. If unclear, use a short descriptive name.
+- Include every ordered item with its price
+- If tip is not shown, set to 0
+- Return ONLY the JSON, no other text`
           }
         ]
       }]
@@ -764,8 +774,8 @@ Include only ordered items with their prices. If tip is not on receipt, set to 0
     const clean = text.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(clean);
 
-    console.log(`✅ Demo receipt scanned: ${parsed.items?.length} items, total $${parsed.total}`);
-    res.json({ success: true, ...parsed });
+    console.log(`✅ Demo receipt scanned: ${parsed.items?.length} items, total $${parsed.total}, name: ${parsed.restaurant_name}`);
+    res.json({ success: true, ...parsed, bill_name: parsed.restaurant_name });
   } catch (err) {
     console.error('Demo scan error:', err);
     res.json({ success: false, error: err.message });
