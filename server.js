@@ -498,11 +498,19 @@ app.get('/bill/:billId', async (req, res) => {
 
   // Get creator profile — try email first (dashboard users), then phone (SMS users)
   let creatorProfile = null;
-  const emailTry = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle,applepay').eq('email', bill.creator_phone).maybeSingle();
+  // Select without applepay first (column may not exist in older schemas)
+  const emailTry = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle').eq('email', bill.creator_phone).maybeSingle();
   creatorProfile = emailTry.data;
   if (!creatorProfile && bill.creator_phone) {
-    const phoneTry = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle,applepay').eq('phone', bill.creator_phone).maybeSingle();
+    const phoneTry = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle').eq('phone', bill.creator_phone).maybeSingle();
     creatorProfile = phoneTry.data;
+  }
+  // Try to also get applepay if column exists
+  if (creatorProfile) {
+    try {
+      const apTry = await supabase.from('profiles').select('applepay').eq('email', bill.creator_phone).maybeSingle();
+      if (apTry.data?.applepay) creatorProfile.applepay = apTry.data.applepay;
+    } catch(e) {}
   }
 
   const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
@@ -1067,7 +1075,7 @@ app.get('/test-comments/:billId', async (req, res) => {
     results.comments_error = comments.error?.message;
   } catch(e) { results.comments_exception = e.message; }
   try {
-    const profile = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle,applepay').eq('email', results.bill?.creator_phone).maybeSingle();
+    const profile = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle').eq('email', results.bill?.creator_phone).maybeSingle();
     results.profile = profile.data;
     results.profile_error = profile.error?.message;
   } catch(e) { results.profile_exception = e.message; }
