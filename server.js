@@ -692,7 +692,7 @@ app.get('/bill/:billId', async (req, res) => {
         n++;
       }
       if(p.venmo&&p.venmo.trim()){const h='@'+p.venmo.replace('@','');row('#008CFF','V','Venmo',h+' · $'+amt,'venmo://paycharge?txn=pay&recipients='+p.venmo.replace('@','')+'&amount='+amt+'&note=Bill',null);}
-      if(p.cashapp&&p.cashapp.trim()){const t='$'+p.cashapp.replace('$','');row('#00D632','$','Cash App',t+' · $'+amt,'https://cash.app/'+p.cashapp.replace('$','')+'/'+amt,null);}
+      if(p.cashapp&&p.cashapp.trim()){const tag=p.cashapp.replace('$','');const t='$'+tag;row('#00D632','$','Cash App',t+' · $'+amt,'https://cash.app/$'+tag+'/'+amt,null);}
       if(p.zelle&&p.zelle.trim()){row('#6D1ED4','Z','Zelle',p.zelle+' · tap to copy',null,p.zelle);}
       if(p.applepay&&p.applepay.trim()){
         const ap=p.applepay.trim();
