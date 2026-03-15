@@ -679,33 +679,67 @@ app.get('/bill/:billId', async (req, res) => {
       const methods = document.getElementById('pm-methods');
       methods.innerHTML = '';
 
-      function makeRow(color, label, sub, href, copyVal) {
+      function makeRow(color, label, sub, href, copyVal, smsVal) {
         const a = document.createElement(href ? 'a' : 'button');
         a.className = 'pm-row';
-        if (href) { a.href = href; a.target = '_blank'; }
-        else { a.style.width='100%'; a.style.textAlign='left'; a.style.cursor='pointer'; }
-        if (copyVal) { a.addEventListener('click', function(e){ e.preventDefault(); navigator.clipboard.writeText(copyVal).then(()=>toast('Copied: '+copyVal)).catch(()=>toast(copyVal)); }); }
+        if (href) {
+          // Try app deep link first, fall back to web
+          a.href = href;
+          a.target = '_blank';
+        } else {
+          a.style.width='100%'; a.style.textAlign='left'; a.style.cursor='pointer';
+        }
+        if (copyVal) {
+          a.addEventListener('click', function(e){
+            e.preventDefault();
+            navigator.clipboard.writeText(copyVal)
+              .then(()=>toast('✅ Copied! Open Zelle and send to: '+copyVal))
+              .catch(()=>{ prompt('Copy this Zelle info:', copyVal); });
+          });
+        }
+        if (smsVal) {
+          a.href = smsVal;
+        }
         a.innerHTML = '<div class="pm-icon" style="background:'+color+'">'+label+'</div><div class="pm-info"><b>'+sub[0]+'</b><span>'+sub[1]+'</span></div><span style="color:#6E6B80">→</span>';
         methods.appendChild(a);
       }
 
       let count = 0;
       if (profile.venmo && profile.venmo.trim()) {
-        const h = profile.venmo.startsWith('@') ? profile.venmo : '@'+profile.venmo;
-        makeRow('#008CFF','V',['Venmo',h],'https://venmo.com/'+profile.venmo.replace('@',''),null);
+        const handle = profile.venmo.replace('@','');
+        const h = '@'+handle;
+        // venmo:// deep link opens app directly with prefilled amount
+        const venmoDeep = 'venmo://paycharge?txn=pay&recipients='+handle+'&amount='+amt+'&note=Bill+Payment';
+        const venmoWeb = 'https://venmo.com/'+handle+'?txn=pay&note=Bill+Payment&amount='+amt;
+        // Use deep link on mobile, web fallback
+        const venmoHref = venmoDeep;
+        makeRow('#008CFF','V',['Venmo — tap to open app', h+' · $'+amt], venmoHref, null, null);
         count++;
       }
       if (profile.cashapp && profile.cashapp.trim()) {
-        const t = profile.cashapp.startsWith('$') ? profile.cashapp : '$'+profile.cashapp;
-        makeRow('#00D632','$',['Cash App',t],'https://cash.app/'+profile.cashapp.replace('$','')+'/'+amt,null);
+        const tag = profile.cashapp.replace('$','');
+        const t = '$'+tag;
+        // cash.app deep link opens app with amount
+        makeRow('#00D632','$',['Cash App — tap to open app', t+' · $'+amt],'https://cash.app/'+tag+'/'+amt,null,null);
         count++;
       }
       if (profile.zelle && profile.zelle.trim()) {
-        makeRow('#6D1ED4','Z',['Zelle',profile.zelle+' · tap to copy'],null,profile.zelle);
+        // Zelle has no deep link — copy to clipboard with instructions
+        makeRow('#6D1ED4','Z',['Zelle — tap to copy info', profile.zelle],null,profile.zelle,null);
         count++;
       }
       if (profile.applepay && profile.applepay.trim()) {
-        makeRow('#333',['Pay'],['Apple Pay',profile.applepay+' · tap to copy'],null,profile.applepay);
+        // Check if it's a phone number — open iMessage with prefilled text
+        const ap = profile.applepay.trim();
+        const isPhone = /^[\d\s\+\-\(\)]{7,}$/.test(ap);
+        if (isPhone) {
+          const phoneClean = ap.replace(/\D/g,'');
+          const smsBody = encodeURIComponent('Here is $'+amt+' via Apple Pay');
+          const smsLink = 'sms:+'+phoneClean+'&body='+smsBody;
+          makeRow('#1a1a1a','⬛ Pay',['Apple Pay via iMessage', 'Opens iMessage to '+ap], null, null, smsLink);
+        } else {
+          makeRow('#1a1a1a','⬛ Pay',['Apple Pay — tap to copy', ap+' · copy & send in iMessage'],null,ap,null);
+        }
         count++;
       }
       if (count === 0) {
@@ -746,8 +780,8 @@ app.get('/bill/:billId', async (req, res) => {
         const comments = d.comments || [];
         const list = document.getElementById('comments-list');
         const none = document.getElementById('no-comments-msg');
-        if (comments.length === 0) { none.style.display='block'; return; }
-        none.style.display = 'none';
+        if (comments.length === 0) { if(none) none.style.display='block'; return; }
+        if(none) none.style.display = 'none';
         list.innerHTML = comments.map(c => {
           const dt = new Date(c.created_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
           return '<div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:14px 16px">'+
