@@ -499,19 +499,13 @@ app.get('/bill/:billId', async (req, res) => {
   // Get creator profile — try email first (dashboard users), then phone (SMS users)
   let creatorProfile = null;
   // Select without applepay first (column may not exist in older schemas)
-  const emailTry = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle').eq('email', bill.creator_phone).maybeSingle();
+  const emailTry = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle,applepay').eq('email', bill.creator_phone).maybeSingle();
   creatorProfile = emailTry.data;
   if (!creatorProfile && bill.creator_phone) {
-    const phoneTry = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle').eq('phone', bill.creator_phone).maybeSingle();
+    const phoneTry = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle,applepay').eq('phone', bill.creator_phone).maybeSingle();
     creatorProfile = phoneTry.data;
   }
-  // Try to also get applepay if column exists
-  if (creatorProfile) {
-    try {
-      const apTry = await supabase.from('profiles').select('applepay').eq('email', bill.creator_phone).maybeSingle();
-      if (apTry.data?.applepay) creatorProfile.applepay = apTry.data.applepay;
-    } catch(e) {}
-  }
+
 
   const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
     ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
@@ -676,18 +670,18 @@ app.get('/bill/:billId', async (req, res) => {
       document.getElementById('pm-amount').textContent = '$' + parseFloat(amount).toFixed(2);
       const amt = parseFloat(amount).toFixed(2);
       const m = [];
-      if (profile.venmo) {
+      if (profile.venmo && profile.venmo.trim()) {
         const h = profile.venmo.startsWith('@') ? profile.venmo : '@'+profile.venmo;
         m.push('<a href="https://venmo.com/'+profile.venmo.replace('@','')+'" target="_blank" class="pm-row"><div class="pm-icon" style="background:#008CFF">V</div><div class="pm-info"><b>Venmo</b><span>'+h+'</span></div><span style="color:#6E6B80">→</span></a>');
       }
-      if (profile.cashapp) {
+      if (profile.cashapp && profile.cashapp.trim()) {
         const t = profile.cashapp.startsWith('$') ? profile.cashapp : '$'+profile.cashapp;
         m.push('<a href="https://cash.app/'+profile.cashapp.replace('$','')+'/'+amt+'" target="_blank" class="pm-row"><div class="pm-icon" style="background:#00D632">$</div><div class="pm-info"><b>Cash App</b><span>'+t+'</span></div><span style="color:#6E6B80">→</span></a>');
       }
-      if (profile.zelle) {
+      if (profile.zelle && profile.zelle.trim()) {
         m.push('<button onclick="copyAndToast(\''+profile.zelle+'\')" class="pm-row" style="width:100%;text-align:left;cursor:pointer"><div class="pm-icon" style="background:#6D1ED4">Z</div><div class="pm-info"><b>Zelle</b><span>'+profile.zelle+' · tap to copy</span></div><span style="color:#6E6B80">→</span></button>');
       }
-      if (profile.applepay) {
+      if (profile.applepay && profile.applepay.trim()) {
         m.push('<button onclick="copyAndToast(\''+profile.applepay+'\')" class="pm-row" style="width:100%;text-align:left;cursor:pointer"><div class="pm-icon" style="background:#333;border:1px solid #555;font-size:9px">Pay</div><div class="pm-info"><b>Apple Pay</b><span>'+profile.applepay+' · tap to copy</span></div><span style="color:#6E6B80">→</span></button>');
       }
       if (m.length === 0) m.push('<p style="color:#6E6B80;text-align:center;padding:16px 0;font-size:13px">No payment methods set up by bill creator yet.</p>');
@@ -1091,7 +1085,7 @@ app.get('/test-comments/:billId', async (req, res) => {
     results.comments_error = comments.error?.message;
   } catch(e) { results.comments_exception = e.message; }
   try {
-    const profile = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle').eq('email', results.bill?.creator_phone).maybeSingle();
+    const profile = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle,applepay').eq('email', results.bill?.creator_phone).maybeSingle();
     results.profile = profile.data;
     results.profile_error = profile.error?.message;
   } catch(e) { results.profile_exception = e.message; }
