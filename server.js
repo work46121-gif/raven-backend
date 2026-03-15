@@ -1051,6 +1051,33 @@ app.post('/waitlist', async (req, res) => {
   }
 });
 
+
+// ─── DIAGNOSTIC ──────────────────────────────────────────────────────────────
+app.get('/test-comments/:billId', async (req, res) => {
+  const { billId } = req.params;
+  const results = {};
+  try {
+    const bill = await supabase.from('bills').select('id,name,creator_phone').eq('id', billId).single();
+    results.bill = bill.data;
+    results.bill_error = bill.error?.message;
+  } catch(e) { results.bill_exception = e.message; }
+  try {
+    const comments = await supabase.from('bill_comments').select('*').eq('bill_id', billId);
+    results.comments = comments.data;
+    results.comments_error = comments.error?.message;
+  } catch(e) { results.comments_exception = e.message; }
+  try {
+    const profile = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle,applepay').eq('email', results.bill?.creator_phone).maybeSingle();
+    results.profile = profile.data;
+    results.profile_error = profile.error?.message;
+  } catch(e) { results.profile_exception = e.message; }
+  try {
+    const parts = await supabase.from('participants').select('*').eq('bill_id', billId);
+    results.participants = parts.data;
+  } catch(e) { results.participants_exception = e.message; }
+  res.json(results);
+});
+
 app.get('/', (req, res) => {
   res.json({ status: 'RAVEN is live 🪶', version: '2.0.0', twilio: TWILIO_READY ? 'connected' : 'pending' });
 });
