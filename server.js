@@ -494,6 +494,10 @@ app.get('/bill/:billId', async (req, res) => {
 
   const { data: items } = await supabase.from('receipt_items').select('*').eq('bill_id', billId);
   const { data: selections } = await supabase.from('item_selections').select('*').eq('bill_id', billId);
+  const { data: participants } = await supabase.from('participants').select('*').eq('bill_id', billId).order('name');
+
+  // Get creator payment methods
+  const { data: creatorProfile } = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle,applepay').eq('email', bill.creator_phone).single().catch(() => ({ data: null }));
 
   const uniquePeople = [...new Set((selections || []).map(s => s.participant_name))];
   const peopleCount = Math.max(uniquePeople.length, 1);
@@ -515,10 +519,28 @@ app.get('/bill/:billId', async (req, res) => {
     </div>`;
   }).join('');
 
+
+  // Build participants section
+  const participantsHTML = (participants || []).length > 0 ? `
+    <div class="extras-section animate-in">
+      <div class="extras-title">Who owes what</div>
+      <div class="extras-card" style="overflow:hidden">
+        ${(participants || []).map(p => `
+          <div class="extra-row" style="flex-direction:column;align-items:flex-start;gap:8px;padding:14px 16px" id="prow-${p.id}">
+            <div style="display:flex;align-items:center;justify-content:space-between;width:100%">
+              <div>
+                <div style="font-size:15px;font-weight:600;color:#F0EEF8">${p.name}</div>
+                <div style="font-size:12px;color:${p.paid ? '#30D158' : '#6E6B80'};margin-top:2px">${p.paid ? '✅ Paid' : '⏳ Owes $' + parseFloat(p.amount).toFixed(2)}</div>
+              </div>
+              ${!p.paid ? `<button onclick="showPayOptions('${p.id}', '${p.name}', ${parseFloat(p.amount).toFixed(2)})" style="padding:8px 18px;background:#30D158;border:none;border-radius:10px;color:#000;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit">💳 Pay</button>` : ''}
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>` : '';
   const receiptImgHTML = bill.receipt_image
     ? `<div style="max-width:480px;margin:0 auto 0;padding:16px 20px 0">
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:8px">Receipt</div>
-        <img src="data:image/jpeg;base64,${bill.receipt_image}" style="width:100%;border-radius:14px;display:block;object-fit:contain;background:#111;border:1px solid rgba(255,255,255,0.07)">
+        <img src="data:image/jpeg;base64,${bill.receipt_image}" style="width:100%;border-radius:14px;display:block;border:1px solid rgba(255,255,255,0.07)">
       </div>` : '';
 
   const billContent = `
@@ -532,15 +554,7 @@ app.get('/bill/:billId', async (req, res) => {
     </div>
     ${receiptImgHTML}
 
-    <div class="progress-wrap animate-in">
-      <div class="progress-label">
-        <span>People confirmed</span>
-        <span><span style="color:var(--sms)">${uniquePeople.length}</span> so far</span>
-      </div>
-      <div class="progress-bar">
-        <div class="progress-fill" style="width:${Math.min(uniquePeople.length * 25, 100)}%"></div>
-      </div>
-    </div>
+    \${participantsHTML}
 
     <div class="name-section animate-in">
       <label class="name-label" for="userName">Your name</label>
@@ -594,6 +608,7 @@ app.get('/bill/:billId', async (req, res) => {
     </div>
 
     <div id="billIdData" data-value="${billId}" style="display:none"></div>
+    <div id="creatorProfile" data-value='${JSON.stringify(creatorProfile || {})}' style="display:none"></div>
     <div id="taxAmount" data-value="${bill.tax || 0}" style="display:none"></div>
     <div id="tipAmount" data-value="${bill.tip || 0}" style="display:none"></div>
     <div id="peopleCount" data-value="${peopleCount}" style="display:none"></div>
@@ -616,9 +631,117 @@ app.get('/bill/:billId', async (req, res) => {
 
   let template = fs.readFileSync(path.join(__dirname, 'public', 'bill.html'), 'utf8');
   template = template.replace('</head>', `${ogTags}\n  </head>`);
-  template = template.replace('BILL_CONTENT_PLACEHOLDER', billContent);
+
+  // Inject pay options script
+  const payScript = `<script>
+    function showPayOptions(participantId, name, amount) {
+      const profile = JSON.parse(document.getElementById('creatorProfile').dataset.value || '{}');
+      const modal = document.getElementById('pay-options-modal');
+      const billId = document.getElementById('billIdData').dataset.value;
+
+      document.getElementById('pay-person-name').textContent = name;
+      document.getElementById('pay-person-amount').textContent = '$' + parseFloat(amount).toFixed(2);
+
+      const methods = [];
+      if (profile.venmo) {
+        const handle = profile.venmo.startsWith('@') ? profile.venmo : '@' + profile.venmo;
+        const url = 'https://venmo.com/' + profile.venmo.replace('@','') + '?txn=pay&note=Bill&amount=' + amount;
+        methods.push('<a href="' + url + '" target="_blank" class="pm-row"><div class="pm-icon" style="background:#008CFF">V</div><div class="pm-info"><b>Venmo</b><span>' + handle + '</span></div><span>→</span></a>');
+      }
+      if (profile.cashapp) {
+        const tag = profile.cashapp.startsWith('$') ? profile.cashapp : '$' + profile.cashapp;
+        const url = 'https://cash.app/' + profile.cashapp.replace('$','') + '/' + amount;
+        methods.push('<a href="' + url + '" target="_blank" class="pm-row"><div class="pm-icon" style="background:#00D632">$</div><div class="pm-info"><b>Cash App</b><span>' + tag + '</span></div><span>→</span></a>');
+      }
+      if (profile.zelle) {
+        methods.push('<a href="#" onclick="navigator.clipboard.writeText(\'' + profile.zelle + '\').then(()=>alert(\'Zelle info copied!\'));return false" class="pm-row"><div class="pm-icon" style="background:#6D1ED4">Z</div><div class="pm-info"><b>Zelle</b><span>' + profile.zelle + ' · tap to copy</span></div><span>→</span></a>');
+      }
+      if (profile.applepay) {
+        methods.push('<a href="#" onclick="navigator.clipboard.writeText(\'' + profile.applepay + '\').then(()=>alert(\'Copied!\'));return false" class="pm-row"><div class="pm-icon" style="background:#333;border:1px solid #555;font-size:9px">Pay</div><div class="pm-info"><b>Apple Pay</b><span>' + profile.applepay + ' · tap to copy</span></div><span>→</span></a>');
+      }
+      if (methods.length === 0) methods.push('<p style="color:#6E6B80;text-align:center;padding:16px 0">No payment methods set up yet</p>');
+
+      document.getElementById('pm-list').innerHTML = methods.join('');
+      document.getElementById('pm-mark-btn').onclick = () => markAsPaid(participantId, billId, name);
+      modal.style.display = 'flex';
+    }
+
+    async function markAsPaid(participantId, billId, name) {
+      try {
+        const res = await fetch('/bill/' + billId + '/mark-paid', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ participantId, name })
+        });
+        const data = await res.json();
+        if (data.success) {
+          document.getElementById('pay-options-modal').style.display = 'none';
+          const row = document.getElementById('prow-' + participantId);
+          if (row) {
+            row.querySelector('button')?.remove();
+            row.querySelector('div > div:last-child').innerHTML = '<div style="font-size:12px;color:#30D158;margin-top:2px">✅ Paid</div>';
+          }
+          alert('✅ Marked as paid! The bill creator has been notified.');
+        }
+      } catch(e) { alert('Error marking as paid. Try again.'); }
+    }
+  <\/script>
+
+  <style>
+    .pm-row { display:flex;align-items:center;gap:14px;padding:14px 16px;background:#13131A;border:1px solid rgba(255,255,255,0.06);border-radius:12px;text-decoration:none;margin-bottom:8px;transition:all 0.18s; }
+    .pm-row:hover { border-color:rgba(255,255,255,0.15);transform:translateX(3px); }
+    .pm-icon { width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:700;font-size:15px;color:#fff; }
+    .pm-info { flex:1;display:flex;flex-direction:column;gap:2px; }
+    .pm-info b { font-size:14px;font-weight:600;color:#F0EEF8; }
+    .pm-info span { font-size:11px;color:#6E6B80; }
+  </style>
+
+  <div id="pay-options-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(10px);z-index:999;align-items:flex-end;justify-content:center;padding:0 0 env(safe-area-inset-bottom)" onclick="if(event.target===this)this.style.display='none'">
+    <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:24px 24px 0 0;padding:28px 20px 48px;width:100%;max-width:480px">
+      <div style="width:36px;height:4px;background:rgba(255,255,255,0.1);border-radius:2px;margin:0 auto 20px"></div>
+      <div style="font-size:22px;font-weight:700;margin-bottom:4px">Pay <span id="pay-person-name"></span></div>
+      <div style="font-size:36px;font-weight:800;color:#30D158;margin-bottom:20px;font-family:'Helvetica Neue',sans-serif" id="pay-person-amount">$0.00</div>
+      <div id="pm-list" style="margin-bottom:14px"></div>
+      <button id="pm-mark-btn" style="width:100%;padding:14px;background:transparent;border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:#9896A8;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:8px">✓ Mark as paid (other method)</button>
+      <button onclick="document.getElementById('pay-options-modal').style.display='none'" style="width:100%;padding:12px;background:transparent;border:none;color:#6E6B80;font-family:inherit;font-size:13px;cursor:pointer">I'll pay later</button>
+    </div>
+  </div>`;
+
+  template = template.replace('</body>', payScript + '</body>');
+
+    template = template.replace('BILL_CONTENT_PLACEHOLDER', billContent);
   template = template.replace('Loading...', billId);
   res.send(template);
+});
+
+
+// ─── MARK PAID FROM BILL PAGE ────────────────────────────────────────────────
+
+app.post('/bill/:billId/mark-paid', async (req, res) => {
+  try {
+    const { billId } = req.params;
+    const { participantId, name } = req.body;
+
+    const { data: bill } = await supabase.from('bills').select('*').eq('id', billId).single();
+    if (!bill) return res.json({ success: false, error: 'Bill not found' });
+
+    await supabase.from('participants')
+      .update({ paid: true, paid_at: new Date().toISOString() })
+      .eq('id', participantId);
+
+    // Notify creator
+    if (bill.creator_phone && !bill.creator_phone.includes('@')) {
+      await sendSMS(bill.creator_phone,
+        `🪶 RAVEN — ${name} marked themselves as paid for ${bill.name}!\n\n` +
+        `Reply STATUS ${billId} to see the full update.`
+      );
+    }
+
+    res.json({ success: true });
+  } catch(err) {
+    console.error('Mark paid error:', err);
+    res.json({ success: false, error: err.message });
+  }
 });
 
 // ─── SAVE SELECTIONS ─────────────────────────────────────────────────────────
