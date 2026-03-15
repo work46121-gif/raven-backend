@@ -558,7 +558,7 @@ app.get('/bill/:billId', async (req, res) => {
                 <div id="pstatus-${p.id}" style="font-size:12px;color:${p.paid ? '#30D158' : '#6E6B80'};margin-top:2px">${p.paid ? '✅ Paid' : 'Owes $' + parseFloat(p.amount).toFixed(2)}</div>
                 ${itemsStr ? `<div style="margin-top:6px">${itemsStr}</div>` : ''}
               </div>
-              ${!p.paid ? `<button onclick="showPay('${p.id}','${p.name}',${parseFloat(p.amount).toFixed(2)})" id="paybtn-${p.id}" style="padding:9px 18px;background:#30D158;border:none;border-radius:10px;color:#000;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;flex-shrink:0;-webkit-tap-highlight-color:transparent">💳 Pay</button>` : '<span style="font-size:18px">✅</span>'}
+              ${!p.paid ? `<button onclick="showPay(this)" data-pid="${p.id}" data-name="${p.name.replace(/"/g,'&quot;')}" data-amount="${parseFloat(p.amount).toFixed(2)}" id="paybtn-${p.id}" style="padding:9px 18px;background:#30D158;border:none;border-radius:10px;color:#000;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;flex-shrink:0;-webkit-tap-highlight-color:transparent">💳 Pay</button>` : '<span style="font-size:18px">✅</span>'}
             </div>
           </div>`;
         }).join('')}
@@ -664,7 +664,10 @@ app.get('/bill/:billId', async (req, res) => {
     const BILL_ID = '${billId}';
 
     // ── PAY ──
-    function showPay(pid, name, amount) {
+    function showPay(btn) {
+      const pid = btn.dataset.pid;
+      const name = btn.dataset.name;
+      const amount = btn.dataset.amount;
       let profile = {};
       try {
         const b64 = document.getElementById('cp-data').value || '';
@@ -690,7 +693,8 @@ app.get('/bill/:billId', async (req, res) => {
       }
       if (m.length === 0) m.push('<p style="color:#6E6B80;text-align:center;padding:16px 0;font-size:13px">No payment methods set up by bill creator yet.</p>');
       document.getElementById('pm-methods').innerHTML = m.join('');
-      document.getElementById('pm-mark').onclick = () => doMarkPaid(pid, name);
+      const _pid = pid; const _name = name;
+      document.getElementById('pm-mark').onclick = () => doMarkPaid(_pid, _name);
       document.getElementById('pay-modal').style.display = 'block';
     }
 
