@@ -1154,7 +1154,10 @@ ${trip.cover_image
 <!-- ACTION BUTTONS -->
 <div class="sec" style="margin-top:16px;display:flex;flex-direction:column;gap:10px">
   <button class="btn-green" id="add-receipt-btn" onclick="openReceiptForm()">📸 Add a Receipt</button>
-  <button class="btn-purple" onclick="openInviteModal()">🔗 Share Trip Link</button>
+  <div style="display:flex;gap:10px">
+    <button class="btn-purple" onclick="openInviteModal()" style="flex:1">🔗 Share</button>
+    <button onclick="openSettingsModal()" style="flex:1;padding:13px;background:var(--dark2);border:1px solid var(--border2);border-radius:12px;color:var(--muted2);font-family:'Epilogue',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.15s">⚙️ Settings</button>
+  </div>
 </div>
 
 <!-- RECEIPT FORM -->
@@ -1210,50 +1213,53 @@ ${trip.cover_image
 
 <!-- COMMENTS SECTION -->
 <div class="sec" style="margin-top:24px">
-  <div class="sec-lbl">Comments (${(comments||[]).length})</div>
+  <div class="sec-lbl">Comments (\${(comments||[]).length})</div>
   <div class="card" id="comments-card">
-    ${(comments||[]).length === 0
-      ? `<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px">No comments yet — say something! 👋</div>`
+    \${(comments||[]).length === 0
+      ? \`<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px">No comments yet — say something! 👋</div>\`
       : commentsHtml}
   </div>
-  <!-- POST COMMENT BOX -->
   <div style="margin-top:12px;background:var(--dark);border:1px solid var(--border2);border-radius:14px;overflow:hidden">
-    <input id="comment-author" type="text" placeholder="Your name" style="border-radius:0;border:none;border-bottom:1px solid var(--border);background:transparent;padding:12px 16px;font-size:14px">
-    <!-- GIF PREVIEW -->
+    <input id="comment-author" type="text" placeholder="Your name" style="border-radius:0;border:none;border-bottom:1px solid var(--border);background:transparent;padding:12px 16px;font-size:14px;color:#F0EEF8;font-family:inherit;width:100%;outline:none">
     <div id="gif-preview-wrap" style="display:none;padding:10px 12px;border-bottom:1px solid var(--border)">
       <div style="display:flex;align-items:center;gap:8px">
         <img id="gif-preview-img" style="height:80px;border-radius:8px;object-fit:cover">
         <button onclick="clearGif()" style="padding:4px 10px;background:rgba(255,68,68,0.12);border:1px solid rgba(255,68,68,0.25);border-radius:6px;color:#FF6B6B;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">✕ Remove</button>
       </div>
     </div>
-    <textarea id="comment-body" placeholder="Add a comment..." rows="2" style="border-radius:0;border:none;border-bottom:1px solid var(--border);background:transparent;resize:none;padding:12px 16px;font-size:14px;line-height:1.5;width:100%;color:#F0EEF8;font-family:inherit;outline:none"></textarea>
-    <!-- GIF SEARCH PANEL -->
-    <div id="gif-panel" style="display:none;border-bottom:1px solid var(--border)">
-      <div style="padding:8px 12px;display:flex;gap:8px">
-        <input id="gif-search-input" type="text" placeholder="Search GIFs... 🎭" style="flex:1;padding:8px 12px;font-size:13px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#F0EEF8;font-family:inherit;outline:none" oninput="searchGifs(this.value)">
+    <textarea id="comment-body" placeholder="Add a comment..." rows="2" style="border-radius:0;border:none;border-bottom:1px solid var(--border);background:transparent;resize:none;padding:12px 16px;font-size:14px;line-height:1.5;width:100%;color:#F0EEF8;font-family:inherit;outline:none;display:block"></textarea>
+    <div id="gif-panel" style="display:none;border-bottom:1px solid var(--border);background:var(--dark2)">
+      <div style="padding:8px 12px">
+        <input id="gif-search-input" type="text" placeholder="Search GIFs..." style="padding:10px 14px;font-size:13px;background:var(--dark3);border:1px solid var(--border);border-radius:8px;color:#F0EEF8;font-family:inherit;outline:none;width:100%" oninput="searchGifs(this.value)">
       </div>
-      <div id="gif-results" style="display:flex;flex-wrap:wrap;gap:4px;padding:0 12px 10px;max-height:180px;overflow-y:auto"></div>
+      <div id="gif-results" style="display:flex;flex-wrap:wrap;gap:4px;padding:0 12px 10px;max-height:180px;overflow-y:auto">
+        <div style="color:var(--muted);font-size:12px;padding:8px 0">Type to search GIFs...</div>
+      </div>
     </div>
-    <div style="display:flex;border-top:1px solid var(--border)">
-      <button onclick="toggleGifPanel()" style="padding:12px 16px;background:transparent;border:none;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;-webkit-tap-highlight-color:transparent">🎭 GIF</button>
-      <button onclick="postComment()" style="flex:1;padding:13px;background:rgba(48,209,88,0.1);border:none;border-left:1px solid var(--border);color:var(--green);font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent">💬 Post</button>
+    <div style="display:flex">
+      <button id="gif-toggle-btn" onclick="toggleGifPanel()" style="padding:13px 16px;background:transparent;border:none;border-right:1px solid var(--border);color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;-webkit-tap-highlight-color:transparent;flex-shrink:0">🎭 GIF</button>
+      <button onclick="postComment()" style="flex:1;padding:13px;background:rgba(48,209,88,0.12);border:none;color:var(--green);font-family:inherit;font-size:15px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent">💬 Post</button>
     </div>
   </div>
 </div>
 
-<!-- SETTINGS SECTION -->
-<div class="sec" style="margin-top:24px;margin-bottom:16px">
-  <div class="sec-lbl">Trip Settings</div>
-  <div class="card" style="padding:20px;display:flex;flex-direction:column;gap:14px">
-    <div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600">Trip Name</div>
-      <input id="settings-name" type="text" value="${trip.name.replace(/'/g,'&#39;').replace(/"/g,'&quot;')}" placeholder="Trip name">
+<!-- SETTINGS MODAL -->
+<div class="modal-overlay" id="settings-modal" onclick="if(event.target.id===\'settings-modal\')closeSettingsModal()">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Trip Settings</div>
+    <div style="display:flex;flex-direction:column;gap:14px;margin-bottom:16px">
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">Trip Name</div>
+        <input id="settings-name" type="text" value="\${trip.name.replace(/"/g,\'&quot;\')}" placeholder="Trip name">
+      </div>
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">Trip Date</div>
+        <input id="settings-date" type="date" value="\${trip.trip_date || \'\'}">
+      </div>
     </div>
-    <div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600">Trip Date (for countdown)</div>
-      <input id="settings-date" type="date" value="${trip.trip_date || ''}" style="color-scheme:dark">
-    </div>
-    <button onclick="saveSettings()" class="btn-green" style="padding:13px">💾 Save Changes</button>
+    <button onclick="saveSettings()" class="btn-green" style="margin-bottom:10px">💾 Save Changes</button>
+    <button onclick="closeSettingsModal()" class="btn-outline">Cancel</button>
   </div>
 </div>
 
@@ -1336,13 +1342,68 @@ ${trip.cover_image
   function closeInvite(){document.getElementById('invite-modal').classList.remove('open')}
   function openAddMembers(){newMembers=[];renderNewMembers();document.getElementById('add-members-modal').classList.add('open')}
   function closeAddMembers(){document.getElementById('add-members-modal').classList.remove('open')}
-
+  function openSettingsModal(){document.getElementById('settings-modal').classList.add('open')}
+  function closeSettingsModal(){document.getElementById('settings-modal').classList.remove('open')}
   function copyLink(url){navigator.clipboard.writeText(url).then(()=>toast('✈️ Link copied!')).catch(()=>prompt('Copy:',url));}
   function copyAndToast(url,msg){navigator.clipboard.writeText(url).then(()=>toast(msg)).catch(()=>{prompt('Copy this link:',url);toast(msg);});}
   function shareNative(url,title){if(navigator.share)navigator.share({title,url}).catch(()=>copyLink(url));else copyAndToast(url,'📋 Copied!');}
 
-  // ── COVER UPLOAD (fixed: use onload callback properly) ──
-  function uploadCover(input){
+  // Auto-fill name from localStorage
+  (function(){
+    try{
+      const profile = JSON.parse(localStorage.getItem('raven_profile')||'{}');
+      const name = profile.first_name || '';
+      if(name){
+        const el = document.getElementById('comment-author');
+        if(el){ el.value = name; el.style.color = 'var(--muted2)'; }
+      }
+    }catch(e){}
+  })();
+
+  // ── GIF SUPPORT ──
+  let gifPanelOpen = false;
+  function toggleGifPanel(){
+    gifPanelOpen = !gifPanelOpen;
+    const p = document.getElementById('gif-panel');
+    p.style.display = gifPanelOpen ? 'block' : 'none';
+    const btn = document.getElementById('gif-toggle-btn');
+    btn.style.color = gifPanelOpen ? 'var(--green)' : 'var(--muted)';
+    if(gifPanelOpen) document.getElementById('gif-search-input').focus();
+  }
+  function clearGif(){
+    selectedGifUrl=null;
+    document.getElementById('gif-preview-wrap').style.display='none';
+    document.getElementById('gif-preview-img').src='';
+  }
+  function selectGif(url){
+    selectedGifUrl=url;
+    document.getElementById('gif-preview-img').src=url;
+    document.getElementById('gif-preview-wrap').style.display='block';
+    gifPanelOpen=false;
+    document.getElementById('gif-panel').style.display='none';
+    document.getElementById('gif-toggle-btn').style.color='var(--muted)';
+    document.getElementById('gif-search-input').value='';
+    document.getElementById('gif-results').innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px 0">Type to search GIFs...</div>';
+  }
+  function searchGifs(q){
+    clearTimeout(gifTimer);
+    const container = document.getElementById('gif-results');
+    if(!q.trim()){container.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px 0">Type to search GIFs...</div>';return;}
+    container.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px 0">Searching...</div>';
+    gifTimer=setTimeout(function(){
+      fetch(BACKEND+'/gif-search?q='+encodeURIComponent(q))
+        .then(r=>r.json())
+        .then(d=>{
+          const gifs = d.gifs || d.results || [];
+          if(!gifs.length){container.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px 0">No results — try another search</div>';return;}
+          container.innerHTML=gifs.map(function(g){
+            const url = g.preview || g.url || '';
+            return '<img src="'+url+'" onclick="selectGif(\''+url+'\')" style="height:80px;width:auto;border-radius:6px;cursor:pointer;object-fit:cover;border:2px solid transparent" onmouseover="this.style.borderColor=\'#30D158\'" onmouseout="this.style.borderColor=\'transparent\'">';
+          }).join('');
+        })
+        .catch(()=>{container.innerHTML='<div style="color:#FF6B6B;font-size:12px;padding:8px 0">Error loading GIFs</div>';});
+    },500);
+  }
     const file=input.files[0];if(!file)return;
     const reader=new FileReader();
     reader.onload=function(e){
