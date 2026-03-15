@@ -509,20 +509,30 @@ app.get('/bill/:billId', async (req, res) => {
     ? `<div style="padding:16px 20px 0;max-width:500px;margin:0 auto"><div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:8px">Receipt</div><img src="data:image/jpeg;base64,${bill.receipt_image}" style="width:100%;border-radius:14px;display:block"></div>` : '';
 
   // Build per-person item map with prices
-  const participantItems = {}; // name -> [{name, price, splitWith}]
+  const participantItems = {};
   participants.forEach(p => { participantItems[p.name.toLowerCase()] = []; });
-  if (items.length > 0 && selections.length > 0) {
-    items.forEach(item => {
-      const claimers = selections.filter(s => String(s.item_id) === String(item.id)).map(s => s.participant_name);
-      claimers.forEach(claimer => {
-        const key = claimer.toLowerCase();
-        if (participantItems[key] !== undefined) {
-          participantItems[key].push({ name: item.name, price: parseFloat(item.price), splitWith: claimers.length });
-        }
+
+  if (items.length > 0) {
+    if (selections.length > 0) {
+      // Use actual item selections
+      items.forEach(item => {
+        const claimers = selections.filter(s => String(s.item_id) === String(item.id)).map(s => s.participant_name);
+        claimers.forEach(claimer => {
+          const key = claimer.toLowerCase();
+          if (participantItems[key] !== undefined) {
+            participantItems[key].push({ name: item.name, price: parseFloat(item.price), splitWith: claimers.length });
+          }
+        });
       });
-    });
-    const hasAny = Object.values(participantItems).some(a => a.length > 0);
-    if (!hasAny) {
+      // If nothing was matched, fall back to even split
+      const hasAny = Object.values(participantItems).some(a => a.length > 0);
+      if (!hasAny) {
+        participants.forEach(p => {
+          participantItems[p.name.toLowerCase()] = items.map(i => ({ name: i.name, price: parseFloat(i.price), splitWith: participants.length }));
+        });
+      }
+    } else {
+      // No selections yet — split all items evenly
       participants.forEach(p => {
         participantItems[p.name.toLowerCase()] = items.map(i => ({ name: i.name, price: parseFloat(i.price), splitWith: participants.length }));
       });
@@ -530,22 +540,36 @@ app.get('/bill/:billId', async (req, res) => {
   }
 
   function buildBreakdown(p, myItems, bill, participantCount) {
-    if (myItems.length === 0) return '';
     const tax = parseFloat(bill.tax||0);
     const tip = parseFloat(bill.tip||0);
+    const amount = parseFloat(p.amount||0);
+
+    // Simple split bill — no items, just show their share breakdown
+    if (myItems.length === 0) {
+      if (amount <= 0) return '';
+      const subtotal = parseFloat(bill.subtotal||0) || (amount - (tax+tip)/participantCount);
+      let rows = '<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6E6B80">Split ('+participantCount+' people)</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$'+(subtotal > 0 ? (subtotal/participantCount).toFixed(2) : amount.toFixed(2))+'</span></div>';
+      let shared_rows = '';
+      if (tax) shared_rows += '<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="font-size:11px;color:#6E6B80">Tax (split)</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$'+(tax/participantCount).toFixed(2)+'</span></div>';
+      if (tip) shared_rows += '<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="font-size:11px;color:#6E6B80">Tip (split)</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$'+(tip/participantCount).toFixed(2)+'</span></div>';
+      const divider = shared_rows ? '<div style="border-top:1px solid rgba(255,255,255,0.06);margin-top:4px;padding-top:4px">'+shared_rows+'</div>' : '';
+      return '<div style="margin-top:8px;background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px">'+rows+divider+'<div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:4px;padding-top:5px;display:flex;justify-content:space-between"><span style="font-size:11px;font-weight:700;color:#F0EEF8">Total</span><span style="font-size:12px;font-weight:700;color:#30D158;font-family:monospace">$'+amount.toFixed(2)+'</span></div></div>';
+    }
+
+    // Itemized bill
     const shared = participantCount > 0 ? (tax+tip)/participantCount : 0;
     const itemsTotal = myItems.reduce((s,i) => s + i.price/i.splitWith, 0);
     let rows = myItems.map(i => {
       const share = (i.price/i.splitWith).toFixed(2);
-      const split = i.splitWith > 1 ? ` <span style="color:#9896A8;font-size:10px">(÷${i.splitWith})</span>` : '';
-      return `<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6E6B80">${i.name}${split}</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$${share}</span></div>`;
+      const split = i.splitWith > 1 ? ' <span style="color:#9896A8;font-size:10px">(÷'+i.splitWith+')</span>' : '';
+      return '<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6E6B80">'+i.name+split+'</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$'+share+'</span></div>';
     }).join('');
     let shared_rows = '';
-    if (tax) shared_rows += `<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="font-size:11px;color:#6E6B80">Tax (split)</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$${(tax/participantCount).toFixed(2)}</span></div>`;
-    if (tip) shared_rows += `<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="font-size:11px;color:#6E6B80">Tip (split)</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$${(tip/participantCount).toFixed(2)}</span></div>`;
-    const divider = shared_rows ? `<div style="border-top:1px solid rgba(255,255,255,0.06);margin-top:4px;padding-top:4px">${shared_rows}</div>` : '';
+    if (tax) shared_rows += '<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="font-size:11px;color:#6E6B80">Tax (split)</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$'+(tax/participantCount).toFixed(2)+'</span></div>';
+    if (tip) shared_rows += '<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="font-size:11px;color:#6E6B80">Tip (split)</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$'+(tip/participantCount).toFixed(2)+'</span></div>';
+    const divider = shared_rows ? '<div style="border-top:1px solid rgba(255,255,255,0.06);margin-top:4px;padding-top:4px">'+shared_rows+'</div>' : '';
     const total = (itemsTotal + shared).toFixed(2);
-    return `<div style="margin-top:8px;background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px">${rows}${divider}<div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:4px;padding-top:5px;display:flex;justify-content:space-between"><span style="font-size:11px;font-weight:700;color:#F0EEF8">Total</span><span style="font-size:12px;font-weight:700;color:#30D158;font-family:monospace">$${total}</span></div></div>`;
+    return '<div style="margin-top:8px;background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px">'+rows+divider+'<div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:4px;padding-top:5px;display:flex;justify-content:space-between"><span style="font-size:11px;font-weight:700;color:#F0EEF8">Total</span><span style="font-size:12px;font-weight:700;color:#30D158;font-family:monospace">$'+total+'</span></div></div>';
   }
 
   const participantsHTML = participants.length > 0 ? `
