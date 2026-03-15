@@ -724,7 +724,7 @@ app.get('/bill/:billId', async (req, res) => {
       panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
       if (panel.style.display === 'block') {
         document.getElementById('gif-search').focus();
-        searchGifs('money');
+        searchGifs('reaction');
       }
     }
 
@@ -738,28 +738,39 @@ app.get('/bill/:billId', async (req, res) => {
     async function searchGifs(q) {
       if (!q || q.length < 2) return;
       clearTimeout(gifTimer);
+      const container = document.getElementById('gif-results');
+      container.innerHTML = '<div style="color:#6E6B80;font-size:12px;padding:8px;width:100%">Searching...</div>';
       gifTimer = setTimeout(async () => {
         try {
-          const key = 'AIzaSyD-your-key'; // Tenor public beta key
-          const res = await fetch('https://tenor.googleapis.com/v2/search?q='+encodeURIComponent(q)+'&key=AIzaSyD-9tSrke72I6e_a6aHG0-KoE0byR_fFw0&limit=12&media_filter=gif');
+          // Giphy public beta key — free for development
+          const key = 'dc6zaTOxFJmzC';
+          const res = await fetch('https://api.giphy.com/v1/gifs/search?api_key='+key+'&q='+encodeURIComponent(q)+'&limit=12&rating=g');
           const data = await res.json();
-          const container = document.getElementById('gif-results');
           container.innerHTML = '';
-          (data.results||[]).forEach(g => {
-            const url = g.media_formats?.tinygif?.url || g.media_formats?.gif?.url;
+          if (!data.data || data.data.length === 0) {
+            container.innerHTML = '<div style="color:#6E6B80;font-size:12px;padding:8px;width:100%">No GIFs found</div>';
+            return;
+          }
+          data.data.forEach(g => {
+            const url = g.images?.fixed_height_small?.url || g.images?.downsized?.url;
+            const fullUrl = g.images?.fixed_height?.url || url;
             if (!url) return;
             const img = document.createElement('img');
             img.src = url;
-            img.style.cssText = 'width:calc(33% - 3px);border-radius:6px;cursor:pointer;object-fit:cover;height:80px;flex-shrink:0';
+            img.style.cssText = 'width:calc(33.3% - 3px);border-radius:6px;cursor:pointer;object-fit:cover;height:80px;flex-shrink:0;transition:opacity 0.15s';
+            img.addEventListener('mouseover', () => img.style.opacity='0.8');
+            img.addEventListener('mouseout', () => img.style.opacity='1');
             img.addEventListener('click', () => {
-              selectedGif = url;
-              document.getElementById('gif-preview-text').textContent = '🎭 GIF selected';
+              selectedGif = fullUrl || url;
+              document.getElementById('gif-preview-text').textContent = '🎭 GIF selected: '+g.title.substring(0,30);
               document.getElementById('gif-clear').style.display = 'inline';
               document.getElementById('gif-panel').style.display = 'none';
             });
             container.appendChild(img);
           });
-        } catch(e) {}
+        } catch(e) {
+          container.innerHTML = '<div style="color:#FF6B6B;font-size:12px;padding:8px;width:100%">Error loading GIFs</div>';
+        }
       }, 400);
     }
 
