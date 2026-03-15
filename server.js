@@ -634,6 +634,7 @@ app.get('/bill/:billId', async (req, res) => {
     </div>
     <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:14px;overflow:hidden">
       <input id="cname" type="text" placeholder="Your name" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#F0EEF8;font-family:inherit;font-size:14px;outline:none"/>
+      <div id="gif-preview-wrap" style="display:none;padding:0 12px;"></div>
       <textarea id="cbody" placeholder="Add a comment... e.g. Can we double-check the tip?" rows="2" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#F0EEF8;font-family:inherit;font-size:14px;outline:none;resize:none;line-height:1.5"></textarea>
       <div style="display:flex;border-bottom:1px solid rgba(255,255,255,0.07)">
         <button onclick="toggleGif()" style="flex:0;padding:12px 16px;background:transparent;border:none;color:#6E6B80;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">🎭 GIF</button>
@@ -730,6 +731,8 @@ app.get('/bill/:billId', async (req, res) => {
 
     function clearGif() {
       selectedGif = null;
+      const wrap = document.getElementById('gif-preview-wrap');
+      if (wrap) { wrap.innerHTML = ''; wrap.style.display = 'none'; }
       document.getElementById('gif-preview-text').textContent = '';
       document.getElementById('gif-clear').style.display = 'none';
       document.getElementById('gif-panel').style.display = 'none';
@@ -757,8 +760,17 @@ app.get('/bill/:billId', async (req, res) => {
             img.style.cssText = 'width:calc(33.3% - 3px);border-radius:6px;cursor:pointer;object-fit:cover;height:80px;flex-shrink:0';
             img.addEventListener('click', () => {
               selectedGif = g.full || g.preview;
-              document.getElementById('gif-preview-text').textContent = '🎭 '+g.title.substring(0,25);
-              document.getElementById('gif-clear').style.display = 'inline';
+              // Show preview below the GIF button row
+              const wrap = document.getElementById('gif-preview-wrap');
+              if (wrap) {
+                wrap.style.display = 'block';
+                wrap.innerHTML = '<div style="position:relative;display:inline-block;margin:8px 0 4px">'
+                  + '<img src="' + (g.full || g.preview) + '" style="max-width:100%;max-height:160px;border-radius:8px;display:block">'
+                  + '<button onclick="clearGif()" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.75);border:none;color:#fff;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center">×</button>'
+                  + '</div>';
+              }
+              document.getElementById('gif-preview-text').textContent = '';
+              document.getElementById('gif-clear').style.display = 'none';
               document.getElementById('gif-panel').style.display = 'none';
             });
             container.appendChild(img);
@@ -780,7 +792,7 @@ app.get('/bill/:billId', async (req, res) => {
         if(none)none.style.display='none';
         list.innerHTML=comments.map(c=>{
           const dt=new Date(c.created_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
-          const gifHtml = c.gif_url ? '<img src="'+c.gif_url+'" style="width:100%;border-radius:8px;margin-top:8px;max-height:200px;object-fit:cover">' : ''; return '<div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:14px 16px"><div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px;font-weight:700">'+(c.name||'Anonymous')+'</span><span style="font-size:11px;color:#6E6B80">'+dt+'</span></div>'+(c.body?'<div style="font-size:14px;color:#9896A8;line-height:1.5">'+c.body+'</div>':'')+gifHtml+'</div>';
+          const gifHtml = c.gif_url ? '<img src="'+c.gif_url+'" style="max-width:100%;border-radius:8px;margin-top:8px;display:block" onerror="this.style.display=\'none\'">' : ''; return '<div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:14px 16px"><div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px;font-weight:700">'+(c.name||'Anonymous')+'</span><span style="font-size:11px;color:#6E6B80">'+dt+'</span></div>'+(c.body?'<div style="font-size:14px;color:#9896A8;line-height:1.5">'+c.body+'</div>':'')+gifHtml+'</div>';
         }).join('');
       }catch(e){}
     }
