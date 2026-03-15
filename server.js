@@ -1061,6 +1061,22 @@ app.post('/waitlist', async (req, res) => {
 
 
 // ─── DIAGNOSTIC ──────────────────────────────────────────────────────────────
+
+app.get('/test-insert-comment/:billId', async (req, res) => {
+  const { billId } = req.params;
+  const result = await supabase.from('bill_comments').insert({
+    bill_id: billId,
+    name: 'Test User',
+    body: 'Test comment ' + Date.now()
+  });
+  res.json({
+    data: result.data,
+    error: result.error,
+    status: result.status,
+    statusText: result.statusText
+  });
+});
+
 app.get('/test-comments/:billId', async (req, res) => {
   const { billId } = req.params;
   const results = {};
