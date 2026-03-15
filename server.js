@@ -593,7 +593,7 @@ app.get('/bill/:billId', async (req, res) => {
       </div>
     </div>`;
 
-  const profileJson = JSON.stringify(creatorProfile || {}).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+  const profileJson = Buffer.from(JSON.stringify(creatorProfile || {})).toString('base64');
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -643,7 +643,7 @@ app.get('/bill/:billId', async (req, res) => {
   ${itemsListHTML}
   ${commentsHTML}
 
-  <div id="cp" data-v='${profileJson}' style="display:none"></div>
+  <input type="hidden" id="cp-data" value="${profileJson}">
 
   <!-- Pay Modal -->
   <div id="pay-modal" style="display:none;position:fixed;inset:0;z-index:999">
@@ -665,7 +665,11 @@ app.get('/bill/:billId', async (req, res) => {
 
     // ── PAY ──
     function showPay(pid, name, amount) {
-      const profile = JSON.parse(document.getElementById('cp').dataset.v || '{}');
+      let profile = {};
+      try {
+        const b64 = document.getElementById('cp-data').value || '';
+        if (b64) profile = JSON.parse(atob(b64));
+      } catch(e) { console.error('Profile parse error:', e); }
       document.getElementById('pm-name').textContent = name;
       document.getElementById('pm-amount').textContent = '$' + parseFloat(amount).toFixed(2);
       const amt = parseFloat(amount).toFixed(2);
@@ -739,6 +743,7 @@ app.get('/bill/:billId', async (req, res) => {
       const body = document.getElementById('comment-text').value.trim();
       if (!body) { toast('Write a comment first'); return; }
       const btn = document.getElementById('comment-submit-btn');
+      if (!btn) { alert('Button not found'); return; }
       btn.textContent = 'Posting...'; btn.disabled = true;
       try {
         const r = await fetch('/bill/'+BILL_ID+'/comments', {
