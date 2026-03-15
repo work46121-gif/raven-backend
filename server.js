@@ -792,9 +792,15 @@ app.get('/bill/:billId', async (req, res) => {
         if(none)none.style.display='none';
         list.innerHTML=comments.map(c=>{
           const dt=new Date(c.created_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
-          const gifHtml = c.gif_url ? '<img src="'+c.gif_url+'" style="max-width:100%;border-radius:8px;margin-top:8px;display:block" onerror="this.style.display=\'none\'">' : ''; return '<div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:14px 16px"><div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px;font-weight:700">'+(c.name||'Anonymous')+'</span><span style="font-size:11px;color:#6E6B80">'+dt+'</span></div>'+(c.body?'<div style="font-size:14px;color:#9896A8;line-height:1.5">'+c.body+'</div>':'')+gifHtml+'</div>';
+          const gifHtml = c.gif_url ? '<img src="'+c.gif_url+'" style="max-width:100%;border-radius:8px;margin-top:8px;display:block">' : '';
+          const bodyHtml = c.body ? '<div style="font-size:14px;color:#9896A8;line-height:1.5">'+c.body+'</div>' : '';
+          return '<div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:14px 16px">'
+            +'<div style="display:flex;justify-content:space-between;margin-bottom:6px">'
+            +'<span style="font-size:13px;font-weight:700">'+(c.name||'Anonymous')+'</span>'
+            +'<span style="font-size:11px;color:#6E6B80">'+dt+'</span>'
+            +'</div>'+bodyHtml+gifHtml+'</div>';
         }).join('');
-      }catch(e){}
+      }catch(e){console.error('loadC error',e);}
     }
 
     async function postC(){
