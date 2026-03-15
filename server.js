@@ -516,18 +516,24 @@ app.get('/bill/:billId', async (req, res) => {
       </div>` : '';
 
   // Build item map: participantName -> [item names]
+  // Dashboard bills store assignments in item_selections with participant_name (lowercase)
+  // Match case-insensitively
   const participantItems = {};
   participants.forEach(p => { participantItems[p.name.toLowerCase()] = []; });
-  if (items.length > 0 && selections.length > 0) {
-    selections.forEach(sel => {
-      const item = items.find(i => String(i.id) === String(sel.item_id));
-      if (item && participantItems[sel.participant_name] !== undefined) {
-        participantItems[sel.participant_name].push(item.name);
-      }
-    });
-    // If no selections, items are split equally — show all items for everyone
-    const hasSelections = Object.values(participantItems).some(arr => arr.length > 0);
-    if (!hasSelections) {
+
+  if (items.length > 0) {
+    if (selections.length > 0) {
+      selections.forEach(sel => {
+        const item = items.find(i => String(i.id) === String(sel.item_id));
+        const key = (sel.participant_name || '').toLowerCase();
+        if (item && participantItems[key] !== undefined) {
+          participantItems[key].push(item.name);
+        }
+      });
+    }
+    // If still no assignments found, show equal split (all items) for everyone
+    const hasAny = Object.values(participantItems).some(arr => arr.length > 0);
+    if (!hasAny && participants.length > 0) {
       participants.forEach(p => {
         participantItems[p.name.toLowerCase()] = items.map(i => i.name);
       });
@@ -730,21 +736,30 @@ app.get('/bill/:billId', async (req, res) => {
       const name = document.getElementById('comment-name').value.trim();
       const body = document.getElementById('comment-text').value.trim();
       if (!body) { toast('Write a comment first'); return; }
-      const btn = event.target;
-      btn.textContent = 'Posting...'; btn.disabled = true;
+      const btn = document.querySelector('[onclick="postComment()"]');
+      if (btn) { btn.textContent = 'Posting...'; btn.disabled = true; }
       try {
         const r = await fetch('/bill/'+BILL_ID+'/comments', {
-          method:'POST', headers:{'Content-Type':'application/json'},
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
           body: JSON.stringify({name: name||'Anonymous', body})
         });
+        if (!r.ok) { toast('Server error ' + r.status); return; }
         const d = await r.json();
         if (d.success) {
           document.getElementById('comment-text').value = '';
+          document.getElementById('comment-name').value = '';
           await loadComments();
           toast('✅ Comment posted!');
-        } else { toast('Error: '+(d.error||'Try again')); }
-      } catch(e) { toast('Network error — try again'); }
-      btn.textContent = '💬 Post Comment'; btn.disabled = false;
+        } else {
+          toast('Failed: ' + (d.error || 'unknown error'));
+          console.error('Comment error:', d);
+        }
+      } catch(e) {
+        toast('Network error: ' + e.message);
+        console.error('Comment fetch error:', e);
+      }
+      if (btn) { btn.textContent = '💬 Post Comment'; btn.disabled = false; }
     }
 
     function toast(msg) {
@@ -791,12 +806,16 @@ app.post('/bill/:billId/comments', async (req, res) => {
     const { name, body } = req.body;
     if (!body?.trim()) return res.json({ success: false, error: 'Empty comment' });
 
-    await supabase.from('bill_comments').insert({
+    const { error: insertErr } = await supabase.from('bill_comments').insert({
       bill_id: billId,
       name: name?.trim() || 'Anonymous',
       body: body.trim(),
       created_at: new Date().toISOString()
     });
+    if (insertErr) {
+      console.error('Comment insert error:', insertErr);
+      return res.json({ success: false, error: insertErr.message });
+    }
 
     const { data: bill } = await supabase.from('bills').select('name, creator_phone').eq('id', billId).single();
     if (bill?.creator_phone && !bill.creator_phone.includes('@')) {
