@@ -587,7 +587,7 @@ app.get('/bill/:billId', async (req, res) => {
       <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:14px;overflow:hidden">
         <input id="comment-name" type="text" placeholder="Your name" autocomplete="off" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#F0EEF8;font-family:inherit;font-size:14px;outline:none"/>
         <textarea id="comment-text" placeholder="Add a comment... e.g. Can we double-check the tip?" rows="3" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#F0EEF8;font-family:inherit;font-size:14px;outline:none;resize:none;line-height:1.5"></textarea>
-        <button onclick="postComment()" style="width:100%;padding:13px;background:rgba(48,209,88,0.1);border:none;color:#30D158;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">💬 Post Comment</button>
+        <button id="comment-submit-btn" onclick="postComment()" style="width:100%;padding:13px;background:rgba(48,209,88,0.1);border:none;color:#30D158;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">💬 Post Comment</button>
       </div>
     </div>`;
 
@@ -729,15 +729,15 @@ app.get('/bill/:billId', async (req, res) => {
             '<span style="font-size:11px;color:#6E6B80">'+dt+'</span></div>'+
             '<div style="font-size:14px;color:#9896A8;line-height:1.5">'+c.body+'</div></div>';
         }).join('');
-      } catch(e) {}
+      } catch(e) { console.error('loadComments error:', e); }
     }
 
     async function postComment() {
       const name = document.getElementById('comment-name').value.trim();
       const body = document.getElementById('comment-text').value.trim();
       if (!body) { toast('Write a comment first'); return; }
-      const btn = document.querySelector('[onclick="postComment()"]');
-      if (btn) { btn.textContent = 'Posting...'; btn.disabled = true; }
+      const btn = document.getElementById('comment-submit-btn');
+      btn.textContent = 'Posting...'; btn.disabled = true;
       try {
         const r = await fetch('/bill/'+BILL_ID+'/comments', {
           method:'POST',
@@ -758,8 +758,9 @@ app.get('/bill/:billId', async (req, res) => {
       } catch(e) {
         toast('Network error: ' + e.message);
         console.error('Comment fetch error:', e);
+      } finally {
+        btn.textContent = '💬 Post Comment'; btn.disabled = false;
       }
-      if (btn) { btn.textContent = '💬 Post Comment'; btn.disabled = false; }
     }
 
     function toast(msg) {
