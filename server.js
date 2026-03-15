@@ -477,12 +477,13 @@ app.post('/sms', async (req, res) => {
 
 app.get('/bill/:billId', async (req, res) => {
   const { billId } = req.params;
-  const { token } = req.query;
+  const token = req.query.t || req.query.token; // URL uses ?t=
   const { data: bill } = await supabase.from('bills').select('*').eq('id', billId).single();
   if (!bill) return res.status(404).send('Bill not found');
 
-  // Token validation — bills with a share_token require it
-  if (bill.share_token && bill.share_token !== token) {
+  // Token validation — only enforce if bill HAS a token AND provided token doesn't match
+  // Bills without tokens (legacy) are accessible to anyone with the ID
+  if (bill.share_token && token !== bill.share_token) {
     return res.status(403).send(`
       <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
       <title>RAVEN — Access Denied</title>
