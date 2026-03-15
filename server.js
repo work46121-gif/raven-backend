@@ -820,33 +820,34 @@ app.get('/bill/:billId', async (req, res) => {
 
 app.get('/gif-search', async (req, res) => {
   const q = req.query.q || 'reaction';
+  // Tenor as primary — Giphy public key is unreliable
   try {
-    const response = await fetch(
-      'https://api.giphy.com/v1/gifs/search?api_key=jCYGiGFkCvGMwqG0IHVLqaaxEDKIDHs4&q='+encodeURIComponent(q)+'&limit=12&rating=g&lang=en'
-    );
+    const r = await fetch('https://tenor.googleapis.com/v2/search?q='+encodeURIComponent(q)+'&key=AIzaSyD-9tSrke72I6e_a6aHG0-KoE0byR_fFw0&limit=15&media_filter=tinygif,gif&contentfilter=medium');
+    const d = await r.json();
+    if (d.results && d.results.length > 0) {
+      const gifs = d.results.map(g => ({
+        id: g.id,
+        title: g.content_description || q,
+        preview: g.media_formats?.tinygif?.url || g.media_formats?.nanogif?.url || '',
+        full: g.media_formats?.gif?.url || g.media_formats?.mediumgif?.url || g.media_formats?.tinygif?.url || ''
+      })).filter(g => g.preview);
+      return res.json({ success: true, gifs });
+    }
+  } catch(e) { console.error('Tenor error:', e.message); }
+
+  // Fallback to Giphy
+  try {
+    const response = await fetch('https://api.giphy.com/v1/gifs/search?api_key=jCYGiGFkCvGMwqG0IHVLqaaxEDKIDHs4&q='+encodeURIComponent(q)+'&limit=12&rating=g&lang=en');
     const data = await response.json();
     const gifs = (data.data || []).map(g => ({
       id: g.id,
       title: g.title,
-      preview: g.images?.fixed_height_small?.url || g.images?.downsized_small?.mp4 || '',
+      preview: g.images?.fixed_height_small?.url || g.images?.preview_gif?.url || '',
       full: g.images?.fixed_height?.url || g.images?.downsized?.url || ''
-    }));
+    })).filter(g => g.preview);
     res.json({ success: true, gifs });
   } catch(err) {
-    // Fallback to Tenor if Giphy fails
-    try {
-      const r2 = await fetch('https://tenor.googleapis.com/v2/search?q='+encodeURIComponent(q)+'&key=AIzaSyD-9tSrke72I6e_a6aHG0-KoE0byR_fFw0&limit=12&media_filter=tinygif');
-      const d2 = await r2.json();
-      const gifs = (d2.results || []).map(g => ({
-        id: g.id,
-        title: g.content_description || q,
-        preview: g.media_formats?.tinygif?.url || '',
-        full: g.media_formats?.gif?.url || g.media_formats?.tinygif?.url || ''
-      }));
-      res.json({ success: true, gifs });
-    } catch(e2) {
-      res.json({ success: false, gifs: [] });
-    }
+    res.json({ success: false, gifs: [] });
   }
 });
 
