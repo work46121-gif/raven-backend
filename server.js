@@ -997,13 +997,20 @@ app.get('/trip/:tripId', async (req, res) => {
 
   let countdownHTML = '';
   if (trip.trip_date) {
-    const diff = new Date(trip.trip_date + 'T12:00:00').getTime() - Date.now();
-    if (diff > 0) {
-      const days = Math.ceil(diff / 86400000);
-      countdownHTML = `<div style="background:linear-gradient(135deg,rgba(124,58,237,0.12),rgba(48,209,88,0.08));border:1px solid rgba(124,58,237,0.22);border-radius:16px;padding:20px;text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#C084FC;font-weight:700;margin-bottom:8px">✈️ Countdown to Trip</div><div style="font-size:72px;font-weight:900;line-height:1;color:#F0EEF8;margin-bottom:4px">${days}</div><div style="font-size:13px;color:#9896A8">day${days!==1?'s':''} to go · ${new Date(trip.trip_date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</div></div>`;
+    // Compare dates in Eastern Time to avoid UTC offset issues
+    const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const todayET = new Date(nowET.getFullYear(), nowET.getMonth(), nowET.getDate());
+    const [y, m, d] = trip.trip_date.split('-').map(Number);
+    const tripDay = new Date(y, m - 1, d);
+    const diffMs = tripDay.getTime() - todayET.getTime();
+    const days = Math.round(diffMs / 86400000);
+    if (days > 0) {
+      countdownHTML = `<div style="background:linear-gradient(135deg,rgba(124,58,237,0.12),rgba(48,209,88,0.08));border:1px solid rgba(124,58,237,0.22);border-radius:16px;padding:20px;text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#C084FC;font-weight:700;margin-bottom:8px">✈️ Countdown to Trip</div><div style="font-size:72px;font-weight:900;line-height:1;color:#F0EEF8;margin-bottom:4px">${days}</div><div style="font-size:13px;color:#9896A8">day${days!==1?'s':''} to go · ${tripDay.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric',timeZone:'America/New_York'})}</div></div>`;
+    } else if (days === 0) {
+      countdownHTML = `<div style="background:linear-gradient(135deg,rgba(48,209,88,0.12),rgba(124,58,237,0.08));border:1px solid rgba(48,209,88,0.3);border-radius:16px;padding:20px;text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#30D158;font-weight:700;margin-bottom:8px">✈️ Today's the Day!</div><div style="font-size:48px;font-weight:900;line-height:1;color:#30D158;margin-bottom:4px">🛫</div><div style="font-size:13px;color:#9896A8">${tripDay.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</div></div>`;
     } else {
-      const ago = Math.abs(Math.floor(diff/86400000));
-      countdownHTML = `<div style="background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.18);border-radius:16px;padding:16px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:600">✅ Trip was ${ago>0?ago+' days ago':'today'} · ${new Date(trip.trip_date+'T12:00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</div></div>`;
+      const ago = Math.abs(days);
+      countdownHTML = `<div style="background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.18);border-radius:16px;padding:16px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:600">✅ Trip was ${ago>0?ago+' day'+(ago!==1?'s':'')+' ago':'today'} · ${tripDay.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</div></div>`;
     }
   } else {
     countdownHTML = `<div style="background:#13131A;border:1px dashed rgba(255,255,255,0.08);border-radius:14px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="font-size:13px;color:#6E6B80">📅 No trip date set</div><div style="font-size:11px;color:#6E6B80;font-style:italic">Set date in settings</div></div>`;
@@ -1079,7 +1086,7 @@ app.get('/trip/:tripId', async (req, res) => {
     const splitEntries = Object.entries(splits).filter(([p,a]) => parseFloat(a) > 0 && (!payer || p.toLowerCase() !== payer.toLowerCase()));
     const allEntries   = Object.entries(splits).filter(([,a]) => parseFloat(a) > 0);
     const total = parseFloat(r.total||0);
-    const dateStr = new Date(r.created_at).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+    const dateStr = new Date(r.created_at).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'America/New_York'});
     const receiptId = 'receipt-' + rIdx;
 
     // Split pills (collapsed view) — only non-payers
@@ -1203,7 +1210,7 @@ app.get('/trip/:tripId', async (req, res) => {
 
   const commentRows = (comments||[]).map(c => {
     const initials = c.author_name ? esc(c.author_name[0].toUpperCase()) : '?';
-    const timeStr = new Date(c.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+    const timeStr = new Date(c.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'America/New_York'});
     return `<div style="display:flex;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)">
       <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#30D158);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0">${initials}</div>
       <div style="flex:1;min-width:0">
@@ -1438,15 +1445,15 @@ ${coverHTML}
 <!-- MEMBER PROFILE MODAL -->
 <div class="modal-bg" id="member-profile-modal" onclick="if(event.target.id==='member-profile-modal')closeMemberProfile()">
   <div style="background:#13131A;border:1px solid rgba(255,255,255,0.1);border-radius:24px 24px 0 0;width:100%;max-width:480px;overflow:hidden">
-    <!-- Header gradient band -->
-    <div style="height:70px;background:linear-gradient(135deg,#7C3AED,#30D158);position:relative">
-      <button onclick="closeMemberProfile()" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,0.3);border:none;color:#fff;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center">✕</button>
+    <!-- Header gradient band — tall enough for avatar overlap -->
+    <div style="height:110px;background:linear-gradient(135deg,#7C3AED,#30D158);position:relative;flex-shrink:0">
+      <button onclick="closeMemberProfile()" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,0.3);border:none;color:#fff;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;line-height:1">✕</button>
     </div>
-    <div style="padding:0 24px 32px;margin-top:-36px">
-      <div id="mp-avatar" style="width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#30D158);border:3px solid #13131A;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;color:#fff;overflow:hidden;margin-bottom:12px"></div>
+    <div style="padding:0 24px 32px;margin-top:-46px">
+      <div id="mp-avatar" style="width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#30D158);border:4px solid #13131A;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;color:#fff;overflow:hidden;margin-bottom:12px;flex-shrink:0"></div>
       <div style="display:flex;align-items:flex-end;gap:10px;margin-bottom:4px;flex-wrap:wrap">
         <div id="mp-name" style="font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:0.04em"></div>
-        <div id="mp-raven-id" style="font-size:13px;color:#A855F7;font-weight:700;padding-bottom:3px"></div>
+        <div id="mp-raven-id" style="font-size:13px;color:#A855F7;font-weight:700;padding-bottom:4px"></div>
       </div>
       <div id="mp-member-since" style="font-size:12px;color:#6E6B80;margin-bottom:18px"></div>
       <div id="mp-payment-chips" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px"></div>
