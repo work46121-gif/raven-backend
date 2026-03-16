@@ -2273,6 +2273,9 @@ function renderItems() {
 }
 
 function tripPhoto(file) {
+  const isPNG = file.type === 'image/png';
+  const outputType = isPNG ? 'image/png' : 'image/jpeg';
+  const quality = isPNG ? 1.0 : 0.92;
   const reader=new FileReader();
   reader.onload=function(e){
     document.getElementById('r-preview').src=e.target.result;
@@ -2281,10 +2284,10 @@ function tripPhoto(file) {
     const img=new Image();
     img.onload=function(){
       let{width:w,height:h}=img;
-      if(w>1600||h>1600){if(w>h){h=Math.round(h*1600/w);w=1600;}else{w=Math.round(w*1600/h);h=1600;}}
+      if(w>2048||h>2048){if(w>h){h=Math.round(h*2048/w);w=2048;}else{w=Math.round(w*2048/h);h=2048;}}
       const c=document.createElement('canvas');c.width=w;c.height=h;
       c.getContext('2d').drawImage(img,0,0,w,h);
-      imgBase64=c.toDataURL('image/jpeg',0.88).split(',')[1];
+      imgBase64=c.toDataURL(outputType,quality).split(',')[1];
 
       // ── SAVE TO LOCALSTORAGE IMMEDIATELY ──
       // Receipt photo is stored offline as soon as it's uploaded.
