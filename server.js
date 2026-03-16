@@ -1749,9 +1749,24 @@ function tripPhoto(file) {
       imgBase64=c.toDataURL('image/jpeg',0.88).split(',')[1];
       const st=document.getElementById('r-scan-status');
       st.style.display='block';
-      st.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:8px"><div class="spinner"></div><span style="font-size:13px;color:#C084FC;font-weight:600">Scanning receipt with AI...</span></div>';
-      fetch(BACKEND+'/demo/scan-receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:imgBase64,mediaType:file.type||'image/jpeg'})})
-        .then(r=>r.json()).then(d=>{
+      st.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:8px"><div class="spinner"></div><span style="font-size:13px;color:#C084FC;font-weight:600">Waking up AI server...</span></div>';
+
+      // Wake server then scan with retry (handles Railway cold starts)
+      async function doScan(attempt) {
+        if (attempt === 1) {
+          // Ping server to wake from sleep
+          try { await Promise.race([fetch(BACKEND+'/'), new Promise(r=>setTimeout(r,20000))]); } catch(e) {}
+          st.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:8px"><div class="spinner"></div><span style="font-size:13px;color:#C084FC;font-weight:600">Scanning receipt with AI...</span></div>';
+        } else {
+          st.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:8px"><div class="spinner"></div><span style="font-size:13px;color:#C084FC;font-weight:600">Retrying... (attempt '+attempt+' of 3)</span></div>';
+          await new Promise(r=>setTimeout(r,2000));
+        }
+        const controller = new AbortController();
+        const timer = setTimeout(()=>controller.abort(), 60000);
+        try {
+          const r = await fetch(BACKEND+'/demo/scan-receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:imgBase64,mediaType:file.type||'image/jpeg'}),signal:controller.signal});
+          clearTimeout(timer);
+          const d = await r.json();
           if(d.success&&d.items&&d.items.length){
             if(!document.getElementById('r-name').value&&d.bill_name) document.getElementById('r-name').value=d.bill_name;
             const tot=d.total||d.items.reduce((s,i)=>s+i.price,0);
@@ -1759,10 +1774,18 @@ function tripPhoto(file) {
             tripItems=d.items.map((item,idx)=>({id:Date.now()+idx,name:item.name,price:parseFloat(item.price)||0,assignees:[]}));
             setSplit('itemized'); renderItems();
             st.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:8px"><span>✅</span><span style="font-size:13px;color:#30D158;font-weight:600">'+d.items.length+' items found!</span></div>';
+          } else if (attempt < 3) {
+            return doScan(attempt+1);
           } else {
-            st.innerHTML='<div style="padding:10px 14px;background:rgba(255,68,68,0.07);border:1px solid rgba(255,68,68,0.2);border-radius:8px;font-size:13px;color:#FF6B6B">Could not scan — enter manually</div>';
+            st.innerHTML='<div style="padding:10px 14px;background:rgba(255,68,68,0.07);border:1px solid rgba(255,68,68,0.2);border-radius:8px;font-size:13px;color:#FF6B6B">Could not detect items — enter manually below</div>';
           }
-        }).catch(()=>{ document.getElementById('r-scan-status').style.display='none'; });
+        } catch(e) {
+          clearTimeout(timer);
+          if (attempt < 3) return doScan(attempt+1);
+          st.innerHTML='<div style="padding:10px 14px;background:rgba(255,68,68,0.07);border:1px solid rgba(255,68,68,0.2);border-radius:8px;font-size:13px;color:#FF6B6B">Server is starting up — please try again in 15 seconds</div>';
+        }
+      }
+      doScan(1);
     };
     img.src=e.target.result;
   };
