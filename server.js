@@ -999,6 +999,17 @@ app.get('/trip/:tripId', async (req, res) => {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <title>✈️ ${esc(trip.name)} — RAVEN</title>
+<meta property="og:title" content="✈️ ${esc(trip.name)} — Trip Hub on RAVEN">
+<meta property="og:description" content="${people.length} people · ${(receipts||[]).length} receipts · $${grandTotal.toFixed(2)} total">
+<meta property="og:image" content="${trip.cover_image ? baseUrl+'/trip/'+tripId+'/cover-image' : 'https://work46121-gif.github.io/raven-site/raven-hero.png'}">
+<meta property="og:image:width" content="800">
+<meta property="og:image:height" content="400">
+<meta property="og:url" content="${tripUrl}">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="✈️ ${esc(trip.name)} — Trip Hub on RAVEN">
+<meta name="twitter:description" content="${people.length} people · ${(receipts||[]).length} receipts · $${grandTotal.toFixed(2)} total">
+<meta name="twitter:image" content="${trip.cover_image ? baseUrl+'/trip/'+tripId+'/cover-image' : 'https://work46121-gif.github.io/raven-site/raven-hero.png'}">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Epilogue:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -1634,6 +1645,39 @@ app.post('/trip/:tripId/add-members', async (req, res) => {
   }
 });
 
+app.post('/trip/:tripId/join', async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const { invite_token, user_email, display_name } = req.body;
+    if (!invite_token || !user_email) return res.json({ success: false, error: 'Missing fields' });
+    const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
+    if (!trip) return res.json({ success: false, error: 'Trip not found' });
+    if (trip.invite_token !== invite_token) return res.json({ success: false, error: 'Invalid invite token' });
+
+    // Add person's display name to the trip people array if provided and not already there
+    const existing = Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people || '[]');
+    const newPeople = [...existing];
+    if (display_name && !newPeople.map(p => p.toLowerCase()).includes(display_name.toLowerCase())) {
+      newPeople.push(display_name);
+    }
+
+    // Save email to a trip_members table so this trip shows in their dashboard
+    await supabase.from('trip_members').upsert({
+      trip_id: tripId,
+      user_email: user_email.toLowerCase(),
+      joined_at: new Date().toISOString()
+    }, { onConflict: 'trip_id,user_email' });
+
+    // Update people list
+    await supabase.from('trips').update({ people: JSON.stringify(newPeople) }).eq('id', tripId);
+
+    res.json({ success: true, share_token: trip.share_token, trip_name: trip.name, people: newPeople });
+  } catch(err) {
+    console.error('Join trip error:', err);
+    res.json({ success: false, error: err.message });
+  }
+});
+
 app.post('/trip/:tripId/receipt', async (req, res) => {
   try {
     const { tripId } = req.params;
@@ -1647,6 +1691,32 @@ app.post('/trip/:tripId/receipt', async (req, res) => {
     await supabase.from('trips').update({ total: newTotal, receipt_count: (all||[]).length }).eq('id', tripId);
     res.json({ success: true });
   } catch(err) { console.error('Trip receipt error:', err); res.json({ success: false, error: err.message }); }
+});
+
+// ─── TRIP INFO (public — used by invite join banner) ─────────────────────────
+app.get('/trip-info/:tripId', async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const { token } = req.query;
+    const { data: trip } = await supabase.from('trips').select('name, invite_token, people').eq('id', tripId).single();
+    if (!trip) return res.json({ success: false });
+    if (trip.invite_token !== token) return res.json({ success: false });
+    const people = Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people || '[]');
+    res.json({ success: true, name: trip.name, people_count: people.length });
+  } catch(err) { res.json({ success: false }); }
+});
+
+// ─── TRIP COVER IMAGE (served as JPEG for OG/iMessage preview) ───────────────
+app.get('/trip/:tripId/cover-image', async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const { data: trip } = await supabase.from('trips').select('cover_image').eq('id', tripId).single();
+    if (!trip || !trip.cover_image) return res.status(404).send('No cover image');
+    const buf = Buffer.from(trip.cover_image, 'base64');
+    res.set('Content-Type', 'image/jpeg');
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.send(buf);
+  } catch(err) { res.status(500).send('Error'); }
 });
 
 // ─── GIF SEARCH PROXY ────────────────────────────────────────────────────────
