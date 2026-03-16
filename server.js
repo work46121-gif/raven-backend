@@ -1132,10 +1132,15 @@ ${coverHTML}
 </div>
 
 <div class="sec" style="margin-top:20px">
-  <div class="sec-lbl">All Receipts (${(receipts||[]).length})</div>
-  ${(receipts||[]).length===0
-    ? `<div style="text-align:center;padding:28px 20px;color:#6E6B80;font-size:14px;background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:16px"><div style="font-size:32px;margin-bottom:10px">🧾</div><div style="font-weight:600;color:#9896A8;margin-bottom:4px">No receipts yet</div><div>Be the first to add one!</div></div>`
-    : `<div class="card">${receiptRows}</div>`}
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;cursor:pointer" onclick="toggleReceipts()">
+    <div class="sec-lbl" style="margin-bottom:0">All Receipts (${(receipts||[]).length})</div>
+    <div id="receipts-toggle" style="font-size:12px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:8px;user-select:none">${(receipts||[]).length > 0 ? '▾ Show' : ''}</div>
+  </div>
+  <div id="receipts-body" style="display:none">
+    ${(receipts||[]).length===0
+      ? `<div style="text-align:center;padding:28px 20px;color:#6E6B80;font-size:14px;background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:16px"><div style="font-size:32px;margin-bottom:10px">🧾</div><div style="font-weight:600;color:#9896A8;margin-bottom:4px">No receipts yet</div><div>Be the first to add one!</div></div>`
+      : `<div class="card">${receiptRows}</div>`}
+  </div>
 </div>
 
 <div class="sec" style="margin-top:24px">
@@ -1146,7 +1151,11 @@ ${coverHTML}
       : commentRows}
   </div>
   <div style="margin-top:12px;background:#0C0C12;border:1px solid var(--border2);border-radius:14px;overflow:hidden">
-    <input id="comment-author" type="text" placeholder="Your name" style="border-radius:0;border:none;border-bottom:1px solid var(--border);background:transparent">
+    <!-- Name row with avatar -->
+    <div id="comment-name-row" style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border)">
+      <div id="comment-avatar" style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#30D158);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden">?</div>
+      <input id="comment-author" type="text" placeholder="Your name" style="flex:1;background:transparent;border:none;color:#F0EEF8;font-family:inherit;font-size:14px;font-weight:600;outline:none">
+    </div>
     <div id="gif-preview-wrap" style="display:none;padding:10px 12px;border-bottom:1px solid var(--border)">
       <div style="display:flex;align-items:center;gap:8px">
         <img id="gif-preview-img" style="height:80px;border-radius:8px;object-fit:cover">
@@ -1257,21 +1266,53 @@ function toast(msg, ok) {
   t._t = setTimeout(() => { t.style.opacity='0'; t.style.transform='translateX(-50%) translateY(80px)'; }, 3000);
 }
 
-// ── AUTO-FILL NAME ──
+// ── AUTO-FILL NAME + AVATAR ──
 (function(){
   try {
-    const url = new URLSearchParams(window.location.search).get('name');
-    if (url) { document.getElementById('comment-author').value = decodeURIComponent(url); sessionStorage.setItem('raven_trip_name', decodeURIComponent(url)); return; }
-    const sess = sessionStorage.getItem('raven_trip_name');
-    if (sess) { document.getElementById('comment-author').value = sess; return; }
-    const p = JSON.parse(localStorage.getItem('raven_profile')||'{}');
-    if (p.first_name) document.getElementById('comment-author').value = p.first_name;
+    // Try URL param first (passed from dashboard)
+    const urlName = new URLSearchParams(window.location.search).get('name');
+    const profile = JSON.parse(localStorage.getItem('raven_profile') || '{}');
+    const firstName = urlName ? decodeURIComponent(urlName) : (profile.first_name || sessionStorage.getItem('raven_trip_name') || '');
+
+    if (firstName) {
+      const inp = document.getElementById('comment-author');
+      if (inp) { inp.value = firstName; inp.style.color = 'var(--muted2)'; }
+      sessionStorage.setItem('raven_trip_name', firstName);
+    }
+
+    // Set avatar — use profile photo if available, else initial
+    const avatarEl = document.getElementById('comment-avatar');
+    if (avatarEl) {
+      if (profile.avatar_url) {
+        avatarEl.innerHTML = '<img src="' + profile.avatar_url + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%">';
+      } else if (firstName) {
+        avatarEl.textContent = firstName[0].toUpperCase();
+      }
+    }
+
+    // If we have a real signed-in name, make the input read-only and styled
+    if (firstName && profile.first_name) {
+      const inp = document.getElementById('comment-author');
+      if (inp) {
+        inp.readOnly = true;
+        inp.style.cssText = 'flex:1;background:transparent;border:none;color:#9896A8;font-family:inherit;font-size:14px;font-weight:600;outline:none;cursor:default';
+      }
+    }
   } catch(e) {}
 })();
 
 // ── AUTO-OPEN receipt form ──
 if (new URLSearchParams(window.location.search).get('action') === 'receipt') {
   setTimeout(() => { document.getElementById('receipt-form-wrap').style.display='block'; document.getElementById('open-receipt-btn').style.display='none'; }, 300);
+}
+
+// ── RECEIPT ACCORDION ──
+function toggleReceipts() {
+  const body = document.getElementById('receipts-body');
+  const btn  = document.getElementById('receipts-toggle');
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  if (btn) btn.textContent = open ? '▾ Show' : '▴ Hide';
 }
 
 // ── MODAL HELPERS ──
