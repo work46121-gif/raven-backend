@@ -1752,65 +1752,93 @@ async function retryPendingScans() {
 // ── RENDER PAY BUTTONS client-side ──
 function renderPaySlots() {
   document.querySelectorAll('.pay-slot').forEach(slot => {
-    if (slot.getAttribute('data-rendered') === '1') return; // already rendered
+    if (slot.getAttribute('data-rendered') === '1') return;
     const payerName = slot.getAttribute('data-payer');
     const amount    = parseFloat(slot.getAttribute('data-amount') || '0');
     const container = slot.querySelector('.pay-btns');
     if (!container || !payerName) return;
+
     const profKey = Object.keys(PAY_PROFILES).find(k => k.toLowerCase() === payerName.toLowerCase());
     const prof = profKey ? PAY_PROFILES[profKey] : null;
     const a = amount.toFixed(2);
-    const slotId = 'payopt-' + Math.random().toString(36).slice(2);
+
+    container.innerHTML = '';
 
     if (!prof || (!prof.venmo && !prof.cashapp && !prof.zelle && !prof.applepay)) {
-      container.innerHTML = '<span style="font-size:12px;color:#6E6B80;font-style:italic">Ask ' + payerName + ' how they want to be paid</span>';
+      const msg = document.createElement('span');
+      msg.style.cssText = 'font-size:12px;color:#6E6B80;font-style:italic';
+      msg.textContent = 'Ask ' + payerName + ' how they want to be paid';
+      container.appendChild(msg);
       slot.setAttribute('data-rendered','1');
       return;
     }
 
-    // Build options HTML for dropdown
-    const opts = [];
-    if (prof.venmo)    { const h=prof.venmo.replace('@',''); opts.push({ label:'Venmo', sub:'@'+h, color:'#0084FF', icon:'V', href:'venmo://paycharge?txn=pay&recipients='+h+'&amount='+a+'&note=Trip', copy:null }); }
-    if (prof.cashapp)  { const t=prof.cashapp.replace('$',''); opts.push({ label:'Cash App', sub:'$'+t, color:'#00D632', textColor:'#000', icon:'$', href:'https://cash.app/$'+t+'/'+a, copy:null }); }
-    if (prof.zelle)    { opts.push({ label:'Zelle', sub:prof.zelle, color:'#6D1ED4', icon:'Z', href:null, copy:prof.zelle }); }
-    if (prof.applepay) { opts.push({ label:'Apple Pay', sub:prof.applepay, color:'#2a2a2a', border:'#555', icon:'✦', href:null, copy:prof.applepay }); }
+    // Main "Pay" button
+    const slotId = 'payopt-' + Math.random().toString(36).slice(2,8);
+    const mainBtn = document.createElement('button');
+    mainBtn.style.cssText = 'display:inline-flex;align-items:center;gap:8px;padding:10px 18px;background:linear-gradient(135deg,#30D158,#0EA5E9);border:none;border-radius:10px;font-family:inherit;font-size:14px;font-weight:700;color:#000;cursor:pointer';
+    mainBtn.innerHTML = '💳 Pay ' + payerName + ' · $' + a + ' <span style="font-size:12px" id="' + slotId + '-arrow">▾</span>';
 
-    // Single "Pay $X →" button + hidden options panel
-    container.innerHTML =
-      '<div>' +
-        '<button onclick="togglePayOpts(\'' + slotId + '\')" style="display:inline-flex;align-items:center;gap:8px;padding:10px 18px;background:linear-gradient(135deg,#30D158,#0EA5E9);border:none;border-radius:10px;font-family:inherit;font-size:14px;font-weight:700;color:#000;cursor:pointer">💳 Pay ' + payerName + ' · $' + a + ' <span id="' + slotId + '-arrow" style="font-size:12px">▾</span></button>' +
-        '<div id="' + slotId + '" style="display:none;margin-top:10px;background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:12px;overflow:hidden">' +
-          '<div style="padding:10px 14px;font-size:11px;color:#6E6B80;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;border-bottom:1px solid rgba(255,255,255,0.06)">Choose how to pay ' + payerName + '</div>' +
-          opts.map(o =>
-            o.href
-              ? '<a href="' + o.href + '" ' + (o.href.startsWith('http') ? 'target="_blank"' : '') + ' style="display:flex;align-items:center;gap:12px;padding:14px 16px;text-decoration:none;border-bottom:1px solid rgba(255,255,255,0.05);transition:background 0.15s" onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'transparent\'">' +
-                '<div style="width:36px;height:36px;border-radius:9px;background:' + o.color + ';display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900;color:' + (o.textColor||'#fff') + ';flex-shrink:0">' + o.icon + '</div>' +
-                '<div><div style="font-size:14px;font-weight:700;color:#F0EEF8">' + o.label + '</div><div style="font-size:12px;color:#6E6B80">' + o.sub + '</div></div>' +
-                '<div style="margin-left:auto;font-family:\'Bebas Neue\',sans-serif;font-size:20px;color:#30D158">$' + a + '</div></a>'
-              : '<a href="#" onclick="navigator.clipboard.writeText(\'' + o.copy.replace(/'/g,"&#39;") + '\').then(()=>{toast(\'' + o.label + ' info copied!\');});return false" style="display:flex;align-items:center;gap:12px;padding:14px 16px;text-decoration:none;border-bottom:1px solid rgba(255,255,255,0.05);transition:background 0.15s" onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'transparent\'">' +
-                '<div style="width:36px;height:36px;border-radius:9px;background:' + o.color + ';' + (o.border?'border:1px solid '+o.border+';':'') + 'display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900;color:#fff;flex-shrink:0">' + o.icon + '</div>' +
-                '<div><div style="font-size:14px;font-weight:700;color:#F0EEF8">' + o.label + '</div><div style="font-size:12px;color:#6E6B80">' + o.sub + ' · tap to copy</div></div>' +
-                '<div style="margin-left:auto;display:flex;align-items:center;gap:6px;font-size:12px;color:#6E6B80">📋 copy</div></a>'
-          ).join('') +
-        '</div>' +
-      '</div>';
+    // Options panel
+    const panel = document.createElement('div');
+    panel.id = slotId;
+    panel.style.cssText = 'display:none;margin-top:10px;background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:12px;overflow:hidden';
+
+    const header = document.createElement('div');
+    header.style.cssText = 'padding:10px 14px;font-size:11px;color:#6E6B80;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;border-bottom:1px solid rgba(255,255,255,0.06)';
+    header.textContent = 'Choose how to pay ' + payerName;
+    panel.appendChild(header);
+
+    const methods = [];
+    if (prof.venmo)    { const h=prof.venmo.replace('@','');    methods.push({ label:'Venmo',     sub:'@'+h,         color:'#0084FF', textColor:'#fff', icon:'V', href:'venmo://paycharge?txn=pay&recipients='+h+'&amount='+a+'&note=Trip', copy:null }); }
+    if (prof.cashapp)  { const t=prof.cashapp.replace('$',''); methods.push({ label:'Cash App',  sub:'$'+t,         color:'#00D632', textColor:'#000', icon:'$', href:'https://cash.app/$'+t+'/'+a, copy:null }); }
+    if (prof.zelle)    {                                        methods.push({ label:'Zelle',     sub:prof.zelle,    color:'#6D1ED4', textColor:'#fff', icon:'Z', href:null, copy:prof.zelle }); }
+    if (prof.applepay) {                                        methods.push({ label:'Apple Pay', sub:prof.applepay, color:'#1a1a1a', textColor:'#fff', icon:'✦', href:null, copy:prof.applepay, border:'1px solid #555' }); }
+
+    methods.forEach((m, mi) => {
+      const row = document.createElement('a');
+      row.href = m.href || '#';
+      row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:14px 16px;text-decoration:none;' + (mi < methods.length-1 ? 'border-bottom:1px solid rgba(255,255,255,0.05);' : '');
+      row.addEventListener('mouseover', () => { row.style.background = 'rgba(255,255,255,0.04)'; });
+      row.addEventListener('mouseout',  () => { row.style.background = 'transparent'; });
+      if (m.href && m.href.startsWith('http')) row.target = '_blank';
+      if (!m.href && m.copy) {
+        row.addEventListener('click', e => {
+          e.preventDefault();
+          navigator.clipboard.writeText(m.copy).then(() => toast(m.label + ' info copied!'));
+        });
+      }
+      const icon = document.createElement('div');
+      icon.style.cssText = 'width:36px;height:36px;border-radius:9px;background:' + m.color + ';' + (m.border||'') + 'display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900;color:' + m.textColor + ';flex-shrink:0';
+      icon.textContent = m.icon;
+      const info = document.createElement('div');
+      info.innerHTML = '<div style="font-size:14px;font-weight:700;color:#F0EEF8">' + m.label + '</div><div style="font-size:12px;color:#6E6B80">' + m.sub + (m.copy ? ' · tap to copy' : '') + '</div>';
+      const amt = document.createElement('div');
+      amt.style.cssText = 'margin-left:auto;font-family:\'Bebas Neue\',sans-serif;font-size:20px;color:#30D158';
+      amt.textContent = '$' + a;
+      row.appendChild(icon); row.appendChild(info); row.appendChild(amt);
+      panel.appendChild(row);
+    });
+
+    mainBtn.addEventListener('click', () => {
+      const open = panel.style.display !== 'none';
+      panel.style.display = open ? 'none' : 'block';
+      const arrow = document.getElementById(slotId + '-arrow');
+      if (arrow) arrow.textContent = open ? '▾' : '▴';
+    });
+
+    const wrap = document.createElement('div');
+    wrap.appendChild(mainBtn);
+    wrap.appendChild(panel);
+    container.appendChild(wrap);
     slot.setAttribute('data-rendered','1');
   });
-}
-
-function togglePayOpts(id) {
-  const el = document.getElementById(id);
-  const arrow = document.getElementById(id + '-arrow');
-  if (!el) return;
-  const open = el.style.display !== 'none';
-  el.style.display = open ? 'none' : 'block';
-  if (arrow) arrow.textContent = open ? '▾' : '▴';
 }
 
 // Run after page loads and PAY_PROFILES is enriched from localStorage
 setTimeout(renderPaySlots, 300);
 // Also re-run when a receipt is expanded
-const _origToggle = window.toggleReceipt;
+// pay slots re-rendered on receipt expand — see toggleReceipt below
 
 function retryLastScan() {
   if (imgBase64) {
