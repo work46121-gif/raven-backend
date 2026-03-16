@@ -1599,14 +1599,27 @@ const PAY_PROFILES = D.memberPayProfiles || {};
 const receiptsDataMap = {}; // keyed by receipt id — safe lookup, no user data in onclick
 (D.receiptsData || []).forEach(r => { receiptsDataMap[r.id] = r; });
 
-// Determine if current viewer is admin (creator)
+// Determine if current viewer is admin (creator) — checked after page loads
 function checkIsAdmin() {
   try {
     const local = JSON.parse(localStorage.getItem('raven_profile') || '{}');
-    return local.email === CREATOR_EMAIL || local.user_id === CREATOR_EMAIL;
+    // Compare stored email (set by dashboard.html on login) to trip creator email
+    if (local.email && CREATOR_EMAIL && local.email === CREATOR_EMAIL) return true;
+    // Fallback: check supabase session in localStorage (key contains 'auth-token')
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.includes('auth-token') || key.includes('supabase'))) {
+        try {
+          const val = JSON.parse(localStorage.getItem(key) || '{}');
+          const email = val?.user?.email || val?.currentSession?.user?.email || '';
+          if (email && email === CREATOR_EMAIL) return true;
+        } catch(e) {}
+      }
+    }
+    return false;
   } catch(e) { return false; }
 }
-let IS_ADMIN = checkIsAdmin();
+let IS_ADMIN = false; // set after DOM loads
 
 // Enrich PAY_PROFILES with the current user's payment methods from localStorage
 // (catches cases where server-side lookup didn't find them)
@@ -1818,12 +1831,16 @@ function viewSavedReceipt(id) {
 }
 
 // ── ADMIN: show delete buttons on receipt cards if viewer is admin ──
-(function applyAdminButtons() {
-  if (!IS_ADMIN) return;
-  document.querySelectorAll('.admin-delete-receipt-btn').forEach(btn => {
-    btn.style.display = 'flex';
-  });
-})();
+// Run after DOM is fully loaded — never blocks page render
+document.addEventListener('DOMContentLoaded', function() {
+  try {
+    IS_ADMIN = checkIsAdmin();
+    if (!IS_ADMIN) return;
+    document.querySelectorAll('.admin-delete-receipt-btn').forEach(btn => {
+      btn.style.display = 'flex';
+    });
+  } catch(e) {}
+});
 
 async function adminDeleteReceipt(btn) {
   const receiptId = btn.dataset.receiptId;
