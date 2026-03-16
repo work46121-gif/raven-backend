@@ -637,7 +637,10 @@ app.get('/bill/:billId', async (req, res) => {
       <div id="no-c" style="color:#6E6B80;font-size:13px;text-align:center;padding:12px 0">No comments yet</div>
     </div>
     <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:14px;overflow:hidden">
-      <input id="cname" type="text" placeholder="Your name" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#F0EEF8;font-family:inherit;font-size:14px;outline:none"/>
+      <div style="display:flex;align-items:center;border-bottom:1px solid rgba(255,255,255,0.07)">
+        <input id="cname" type="text" placeholder="Your name" style="flex:1;padding:12px 16px;background:transparent;border:none;color:#F0EEF8;font-family:inherit;font-size:14px;outline:none"/>
+        <button onclick="pickContact()" title="Fill from phone contacts" style="padding:10px 14px;background:transparent;border:none;color:#6E6B80;font-size:16px;cursor:pointer;flex-shrink:0;-webkit-tap-highlight-color:transparent" id="contacts-btn">📱</button>
+      </div>
       <div id="gif-preview-wrap" style="display:none;padding:0 12px;"></div>
       <textarea id="cbody" placeholder="Add a comment... or just drop a GIF 🎭" rows="2" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#F0EEF8;font-family:inherit;font-size:14px;outline:none;resize:none;line-height:1.5"></textarea>
       <div style="display:flex;border-bottom:1px solid rgba(255,255,255,0.07)">
@@ -676,6 +679,36 @@ app.get('/bill/:billId', async (req, res) => {
 
   <script>
     const BID = '${billId}';
+
+    // ── AUTO-FILL NAME ──
+    (function(){
+      try {
+        // Try sessionStorage first (same-session name)
+        const sn = sessionStorage.getItem('bill_commenter_name');
+        if(sn){ const el=document.getElementById('cname'); if(el){el.value=sn;el.style.color='#9896A8';} return; }
+        // Try URL param (passed from dashboard)
+        const urlName = new URLSearchParams(window.location.search).get('name');
+        if(urlName){ const el=document.getElementById('cname'); if(el){el.value=decodeURIComponent(urlName);el.style.color='#9896A8';} sessionStorage.setItem('bill_commenter_name',decodeURIComponent(urlName)); return; }
+        // Try localStorage (same origin)
+        const profile = JSON.parse(localStorage.getItem('raven_profile')||'{}');
+        if(profile.first_name){ const el=document.getElementById('cname'); if(el){el.value=profile.first_name;el.style.color='#9896A8';} }
+      } catch(e){}
+    })();
+
+    // ── NATIVE CONTACTS PICKER ──
+    async function pickContact() {
+      if(!navigator.contacts || !navigator.contacts.select){
+        toast('Contacts picker not supported on this device'); return;
+      }
+      try {
+        const contacts = await navigator.contacts.select(['name','tel'],{multiple:false});
+        if(contacts && contacts.length > 0){
+          const c = contacts[0];
+          const name = (c.name && c.name[0]) || '';
+          if(name){ document.getElementById('cname').value = name; sessionStorage.setItem('bill_commenter_name',name); toast('Name filled: '+name); }
+        }
+      } catch(e){ if(e.name !== 'AbortError') toast('Could not access contacts'); }
+    }
 
     function showPay(btn) {
       const pid = btn.dataset.pid, name = btn.dataset.name, amount = btn.dataset.amount;
@@ -830,6 +863,7 @@ app.get('/bill/:billId', async (req, res) => {
       const name=document.getElementById('cname').value.trim();
       const body=document.getElementById('cbody').value.trim();
       if(!body && !selectedGif){toast('Write something or pick a GIF first');return;}
+      if(name) sessionStorage.setItem('bill_commenter_name', name);
       const btn=document.getElementById('csub');
       btn.textContent='Posting...';btn.disabled=true;
       try{
@@ -1213,10 +1247,10 @@ ${trip.cover_image
 
 <!-- COMMENTS SECTION -->
 <div class="sec" style="margin-top:24px">
-  <div class="sec-lbl">Comments (\${(comments||[]).length})</div>
+  <div class="sec-lbl">Comments (${(comments||[]).length})</div>
   <div class="card" id="comments-card">
-    \${(comments||[]).length === 0
-      ? \`<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px">No comments yet — say something! 👋</div>\`
+    ${(comments||[]).length === 0
+      ? '<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px">No comments yet — say something! 👋</div>'
       : commentsHtml}
   </div>
   <div style="margin-top:12px;background:var(--dark);border:1px solid var(--border2);border-radius:14px;overflow:hidden">
@@ -1244,7 +1278,7 @@ ${trip.cover_image
 </div>
 
 <!-- SETTINGS MODAL -->
-<div class="modal-overlay" id="settings-modal" onclick="if(event.target.id===\'settings-modal\')closeSettingsModal()">
+<div class="modal-overlay" id="settings-modal" onclick="if(event.target.id==='settings-modal')closeSettingsModal()">
   <div class="modal-sheet">
     <div class="modal-handle"></div>
     <div class="modal-title">Trip Settings</div>
@@ -1348,14 +1382,37 @@ ${trip.cover_image
   function copyAndToast(url,msg){navigator.clipboard.writeText(url).then(()=>toast(msg)).catch(()=>{prompt('Copy this link:',url);toast(msg);});}
   function shareNative(url,title){if(navigator.share)navigator.share({title,url}).catch(()=>copyLink(url));else copyAndToast(url,'📋 Copied!');}
 
-  // Auto-fill name from localStorage
+  // ── AUTO-OPEN receipt form if ?action=receipt ──
+  (function(){
+    const params = new URLSearchParams(window.location.search);
+    if(params.get('action')==='receipt') setTimeout(openReceiptForm, 300);
+  })();
+
+  // Auto-fill name — from URL param (passed by dashboard) or localStorage
   (function(){
     try{
-      const profile = JSON.parse(localStorage.getItem('raven_profile')||'{}');
-      const name = profile.first_name || '';
+      // Check URL param first (set by dashboard when opening trip)
+      const urlName = new URLSearchParams(window.location.search).get('name');
+      if(urlName){
+        const el=document.getElementById('comment-author');
+        if(el){el.value=decodeURIComponent(urlName);el.style.color='var(--muted2)';}
+        // Store in sessionStorage for page reloads
+        sessionStorage.setItem('trip_commenter_name', decodeURIComponent(urlName));
+        return;
+      }
+      // Check sessionStorage (survives reloads on same trip)
+      const sessName = sessionStorage.getItem('trip_commenter_name');
+      if(sessName){
+        const el=document.getElementById('comment-author');
+        if(el){el.value=sessName;el.style.color='var(--muted2)';}
+        return;
+      }
+      // Fallback: localStorage (same origin only)
+      const profile=JSON.parse(localStorage.getItem('raven_profile')||'{}');
+      const name=(profile.first_name||'').trim();
       if(name){
-        const el = document.getElementById('comment-author');
-        if(el){ el.value = name; el.style.color = 'var(--muted2)'; }
+        const el=document.getElementById('comment-author');
+        if(el){el.value=name;el.style.color='var(--muted2)';}
       }
     }catch(e){}
   })();
@@ -1483,6 +1540,8 @@ ${trip.cover_image
     const body=document.getElementById('comment-body').value.trim();
     if(!author){toast('Enter your name',false);return;}
     if(!body&&!selectedGifUrl){toast('Add a message or GIF',false);return;}
+    // Remember name across reloads
+    try{sessionStorage.setItem('trip_commenter_name',author);}catch(e){}
     try{
       const r=await fetch(BACKEND+'/trip/'+TRIP_ID+'/comment',{
         method:'POST',headers:{'Content-Type':'application/json'},
