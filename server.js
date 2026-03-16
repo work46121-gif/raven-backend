@@ -925,20 +925,33 @@ app.get('/trip/:tripId', async (req, res) => {
   const { data: comments } = await supabase.from('trip_comments').select('*').eq('trip_id', tripId).order('created_at', { ascending: true });
   const people = Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people || '[]');
 
-  // Fetch payment profiles for all known members (via member_emails on the trip)
+  // Fetch payment profiles for all trip members
   let memberPayProfiles = {}; // { "Name": { venmo, cashapp, zelle, applepay } }
   try {
+    // Strategy 1: use member_emails stored on trip
     let memberEmails = [];
     try { memberEmails = Array.isArray(trip.member_emails) ? trip.member_emails : JSON.parse(trip.member_emails || '[]'); } catch(e) {}
-    // Also include creator email
     if (trip.creator_email) memberEmails = [...new Set([...memberEmails, trip.creator_email])];
+
     if (memberEmails.length > 0) {
-      const { data: profiles } = await supabase.from('profiles').select('first_name,email,venmo,cashapp,zelle,applepay').in('email', memberEmails);
-      (profiles || []).forEach(p => {
-        if (p.first_name) memberPayProfiles[p.first_name] = { venmo: p.venmo||'', cashapp: p.cashapp||'', zelle: p.zelle||'', applepay: p.applepay||'', email: p.email||'' };
+      const { data: profilesByEmail } = await supabase.from('profiles').select('first_name,last_name,email,venmo,cashapp,zelle,applepay').in('email', memberEmails);
+      (profilesByEmail || []).forEach(p => {
+        const name = p.first_name || '';
+        if (name) memberPayProfiles[name] = { venmo: p.venmo||'', cashapp: p.cashapp||'', zelle: p.zelle||'', applepay: p.applepay||'', email: p.email||'' };
       });
     }
-  } catch(e) {}
+
+    // Strategy 2: try matching people array names against all profiles by first_name
+    // (catches cases where member_emails isn't populated)
+    if (people.length > 0) {
+      const { data: profilesByName } = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle,applepay').in('first_name', people);
+      (profilesByName || []).forEach(p => {
+        if (p.first_name && !memberPayProfiles[p.first_name]) {
+          memberPayProfiles[p.first_name] = { venmo: p.venmo||'', cashapp: p.cashapp||'', zelle: p.zelle||'', applepay: p.applepay||'' };
+        }
+      });
+    }
+  } catch(e) { console.error('Error fetching payment profiles:', e); }
 
   // Net owed per person: how much each person owes TO payers (excluding what they paid themselves)
   const totals = {};       // what each person owes overall
@@ -1021,19 +1034,15 @@ app.get('/trip/:tripId', async (req, res) => {
     owesBreakdown.forEach(o => { owesPerPayer[o.payer] = (owesPerPayer[o.payer]||0) + o.amount; });
     const payerEntries = Object.entries(owesPerPayer);
 
-    const payBtnsHtml = payerEntries.map(([payerName, amt]) => {
-      const prof = memberPayProfiles[payerName];
-      if (!prof || (!prof.venmo && !prof.cashapp && !prof.zelle && !prof.applepay)) {
-        return `<div style="font-size:11px;color:#6E6B80;padding:4px 0">Owes ${esc(payerName)} $${amt.toFixed(2)} — no payment method set</div>`;
-      }
-      const a = amt.toFixed(2);
-      const btns = [];
-      if (prof.venmo) { const h=prof.venmo.replace('@',''); btns.push(`<a href="venmo://paycharge?txn=pay&recipients=${h}&amount=${a}&note=Trip" style="display:inline-flex;align-items:center;gap:5px;padding:6px 11px;background:#0084FF;border-radius:8px;text-decoration:none;font-size:11px;font-weight:700;color:#fff"><b>V</b>${esc(h)} $${a}</a>`); }
-      if (prof.cashapp) { const t=prof.cashapp.replace('$',''); btns.push(`<a href="https://cash.app/$${t}/${a}" target="_blank" style="display:inline-flex;align-items:center;gap:5px;padding:6px 11px;background:#00D632;border-radius:8px;text-decoration:none;font-size:11px;font-weight:700;color:#000"><b>$</b>${esc(t)} $${a}</a>`); }
-      if (prof.zelle) { btns.push(`<a href="#" onclick="navigator.clipboard.writeText('${esc(prof.zelle)}').then(()=>toast('Copied!'));return false" style="display:inline-flex;align-items:center;gap:5px;padding:6px 11px;background:#6D1ED4;border-radius:8px;text-decoration:none;font-size:11px;font-weight:700;color:#fff">Z Zelle $${a}</a>`); }
-      if (prof.applepay) { btns.push(`<a href="#" onclick="navigator.clipboard.writeText('${esc(prof.applepay)}').then(()=>toast('Copied!'));return false" style="display:inline-flex;align-items:center;gap:5px;padding:6px 11px;background:#1a1a1a;border:1px solid #444;border-radius:8px;text-decoration:none;font-size:11px;font-weight:700;color:#fff"> Pay $${a}</a>`); }
-      return `<div style="margin-top:4px"><div style="font-size:10px;color:#6E6B80;margin-bottom:4px">Pay ${esc(payerName)}</div><div style="display:flex;flex-wrap:wrap;gap:6px">${btns.join('')}</div></div>`;
-    }).join('');
+    // Render pay slots with data attributes — filled client-side using PAY_PROFILES
+    const payBtnsHtml = payerEntries.map(([payerName, amt]) =>
+      `<div class="pay-slot" data-payer="${esc(payerName)}" data-amount="${amt.toFixed(2)}" style="margin-top:4px">
+        <div style="font-size:10px;color:#6E6B80;margin-bottom:4px">Pay ${esc(payerName)} <b style="color:#FF9A3C">$${amt.toFixed(2)}</b></div>
+        <div class="pay-btns" style="display:flex;flex-wrap:wrap;gap:6px">
+          <span style="font-size:11px;color:#6E6B80;font-style:italic">Loading payment options...</span>
+        </div>
+      </div>`
+    ).join('');
 
     return `<div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)">
       <div style="display:flex;align-items:center;justify-content:space-between;${payerEntries.length>0?'margin-bottom:12px':''}">
@@ -1081,32 +1090,13 @@ app.get('/trip/:tripId', async (req, res) => {
       </span>`
     ).join('');
 
-    // ── PAY BUTTONS for payer ──
+    // Pay button slot — rendered client-side using PAY_PROFILES (includes localStorage enrichment)
     function payButtonsHtml(forPerson, amountOwed) {
-      const prof = memberPayProfiles[forPerson] || payerProfile;
-      if (!prof) return '<div style="font-size:12px;color:#6E6B80">No payment methods set up — ask them how to pay</div>';
-      const amt = parseFloat(amountOwed).toFixed(2);
-      const btns = [];
-      if (prof.venmo) {
-        const handle = prof.venmo.replace('@','');
-        btns.push(`<a href="venmo://paycharge?txn=pay&recipients=${handle}&amount=${amt}&note=${encodeURIComponent(r.name||'Trip')}" style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;background:#0084FF;border-radius:9px;text-decoration:none;font-size:13px;font-weight:700;color:#fff">
-          <span style="width:20px;height:20px;border-radius:4px;background:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:#0084FF">V</span>Venmo @${esc(handle)}</a>`);
-      }
-      if (prof.cashapp) {
-        const tag = prof.cashapp.replace('$','');
-        btns.push(`<a href="https://cash.app/$${tag}/${amt}" target="_blank" style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;background:#00D632;border-radius:9px;text-decoration:none;font-size:13px;font-weight:700;color:#000">
-          <span style="width:20px;height:20px;border-radius:4px;background:#000;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;color:#00D632">$</span>Cash App $${esc(tag)}</a>`);
-      }
-      if (prof.zelle) {
-        btns.push(`<a href="#" onclick="navigator.clipboard.writeText('${esc(prof.zelle)}').then(()=>toast('Zelle info copied!'));return false" style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;background:#6D1ED4;border-radius:9px;text-decoration:none;font-size:13px;font-weight:700;color:#fff">
-          <span style="width:20px;height:20px;border-radius:4px;background:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:#6D1ED4">Z</span>Zelle · tap to copy</a>`);
-      }
-      if (prof.applepay) {
-        btns.push(`<a href="#" onclick="navigator.clipboard.writeText('${esc(prof.applepay)}').then(()=>toast('Apple Pay info copied!'));return false" style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;background:#1a1a1a;border:1px solid #444;border-radius:9px;text-decoration:none;font-size:13px;font-weight:700;color:#fff">
-          <span style="font-size:14px"> </span>Apple Pay · tap to copy</a>`);
-      }
-      if (btns.length === 0) return '<div style="font-size:12px;color:#6E6B80">No payment methods — ask them how to pay</div>';
-      return `<div style="display:flex;flex-wrap:wrap;gap:8px">${btns.join('')}</div>`;
+      return `<div class="pay-slot" data-payer="${esc(forPerson)}" data-amount="${parseFloat(amountOwed).toFixed(2)}">
+        <div class="pay-btns" style="display:flex;flex-wrap:wrap;gap:8px">
+          <span style="font-size:12px;color:#6E6B80;font-style:italic">Loading payment options...</span>
+        </div>
+      </div>`;
     }
 
     // ── ITEMS breakdown ──
@@ -1194,8 +1184,9 @@ app.get('/trip/:tripId', async (req, res) => {
           </div>
           ${splitEntries.length > 0 ? `<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;padding-left:46px">${splitPillsHtml}</div>` : ''}
         </div>
-        <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
           <div style="font-family:'Bebas Neue',sans-serif;font-size:26px;color:#30D158;letter-spacing:0.03em;line-height:1">$${total.toFixed(2)}</div>
+          <button onclick="event.stopPropagation();openEditReceipt('${esc(r.id)}','${esc(r.name||'Receipt')}','${esc(payer)}',${total.toFixed(2)})" style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.06);border:none;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0" title="Edit receipt">✏️</button>
           <div id="${receiptId}-chevron" style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center;font-size:12px;color:#6E6B80;transition:transform 0.2s;flex-shrink:0">▾</div>
         </div>
       </div>
@@ -1433,6 +1424,35 @@ ${coverHTML}
   </div>
 </div>
 
+<!-- EDIT RECEIPT MODAL -->
+<div class="modal-bg" id="edit-receipt-modal" onclick="if(event.target.id==='edit-receipt-modal')closeEditReceipt()">
+  <div style="background:#13131A;border:1px solid rgba(255,255,255,0.1);border-radius:24px 24px 0 0;padding:28px 24px 48px;width:100%;max-width:480px;max-height:85vh;overflow-y:auto">
+    <div style="width:36px;height:4px;background:rgba(255,255,255,0.15);border-radius:2px;margin:0 auto 20px"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:0.05em">✏️ Edit Receipt</div>
+      <button onclick="closeEditReceipt()" style="background:rgba(255,255,255,0.07);border:none;color:#9896A8;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:16px">✕</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div>
+        <div style="font-size:12px;color:#6E6B80;font-weight:600;margin-bottom:6px">Receipt Name</div>
+        <input id="edit-r-name" type="text" style="width:100%;padding:12px 14px;background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#F0EEF8;font-family:'Epilogue',sans-serif;font-size:14px">
+      </div>
+      <div>
+        <div style="font-size:12px;color:#6E6B80;font-weight:600;margin-bottom:6px">Who Paid?</div>
+        <select id="edit-r-paidby" style="width:100%;padding:12px 14px;background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#F0EEF8;font-family:'Epilogue',sans-serif;font-size:14px;font-weight:600">
+          <option value="">— No one selected —</option>
+          ${people.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <div style="font-size:12px;color:#6E6B80;font-weight:600;margin-bottom:6px">Total Amount</div>
+        <div style="position:relative"><span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#6E6B80">$</span><input id="edit-r-total" type="number" step="0.01" style="width:100%;padding:12px 14px 12px 28px;background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#F0EEF8;font-family:'Epilogue',sans-serif;font-size:14px"></div>
+      </div>
+      <button id="edit-r-save" onclick="saveEditReceipt()" style="width:100%;padding:15px;background:#30D158;border:none;border-radius:12px;font-family:'Epilogue',sans-serif;font-size:15px;font-weight:700;color:#000;cursor:pointer;margin-top:4px">Save Changes</button>
+    </div>
+  </div>
+</div>
+
 <!-- SETTINGS MODAL -->
 <div class="modal-bg" id="settings-modal">
   <div class="modal-box">
@@ -1504,6 +1524,21 @@ const TRIP_NAME  = D.tripName;
 const TRIP_DATE  = D.tripDate;
 let   PEOPLE     = D.people;
 const PAY_PROFILES = D.memberPayProfiles || {}; // { "Name": { venmo, cashapp, zelle, applepay } }
+
+// Enrich PAY_PROFILES with the current user's payment methods from localStorage
+// (catches cases where server-side lookup didn't find them)
+(function enrichPayProfiles() {
+  try {
+    const local = JSON.parse(localStorage.getItem('raven_profile') || '{}');
+    const name = local.first_name || '';
+    if (!name) return;
+    if (!PAY_PROFILES[name]) PAY_PROFILES[name] = {};
+    if (local.venmo)    PAY_PROFILES[name].venmo    = local.venmo;
+    if (local.cashapp)  PAY_PROFILES[name].cashapp  = local.cashapp;
+    if (local.zelle)    PAY_PROFILES[name].zelle    = local.zelle;
+    if (local.applepay) PAY_PROFILES[name].applepay = local.applepay;
+  } catch(e) {}
+})();
 
 // Populate invite modal URLs (set via JS, never via template literal)
 document.getElementById('trip-url-text').textContent   = TRIP_URL;
@@ -1706,6 +1741,69 @@ async function retryPendingScans() {
     }, 1200); // wait for avatar fetch to complete
   } catch(e) {}
 })();
+// ── RENDER PAY BUTTONS client-side ──
+function renderPaySlots() {
+  document.querySelectorAll('.pay-slot').forEach(slot => {
+    if (slot.getAttribute('data-rendered') === '1') return; // already rendered
+    const payerName = slot.getAttribute('data-payer');
+    const amount    = parseFloat(slot.getAttribute('data-amount') || '0');
+    const container = slot.querySelector('.pay-btns');
+    if (!container || !payerName) return;
+    const profKey = Object.keys(PAY_PROFILES).find(k => k.toLowerCase() === payerName.toLowerCase());
+    const prof = profKey ? PAY_PROFILES[profKey] : null;
+    const a = amount.toFixed(2);
+    const slotId = 'payopt-' + Math.random().toString(36).slice(2);
+
+    if (!prof || (!prof.venmo && !prof.cashapp && !prof.zelle && !prof.applepay)) {
+      container.innerHTML = '<span style="font-size:12px;color:#6E6B80;font-style:italic">Ask ' + payerName + ' how they want to be paid</span>';
+      slot.setAttribute('data-rendered','1');
+      return;
+    }
+
+    // Build options HTML for dropdown
+    const opts = [];
+    if (prof.venmo)    { const h=prof.venmo.replace('@',''); opts.push({ label:'Venmo', sub:'@'+h, color:'#0084FF', icon:'V', href:'venmo://paycharge?txn=pay&recipients='+h+'&amount='+a+'&note=Trip', copy:null }); }
+    if (prof.cashapp)  { const t=prof.cashapp.replace('$',''); opts.push({ label:'Cash App', sub:'$'+t, color:'#00D632', textColor:'#000', icon:'$', href:'https://cash.app/$'+t+'/'+a, copy:null }); }
+    if (prof.zelle)    { opts.push({ label:'Zelle', sub:prof.zelle, color:'#6D1ED4', icon:'Z', href:null, copy:prof.zelle }); }
+    if (prof.applepay) { opts.push({ label:'Apple Pay', sub:prof.applepay, color:'#2a2a2a', border:'#555', icon:'✦', href:null, copy:prof.applepay }); }
+
+    // Single "Pay $X →" button + hidden options panel
+    container.innerHTML =
+      '<div>' +
+        '<button onclick="togglePayOpts(\'' + slotId + '\')" style="display:inline-flex;align-items:center;gap:8px;padding:10px 18px;background:linear-gradient(135deg,#30D158,#0EA5E9);border:none;border-radius:10px;font-family:inherit;font-size:14px;font-weight:700;color:#000;cursor:pointer">💳 Pay ' + payerName + ' · $' + a + ' <span id="' + slotId + '-arrow" style="font-size:12px">▾</span></button>' +
+        '<div id="' + slotId + '" style="display:none;margin-top:10px;background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:12px;overflow:hidden">' +
+          '<div style="padding:10px 14px;font-size:11px;color:#6E6B80;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;border-bottom:1px solid rgba(255,255,255,0.06)">Choose how to pay ' + payerName + '</div>' +
+          opts.map(o =>
+            o.href
+              ? '<a href="' + o.href + '" ' + (o.href.startsWith('http') ? 'target="_blank"' : '') + ' style="display:flex;align-items:center;gap:12px;padding:14px 16px;text-decoration:none;border-bottom:1px solid rgba(255,255,255,0.05);transition:background 0.15s" onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'transparent\'">' +
+                '<div style="width:36px;height:36px;border-radius:9px;background:' + o.color + ';display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900;color:' + (o.textColor||'#fff') + ';flex-shrink:0">' + o.icon + '</div>' +
+                '<div><div style="font-size:14px;font-weight:700;color:#F0EEF8">' + o.label + '</div><div style="font-size:12px;color:#6E6B80">' + o.sub + '</div></div>' +
+                '<div style="margin-left:auto;font-family:\'Bebas Neue\',sans-serif;font-size:20px;color:#30D158">$' + a + '</div></a>'
+              : '<a href="#" onclick="navigator.clipboard.writeText(\'' + o.copy.replace(/'/g,"&#39;") + '\').then(()=>{toast(\'' + o.label + ' info copied!\');});return false" style="display:flex;align-items:center;gap:12px;padding:14px 16px;text-decoration:none;border-bottom:1px solid rgba(255,255,255,0.05);transition:background 0.15s" onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'transparent\'">' +
+                '<div style="width:36px;height:36px;border-radius:9px;background:' + o.color + ';' + (o.border?'border:1px solid '+o.border+';':'') + 'display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900;color:#fff;flex-shrink:0">' + o.icon + '</div>' +
+                '<div><div style="font-size:14px;font-weight:700;color:#F0EEF8">' + o.label + '</div><div style="font-size:12px;color:#6E6B80">' + o.sub + ' · tap to copy</div></div>' +
+                '<div style="margin-left:auto;display:flex;align-items:center;gap:6px;font-size:12px;color:#6E6B80">📋 copy</div></a>'
+          ).join('') +
+        '</div>' +
+      '</div>';
+    slot.setAttribute('data-rendered','1');
+  });
+}
+
+function togglePayOpts(id) {
+  const el = document.getElementById(id);
+  const arrow = document.getElementById(id + '-arrow');
+  if (!el) return;
+  const open = el.style.display !== 'none';
+  el.style.display = open ? 'none' : 'block';
+  if (arrow) arrow.textContent = open ? '▾' : '▴';
+}
+
+// Run after page loads and PAY_PROFILES is enriched from localStorage
+setTimeout(renderPaySlots, 300);
+// Also re-run when a receipt is expanded
+const _origToggle = window.toggleReceipt;
+
 function retryLastScan() {
   if (imgBase64) {
     retryPendingScans();
@@ -1734,6 +1832,40 @@ function toggleReceipt(id) {
     chevron.style.color = isOpen ? '#6E6B80' : '#30D158';
     chevron.textContent = '▾';
   }
+  if (!isOpen) renderPaySlots(); // fill pay buttons when expanding
+}
+
+// ── EDIT RECEIPT ──
+let _editReceiptId = null;
+function openEditReceipt(id, name, paidBy, total) {
+  _editReceiptId = id;
+  document.getElementById('edit-r-name').value = name;
+  document.getElementById('edit-r-total').value = total;
+  const sel = document.getElementById('edit-r-paidby');
+  sel.value = paidBy || '';
+  document.getElementById('edit-receipt-modal').classList.add('open');
+}
+function closeEditReceipt() {
+  document.getElementById('edit-receipt-modal').classList.remove('open');
+  _editReceiptId = null;
+}
+async function saveEditReceipt() {
+  if (!_editReceiptId) return;
+  const name   = document.getElementById('edit-r-name').value.trim() || 'Receipt';
+  const paidBy = document.getElementById('edit-r-paidby').value;
+  const total  = parseFloat(document.getElementById('edit-r-total').value) || 0;
+  const btn    = document.getElementById('edit-r-save');
+  btn.textContent = 'Saving...'; btn.disabled = true;
+  try {
+    const r = await fetch(BACKEND + '/trip/' + TRIP_ID + '/receipt/' + _editReceiptId + '/edit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: TRIP_TOKEN, name, paid_by: paidBy || null, total })
+    });
+    const d = await r.json();
+    if (d.success) { closeEditReceipt(); toast('✅ Receipt updated!'); setTimeout(() => location.reload(), 900); }
+    else { toast(d.error || 'Error saving', false); btn.textContent = 'Save Changes'; btn.disabled = false; }
+  } catch(e) { toast('Network error', false); btn.textContent = 'Save Changes'; btn.disabled = false; }
 }
 
 // ── MODAL HELPERS ──
@@ -2228,6 +2360,27 @@ app.post('/trip/:tripId/receipt', async (req, res) => {
     await supabase.from('trips').update({ total: newTotal, receipt_count: (all||[]).length }).eq('id', tripId);
     res.json({ success: true });
   } catch(err) { console.error('Trip receipt error:', err); res.json({ success: false, error: err.message }); }
+});
+
+// ── EDIT RECEIPT ──────────────────────────────────────────────────────────────
+app.post('/trip/:tripId/receipt/:receiptId/edit', async (req, res) => {
+  try {
+    const { tripId, receiptId } = req.params;
+    const { token, name, paid_by, total } = req.body;
+    const { data: trip } = await supabase.from('trips').select('share_token').eq('id', tripId).single();
+    if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
+    // Update the receipt
+    const updates = {};
+    if (name !== undefined)    updates.name    = name || 'Receipt';
+    if (paid_by !== undefined) updates.paid_by = paid_by || null;
+    if (total !== undefined)   updates.total   = parseFloat(total) || 0;
+    await supabase.from('trip_receipts').update(updates).eq('id', receiptId).eq('trip_id', tripId);
+    // Recalculate trip total
+    const { data: all } = await supabase.from('trip_receipts').select('total').eq('trip_id', tripId);
+    const newTotal = (all||[]).reduce((s,r) => s + parseFloat(r.total||0), 0);
+    await supabase.from('trips').update({ total: newTotal }).eq('id', tripId);
+    res.json({ success: true });
+  } catch(err) { console.error('Edit receipt error:', err); res.json({ success: false, error: err.message }); }
 });
 
 // ─── TRIP INFO (public — used by invite join banner) ─────────────────────────
