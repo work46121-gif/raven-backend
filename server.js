@@ -1305,36 +1305,67 @@ function toast(msg, ok) {
 }
 
 // ── AUTO-FILL NAME + AVATAR ──
-(function(){
+const SUPA_URL = 'https://ffjpzkpdumdcwnakpaje.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmanB6a3BkdW1kY3duYWtwYWplIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5ODc4OTcsImV4cCI6MjA4ODU2Mzg5N30.JtDLVu4K1TJ8emcN_mvSHBu6e0y8-jPQv-ypoc9p0RU';
+
+function applyNameAndAvatar(firstName, avatarUrl) {
+  if (firstName) {
+    const inp = document.getElementById('comment-author');
+    if (inp) {
+      inp.value = firstName;
+      inp.style.color = 'var(--muted2)';
+      inp.readOnly = true;
+      inp.style.cssText = 'flex:1;background:transparent;border:none;color:#9896A8;font-family:inherit;font-size:14px;font-weight:600;outline:none;cursor:default';
+    }
+    sessionStorage.setItem('raven_trip_name', firstName);
+  }
+  const avatarEl = document.getElementById('comment-avatar');
+  if (avatarEl) {
+    if (avatarUrl) {
+      avatarEl.innerHTML = '<img src="' + avatarUrl + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%">';
+    } else if (firstName) {
+      avatarEl.textContent = firstName[0].toUpperCase();
+    }
+  }
+}
+
+(async function(){
   try {
-    // Try URL param first (passed from dashboard)
-    const urlName = new URLSearchParams(window.location.search).get('name');
-    const profile = JSON.parse(localStorage.getItem('raven_profile') || '{}');
-    const firstName = urlName ? decodeURIComponent(urlName) : (profile.first_name || sessionStorage.getItem('raven_trip_name') || '');
+    const urlName   = new URLSearchParams(window.location.search).get('name');
+    const local     = JSON.parse(localStorage.getItem('raven_profile') || '{}');
+    const sessName  = sessionStorage.getItem('raven_trip_name');
+    const firstName = urlName ? decodeURIComponent(urlName) : (local.first_name || sessName || '');
 
-    if (firstName) {
-      const inp = document.getElementById('comment-author');
-      if (inp) { inp.value = firstName; inp.style.color = 'var(--muted2)'; }
-      sessionStorage.setItem('raven_trip_name', firstName);
-    }
+    // Apply what we know immediately from localStorage/URL
+    applyNameAndAvatar(firstName, local.avatar_url || '');
 
-    // Set avatar — use profile photo if available, else initial
-    const avatarEl = document.getElementById('comment-avatar');
-    if (avatarEl) {
-      if (profile.avatar_url) {
-        avatarEl.innerHTML = '<img src="' + profile.avatar_url + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%">';
-      } else if (firstName) {
-        avatarEl.textContent = firstName[0].toUpperCase();
-      }
-    }
-
-    // If we have a real signed-in name, make the input read-only and styled
-    if (firstName && profile.first_name) {
-      const inp = document.getElementById('comment-author');
-      if (inp) {
-        inp.readOnly = true;
-        inp.style.cssText = 'flex:1;background:transparent;border:none;color:#9896A8;font-family:inherit;font-size:14px;font-weight:600;outline:none;cursor:default';
-      }
+    // If localStorage has no avatar, fetch from Supabase session
+    if (!local.avatar_url) {
+      try {
+        // Get current session token
+        const sessResp = await fetch(SUPA_URL + '/auth/v1/user', {
+          headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + (local.access_token || '') }
+        });
+        // More reliable: use the stored session from supabase-js if available
+        const sbSession = JSON.parse(localStorage.getItem('sb-ffjpzkpdumdcwnakpaje-auth-token') || 'null');
+        const accessToken = sbSession?.access_token;
+        if (accessToken) {
+          const profResp = await fetch(SUPA_URL + '/rest/v1/profiles?select=first_name,avatar_url&id=eq.' + sbSession.user.id, {
+            headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + accessToken, 'Accept': 'application/json' }
+          });
+          if (profResp.ok) {
+            const profiles = await profResp.json();
+            if (profiles && profiles.length > 0) {
+              const p = profiles[0];
+              const fn = p.first_name || firstName;
+              const av = p.avatar_url || '';
+              // Update localStorage cache
+              localStorage.setItem('raven_profile', JSON.stringify({ ...local, first_name: fn, avatar_url: av, user_id: sbSession.user.id }));
+              applyNameAndAvatar(fn, av);
+            }
+          }
+        }
+      } catch(e) { /* best effort — no avatar is fine */ }
     }
   } catch(e) {}
 })();
