@@ -1855,8 +1855,8 @@ async function adminDeleteReceipt(btn) {
     '<div style="font-size:14px;font-weight:700;color:#FF6B6B;margin-bottom:6px">🗑 Delete "' + name + '"?</div>' +
     '<div style="font-size:12px;color:#6E6B80;margin-bottom:14px">This will permanently remove the receipt and recalculate the trip total.</div>' +
     '<div style="display:flex;gap:8px">' +
-    '<button id="drc-cancel-' + receiptId + '" style="flex:1;padding:10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#9896A8;font-family:\'Epilogue\',sans-serif;font-size:13px;font-weight:600;cursor:pointer">Cancel</button>' +
-    '<button id="drc-confirm-' + receiptId + '" style="flex:1;padding:10px;background:rgba(255,68,68,0.15);border:1px solid rgba(255,68,68,0.3);border-radius:8px;color:#FF6B6B;font-family:\'Epilogue\',sans-serif;font-size:13px;font-weight:700;cursor:pointer">Delete</button>' +
+    '<button id="drc-cancel-' + receiptId + '" style="flex:1;padding:10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#9896A8;font-size:13px;font-weight:600;cursor:pointer">Cancel</button>' +
+    '<button id="drc-confirm-' + receiptId + '" style="flex:1;padding:10px;background:rgba(255,68,68,0.15);border:1px solid rgba(255,68,68,0.3);border-radius:8px;color:#FF6B6B;font-size:13px;font-weight:700;cursor:pointer">Delete</button>' +
     '</div>';
   document.body.appendChild(wrap);
   document.getElementById('drc-cancel-' + receiptId).addEventListener('click', () => wrap.remove());
@@ -1885,6 +1885,8 @@ async function adminDeleteReceipt(btn) {
     }
   });
 }
+
+async function retryPendingScans() {
   try {
     const pending = JSON.parse(localStorage.getItem('raven_pending_receipts') || '[]');
     const unscanned = pending.filter(p => !p.scanned && p.tripId === TRIP_ID);
