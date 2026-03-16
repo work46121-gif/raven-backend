@@ -9,7 +9,6 @@ const fs = require('fs');
 
 const app = express();
 
-// CORS — allow GitHub Pages and any browser to call the API
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -19,21 +18,18 @@ app.use((req, res, next) => {
 });
 
 app.use(express.urlencoded({ extended: false }));
-app.use(express.json({ limit: '20mb' })); // increase limit for base64 images
+app.use(express.json({ limit: '20mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Supabase
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
 );
 
-// Anthropic — created lazily so env var is read at request time
 function getAnthropic() {
   return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 }
 
-// Twilio
 let twilioClient = null;
 const TWILIO_READY = process.env.TWILIO_ACCOUNT_SID !== 'placeholder' &&
                      process.env.TWILIO_AUTH_TOKEN !== 'placeholder' &&
@@ -45,9 +41,6 @@ if (TWILIO_READY) {
 } else {
   console.log('⚠️  Twilio not configured yet');
 }
-
-// ─── HELPERS ────────────────────────────────────────────────────────────────
-
 
 function generateShareToken() {
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -114,8 +107,6 @@ async function getAllContacts(ownerPhone) {
   return data || [];
 }
 
-// ─── RECEIPT PARSING ─────────────────────────────────────────────────────────
-
 async function parseReceiptWithClaude(imageUrl) {
   try {
     const response = await fetch(imageUrl, {
@@ -157,6 +148,7 @@ Rules:
         ]
       }]
     });
+    const text = message.content[0].text;
     const clean = text.replace(/```json|```/g, '').trim();
     return JSON.parse(clean);
   } catch (err) {
@@ -164,8 +156,6 @@ Rules:
     return null;
   }
 }
-
-// ─── RECEIPT HANDLER ─────────────────────────────────────────────────────────
 
 async function handleReceiptImage(fromPhone, mediaUrl, billName) {
   try {
@@ -218,8 +208,6 @@ async function handleReceiptImage(fromPhone, mediaUrl, billName) {
     return `🪶 RAVEN\n\nSomething went wrong scanning the receipt. Try again.`;
   }
 }
-
-// ─── COMMAND HANDLERS ────────────────────────────────────────────────────────
 
 async function handleAdd(fromPhone, text) {
   try {
@@ -433,8 +421,6 @@ function handleHelp() {
   return `🪶 RAVEN Commands\n\nADD Jake 3477887944\nCONTACTS\nREMOVE Jake\n\nSPLIT $120 Dinner @Jake @Mia\nPAID B7K2 Jake\nREMIND B7K2\nSTATUS B7K2\nBILLS\n\n📸 Send a receipt photo to split by item!\n\nRequest Automatically Via Every Network 🪶`;
 }
 
-// ─── WEBHOOK ─────────────────────────────────────────────────────────────────
-
 app.post('/sms', async (req, res) => {
   const fromPhone = normalizePhone(req.body.From || '');
   const rawBody = (req.body.Body || '').trim();
@@ -508,8 +494,7 @@ app.get('/bill/:billId', async (req, res) => {
   const receiptHTML = bill.receipt_image
     ? `<div style="padding:16px 20px 0;max-width:500px;margin:0 auto"><div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:8px">Receipt</div><img src="data:image/jpeg;base64,${bill.receipt_image}" style="width:100%;border-radius:14px;display:block"></div>` : '';
 
-  // Build per-person item map with prices
-  const participantItems = {}; // name -> [{name, price, splitWith}]
+  const participantItems = {};
   participants.forEach(p => { participantItems[p.name.toLowerCase()] = []; });
   if (items.length > 0 && selections.length > 0) {
     items.forEach(item => {
@@ -531,22 +516,22 @@ app.get('/bill/:billId', async (req, res) => {
 
   function buildBreakdown(p, myItems, bill, participantCount) {
     if (myItems.length === 0) {
-      const amount = parseFloat(p.amount||0);
+      const amount = parseFloat(p.amount || 0);
       if (amount <= 0) return '';
-      return '<div style="margin-top:6px;background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px"><div style="display:flex;justify-content:space-between"><span style="font-size:11px;font-weight:700;color:#F0EEF8">Total</span><span style="font-size:12px;font-weight:700;color:#30D158;font-family:monospace">$'+amount.toFixed(2)+'</span></div></div>';
+      return '<div style="margin-top:6px;background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px"><div style="display:flex;justify-content:space-between"><span style="font-size:11px;font-weight:700;color:#F0EEF8">Total</span><span style="font-size:12px;font-weight:700;color:#30D158;font-family:monospace">$' + amount.toFixed(2) + '</span></div></div>';
     }
-    const tax = parseFloat(bill.tax||0);
-    const tip = parseFloat(bill.tip||0);
-    const shared = participantCount > 0 ? (tax+tip)/participantCount : 0;
-    const itemsTotal = myItems.reduce((s,i) => s + i.price/i.splitWith, 0);
+    const tax = parseFloat(bill.tax || 0);
+    const tip = parseFloat(bill.tip || 0);
+    const shared = participantCount > 0 ? (tax + tip) / participantCount : 0;
+    const itemsTotal = myItems.reduce((s, i) => s + i.price / i.splitWith, 0);
     let rows = myItems.map(i => {
-      const share = (i.price/i.splitWith).toFixed(2);
+      const share = (i.price / i.splitWith).toFixed(2);
       const split = i.splitWith > 1 ? ` <span style="color:#9896A8;font-size:10px">(÷${i.splitWith})</span>` : '';
       return `<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6E6B80">${i.name}${split}</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$${share}</span></div>`;
     }).join('');
     let shared_rows = '';
-    if (tax) shared_rows += `<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="font-size:11px;color:#6E6B80">Tax (split)</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$${(tax/participantCount).toFixed(2)}</span></div>`;
-    if (tip) shared_rows += `<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="font-size:11px;color:#6E6B80">Tip (split)</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$${(tip/participantCount).toFixed(2)}</span></div>`;
+    if (tax) shared_rows += `<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="font-size:11px;color:#6E6B80">Tax (split)</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$${(tax / participantCount).toFixed(2)}</span></div>`;
+    if (tip) shared_rows += `<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="font-size:11px;color:#6E6B80">Tip (split)</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$${(tip / participantCount).toFixed(2)}</span></div>`;
     const divider = shared_rows ? `<div style="border-top:1px solid rgba(255,255,255,0.06);margin-top:4px;padding-top:4px">${shared_rows}</div>` : '';
     const total = (itemsTotal + shared).toFixed(2);
     return `<div style="margin-top:8px;background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px">${rows}${divider}<div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:4px;padding-top:5px;display:flex;justify-content:space-between"><span style="font-size:11px;font-weight:700;color:#F0EEF8">Total</span><span style="font-size:12px;font-weight:700;color:#30D158;font-family:monospace">$${total}</span></div></div>`;
@@ -639,7 +624,6 @@ app.get('/bill/:billId', async (req, res) => {
     <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:14px;overflow:hidden">
       <div style="display:flex;align-items:center;border-bottom:1px solid rgba(255,255,255,0.07)">
         <input id="cname" type="text" placeholder="Your name" style="flex:1;padding:12px 16px;background:transparent;border:none;color:#F0EEF8;font-family:inherit;font-size:14px;outline:none"/>
-        <button onclick="pickContact()" title="Fill from phone contacts" style="padding:10px 14px;background:transparent;border:none;color:#6E6B80;font-size:16px;cursor:pointer;flex-shrink:0;-webkit-tap-highlight-color:transparent" id="contacts-btn">📱</button>
       </div>
       <div id="gif-preview-wrap" style="display:none;padding:0 12px;"></div>
       <textarea id="cbody" placeholder="Add a comment... or just drop a GIF 🎭" rows="2" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#F0EEF8;font-family:inherit;font-size:14px;outline:none;resize:none;line-height:1.5"></textarea>
@@ -650,10 +634,9 @@ app.get('/bill/:billId', async (req, res) => {
           <button id="gif-clear" onclick="clearGif()" style="display:none;background:rgba(255,68,68,0.15);border:none;color:#FF6B6B;font-size:11px;padding:2px 8px;border-radius:6px;cursor:pointer;flex-shrink:0">✕</button>
         </div>
       </div>
-      <!-- GIF search panel -->
       <div id="gif-panel" style="display:none;border-bottom:1px solid rgba(255,255,255,0.07)">
         <div style="padding:10px 12px;display:flex;gap:8px">
-          <input id="gif-search" type="text" placeholder="Search GIFs... e.g. money, thanks, funny" style="flex:1;padding:9px 12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#F0EEF8;font-family:inherit;font-size:13px;outline:none" oninput="searchGifs(this.value)"/>
+          <input id="gif-search" type="text" placeholder="Search GIFs..." style="flex:1;padding:9px 12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#F0EEF8;font-family:inherit;font-size:13px;outline:none" oninput="searchGifs(this.value)"/>
         </div>
         <div id="gif-results" style="display:flex;flex-wrap:wrap;gap:4px;padding:0 12px 10px;max-height:200px;overflow-y:auto"></div>
       </div>
@@ -679,36 +662,20 @@ app.get('/bill/:billId', async (req, res) => {
 
   <script>
     const BID = '${billId}';
+    let selectedGif = null;
+    let gifTimer = null;
 
-    // ── AUTO-FILL NAME ──
+    // ── AUTO-FILL NAME from URL param or localStorage ──
     (function(){
       try {
-        // Try sessionStorage first (same-session name)
+        const urlName = new URLSearchParams(window.location.search).get('name');
+        if(urlName){ const el=document.getElementById('cname'); if(el){el.value=decodeURIComponent(urlName);el.style.color='#9896A8';} return; }
         const sn = sessionStorage.getItem('bill_commenter_name');
         if(sn){ const el=document.getElementById('cname'); if(el){el.value=sn;el.style.color='#9896A8';} return; }
-        // Try URL param (passed from dashboard)
-        const urlName = new URLSearchParams(window.location.search).get('name');
-        if(urlName){ const el=document.getElementById('cname'); if(el){el.value=decodeURIComponent(urlName);el.style.color='#9896A8';} sessionStorage.setItem('bill_commenter_name',decodeURIComponent(urlName)); return; }
-        // Try localStorage (same origin)
         const profile = JSON.parse(localStorage.getItem('raven_profile')||'{}');
         if(profile.first_name){ const el=document.getElementById('cname'); if(el){el.value=profile.first_name;el.style.color='#9896A8';} }
       } catch(e){}
     })();
-
-    // ── NATIVE CONTACTS PICKER ──
-    async function pickContact() {
-      if(!navigator.contacts || !navigator.contacts.select){
-        toast('Contacts picker not supported on this device'); return;
-      }
-      try {
-        const contacts = await navigator.contacts.select(['name','tel'],{multiple:false});
-        if(contacts && contacts.length > 0){
-          const c = contacts[0];
-          const name = (c.name && c.name[0]) || '';
-          if(name){ document.getElementById('cname').value = name; sessionStorage.setItem('bill_commenter_name',name); toast('Name filled: '+name); }
-        }
-      } catch(e){ if(e.name !== 'AbortError') toast('Could not access contacts'); }
-    }
 
     function showPay(btn) {
       const pid = btn.dataset.pid, name = btn.dataset.name, amount = btn.dataset.amount;
@@ -726,10 +693,7 @@ app.get('/bill/:billId', async (req, res) => {
         el.className = 'pm-row';
         if(href){ el.href=href; el.target='_blank'; }
         if(copy){ el.addEventListener('click',function(e){ e.preventDefault(); navigator.clipboard.writeText(copy).then(()=>toast('Copied: '+copy)).catch(()=>prompt('Copy:',copy)); }); }
-        // When any payment method is tapped, record it
-        el.addEventListener('click', function() {
-          setTimeout(() => markPaid(pid, name, method), 300);
-        });
+        el.addEventListener('click', function() { setTimeout(() => markPaid(pid, name, method), 300); });
         el.innerHTML = '<div class="pm-icon" style="background:'+bg+'">'+icon+'</div><div class="pm-info"><b>'+title+'</b><span>'+sub+'</span></div><span style="color:#6E6B80;font-size:16px">→</span>';
         mc.appendChild(el);
         n++;
@@ -772,14 +736,11 @@ app.get('/bill/:billId', async (req, res) => {
       }catch(e){alert('Error. Try again.');}
     }
 
-    // ── GIF ──
-    let selectedGif = null;
-    let gifTimer = null;
-
     function toggleGif() {
       const panel = document.getElementById('gif-panel');
-      panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-      if (panel.style.display === 'block') {
+      const isOpen = panel.style.display === 'block';
+      panel.style.display = isOpen ? 'none' : 'block';
+      if (!isOpen) {
         document.getElementById('gif-search').focus();
         searchGifs('reaction');
       }
@@ -805,7 +766,7 @@ app.get('/bill/:billId', async (req, res) => {
           const data = await res.json();
           container.innerHTML = '';
           if (!data.gifs || data.gifs.length === 0) {
-            container.innerHTML = '<div style="color:#6E6B80;font-size:12px;padding:8px;width:100%">No GIFs found — try a different search</div>';
+            container.innerHTML = '<div style="color:#6E6B80;font-size:12px;padding:8px;width:100%">No GIFs found</div>';
             return;
           }
           data.gifs.forEach(g => {
@@ -837,7 +798,7 @@ app.get('/bill/:billId', async (req, res) => {
       }, 400);
     }
 
-        async function loadC(){
+    async function loadC(){
       try{
         const r=await fetch('/bill/'+BID+'/comments');
         const d=await r.json();
@@ -869,7 +830,7 @@ app.get('/bill/:billId', async (req, res) => {
       try{
         const r=await fetch('/bill/'+BID+'/comments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name||'Anonymous',body:body||'',gif_url:selectedGif||null})});
         const d=await r.json();
-        if(d.success){document.getElementById('cbody').value='';document.getElementById('cname').value='';clearGif();await loadC();toast('✅ Posted!');}
+        if(d.success){document.getElementById('cbody').value='';clearGif();await loadC();toast('✅ Posted!');}
         else toast('Error: '+(d.error||'try again'));
       }catch(e){toast('Network error');}
       finally{btn.textContent='💬 Post Comment';btn.disabled=false;}
@@ -901,7 +862,6 @@ app.get('/trip/:tripId', async (req, res) => {
   const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
   if (!trip) return res.status(404).send('<!DOCTYPE html><html><head><meta charset="UTF-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px}</style></head><body><div><div style="font-size:52px;margin-bottom:16px">🪶</div><h2 style="font-size:24px;margin-bottom:8px">Trip Not Found</h2><p style="color:#6E6B80">This trip link may have expired or been deleted.</p></div></body></html>');
 
-  // Auto-generate invite_token if trip doesn't have one yet
   let inviteToken = trip.invite_token;
   if (!inviteToken) {
     inviteToken = Array.from({length:16}, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random()*36)]).join('');
@@ -909,14 +869,12 @@ app.get('/trip/:tripId', async (req, res) => {
     trip.invite_token = inviteToken;
   }
 
-  // Invite link uses invite_token; share link uses share_token
   const validInvite = token === trip.invite_token;
   const validShare = token === trip.share_token;
   if (!validShare && !validInvite) {
     return res.status(403).send('<!DOCTYPE html><html><head><meta charset="UTF-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px}</style></head><body><div><div style="font-size:52px;margin-bottom:16px">🔒</div><h2 style="font-size:24px;margin-bottom:8px">Private Trip</h2><p style="color:#6E6B80">Ask the trip creator to share the correct link with you.</p></div></body></html>');
   }
 
-  // If invite link → show join page (redirects to signup)
   if (validInvite && !validShare) {
     const html = `<!DOCTYPE html>
 <html lang="en">
@@ -928,7 +886,6 @@ app.get('/trip/:tripId', async (req, res) => {
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:'Epilogue',sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center}
-    body::before{content:'';position:fixed;top:-200px;left:50%;transform:translateX(-50%);width:700px;height:500px;background:radial-gradient(ellipse,rgba(124,58,237,0.15) 0%,rgba(48,209,88,0.07) 50%,transparent 70%);pointer-events:none}
   </style>
 </head>
 <body>
@@ -953,7 +910,6 @@ app.get('/trip/:tripId', async (req, res) => {
   const { data: comments } = await supabase.from('trip_comments').select('*').eq('trip_id', tripId).order('created_at', { ascending: true });
   const people = Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people || '[]');
 
-  // Per-person totals
   const totals = {};
   people.forEach(p => { totals[p.toLowerCase()] = 0; });
   (receipts || []).forEach(r => {
@@ -982,30 +938,6 @@ app.get('/trip/:tripId', async (req, res) => {
     'linear-gradient(135deg,#84CC16,#10B981)',
   ];
 
-  // Countdown
-  let countdownHtml = '';
-  if (trip.trip_date) {
-    const tripDateMs = new Date(trip.trip_date).getTime();
-    const nowMs = Date.now();
-    const diff = tripDateMs - nowMs;
-    if (diff > 0) {
-      const days = Math.ceil(diff / (1000*60*60*24));
-      countdownHtml = `
-      <div style="background:linear-gradient(135deg,rgba(124,58,237,0.12),rgba(48,209,88,0.08));border:1px solid rgba(124,58,237,0.2);border-radius:16px;padding:20px;text-align:center;margin-bottom:0">
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.14em;color:#C084FC;font-weight:700;margin-bottom:8px">✈️ Countdown to Trip</div>
-        <div style="font-family:'Bebas Neue',sans-serif;font-size:64px;letter-spacing:0.04em;line-height:1;color:#F0EEF8">${days}</div>
-        <div style="font-size:14px;color:#9896A8;margin-top:4px">day${days !== 1 ? 's' : ''} to go · ${new Date(trip.trip_date).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</div>
-      </div>`;
-    } else {
-      const daysPast = Math.abs(Math.floor(diff / (1000*60*60*24)));
-      countdownHtml = `
-      <div style="background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.18);border-radius:16px;padding:16px;text-align:center;margin-bottom:0">
-        <div style="font-size:13px;color:#30D158;font-weight:600">✅ Trip happened ${daysPast > 0 ? daysPast + ' days ago' : 'today'} · ${new Date(trip.trip_date).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</div>
-      </div>`;
-    }
-  }
-
-  // Receipt rows
   const receiptRowsHtml = (receipts || []).map(r => {
     let splitsHtml = '';
     try {
@@ -1024,7 +956,6 @@ app.get('/trip/:tripId', async (req, res) => {
     </div>`;
   }).join('');
 
-  // Comments HTML
   const commentsHtml = (comments || []).map(c => {
     const initials = c.author_name ? c.author_name[0].toUpperCase() : '?';
     const timeStr = new Date(c.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
@@ -1041,21 +972,21 @@ app.get('/trip/:tripId', async (req, res) => {
     </div>`;
   }).join('');
 
+  // Safely escape values for JS embedding
+  const tripNameEscaped = trip.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"');
+  const tripDateEscaped = trip.trip_date || '';
+
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
   <title>✈️ ${trip.name} — RAVEN</title>
-  <meta property="og:title" content="✈️ ${trip.name}">
-  <meta property="og:description" content="Trip hub — add receipts, track who owes what.">
-  ${trip.cover_image ? `<meta property="og:image" content="data:image/jpeg;base64,${trip.cover_image.substring(0,100)}">` : ''}
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Epilogue:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     :root{--black:#06060A;--dark:#0C0C12;--dark2:#13131A;--dark3:#1A1A24;--border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);--white:#F0EEF8;--muted:#6E6B80;--muted2:#9896A8;--green:#30D158;--purple:#7C3AED;--purple2:#A855F7;--orange:#FF6B35}
     body{font-family:'Epilogue',sans-serif;background:var(--black);color:var(--white);min-height:100vh;padding-bottom:60px}
-    body::before{content:'';position:fixed;top:-200px;left:50%;transform:translateX(-50%);width:800px;height:600px;background:radial-gradient(ellipse,rgba(124,58,237,0.1) 0%,rgba(48,209,88,0.05) 50%,transparent 70%);pointer-events:none;z-index:0}
     .hdr{position:sticky;top:0;background:rgba(6,6,10,0.95);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid var(--border);z-index:100}
     .hdr-inner{max-width:560px;margin:0 auto;height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 20px}
     .hdr-logo{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:0.15em;background:linear-gradient(135deg,var(--white),var(--purple2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-decoration:none}
@@ -1063,26 +994,22 @@ app.get('/trip/:tripId', async (req, res) => {
     .sec{max-width:560px;margin:20px auto 0;padding:0 20px;position:relative;z-index:1}
     .sec-lbl{font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:var(--muted);font-weight:700;margin-bottom:10px}
     .card{background:var(--dark);border:1px solid var(--border);border-radius:16px;overflow:hidden}
-    .btn-green{width:100%;padding:15px;background:var(--green);color:#000;border:none;border-radius:12px;font-family:'Epilogue',sans-serif;font-size:15px;font-weight:800;cursor:pointer;transition:all 0.2s}
-    .btn-green:hover{background:#3ddd68;transform:translateY(-1px)}
-    .btn-outline{width:100%;padding:13px;background:transparent;border:1px solid var(--border2);border-radius:12px;color:var(--muted2);font-family:'Epilogue',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.15s}
-    .btn-outline:hover{border-color:rgba(255,255,255,0.25);color:var(--white)}
-    .btn-purple{width:100%;padding:13px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.25);border-radius:12px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.15s}
-    .btn-purple:hover{background:rgba(124,58,237,0.25)}
-    .btn-sm{padding:8px 14px;border-radius:8px;font-family:'Epilogue',sans-serif;font-size:12px;font-weight:600;cursor:pointer;border:none;transition:all 0.15s}
-    input,textarea{background:var(--dark2);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:'Epilogue',sans-serif;font-size:14px;outline:none;padding:12px 16px;width:100%;transition:border-color 0.2s}
-    input:focus,textarea:focus{border-color:var(--purple)}
-    .split-btn{flex:1;padding:10px;border-radius:8px;font-family:'Epilogue',sans-serif;font-size:13px;font-weight:600;cursor:pointer;background:var(--dark3);border:1px solid var(--border);color:var(--muted2);transition:all 0.15s}
-    .split-btn.ae{background:rgba(48,209,88,0.12);border-color:rgba(48,209,88,0.3);color:var(--green)}
-    .split-btn.ai{background:rgba(124,58,237,0.12);border-color:rgba(124,58,237,0.3);color:var(--purple2)}
+    .btn-green{width:100%;padding:15px;background:var(--green);color:#000;border:none;border-radius:12px;font-family:'Epilogue',sans-serif;font-size:15px;font-weight:800;cursor:pointer}
+    .btn-outline{width:100%;padding:13px;background:transparent;border:1px solid var(--border2);border-radius:12px;color:var(--muted2);font-family:'Epilogue',sans-serif;font-size:14px;font-weight:600;cursor:pointer}
+    .btn-purple{width:100%;padding:13px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.25);border-radius:12px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:14px;font-weight:600;cursor:pointer}
     .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);backdrop-filter:blur(12px);z-index:500;align-items:flex-end;justify-content:center}
-    .modal-overlay.open{display:flex}
+    .modal-overlay.open{display:flex!important}
     .modal-sheet{background:var(--dark);border:1px solid var(--border2);border-radius:24px 24px 0 0;padding:24px 20px 52px;width:100%;max-width:520px;max-height:85vh;overflow-y:auto}
     .modal-handle{width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 20px}
     .modal-title{font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:0.05em;margin-bottom:4px}
-    .modal-sub{font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.6}
+    input,textarea{background:var(--dark2);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:'Epilogue',sans-serif;font-size:14px;outline:none;padding:12px 16px;width:100%}
+    input:focus,textarea:focus{border-color:var(--purple)}
+    .split-btn{flex:1;padding:10px;border-radius:8px;font-family:'Epilogue',sans-serif;font-size:13px;font-weight:600;cursor:pointer;background:var(--dark3);border:1px solid var(--border);color:var(--muted2)}
+    .split-btn.ae{background:rgba(48,209,88,0.12);border-color:rgba(48,209,88,0.3);color:var(--green)}
+    .split-btn.ai{background:rgba(124,58,237,0.12);border-color:rgba(124,58,237,0.3);color:var(--purple2)}
     @keyframes spin{to{transform:rotate(360deg)}}
     .spinner{width:16px;height:16px;border:2px solid rgba(124,58,237,0.3);border-top-color:var(--purple2);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0}
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:0.4}}
   </style>
 </head>
 <body>
@@ -1096,7 +1023,7 @@ app.get('/trip/:tripId', async (req, res) => {
 
 <!-- COVER PHOTO -->
 ${trip.cover_image
-  ? `<div style="max-width:560px;margin:0 auto;padding:0 20px;padding-top:16px;position:relative;z-index:1">
+  ? `<div style="max-width:560px;margin:0 auto;padding:16px 20px 0;position:relative;z-index:1">
       <div style="position:relative;width:100%;height:190px;border-radius:16px;overflow:hidden;border:1px solid var(--border)">
         <img src="data:image/jpeg;base64,${trip.cover_image}" id="cover-img" style="width:100%;height:100%;object-fit:cover">
         <button onclick="document.getElementById('cover-upload').click()" style="position:absolute;bottom:10px;right:10px;padding:7px 14px;background:rgba(0,0,0,0.7);border:1px solid rgba(255,255,255,0.2);border-radius:8px;color:#fff;font-family:'Epilogue',sans-serif;font-size:12px;font-weight:600;cursor:pointer;backdrop-filter:blur(8px)">📷 Change</button>
@@ -1104,7 +1031,7 @@ ${trip.cover_image
       </div>
     </div>`
   : `<div style="max-width:560px;margin:16px auto 0;padding:0 20px;position:relative;z-index:1">
-      <div onclick="document.getElementById('cover-upload').click()" style="width:100%;height:100px;border:2px dashed rgba(124,58,237,0.3);border-radius:16px;display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;background:rgba(124,58,237,0.03);transition:all 0.2s">
+      <div onclick="document.getElementById('cover-upload').click()" style="width:100%;height:100px;border:2px dashed rgba(124,58,237,0.3);border-radius:16px;display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;background:rgba(124,58,237,0.03)">
         <span style="font-size:20px">🖼</span>
         <span style="font-size:13px;color:var(--muted);font-weight:500">Add a cover photo for this trip</span>
       </div>
@@ -1130,12 +1057,12 @@ ${trip.cover_image
   <!-- MEMBER AVATARS -->
   <div style="display:flex;align-items:center;margin-top:14px;margin-bottom:6px">
     ${people.map((p, i) => `<div style="width:32px;height:32px;border-radius:50%;background:${avatarColors[i % avatarColors.length]};border:2px solid var(--black);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0;margin-left:${i===0?'0':'-8px'}" title="${p}">${p[0].toUpperCase()}</div>`).join('')}
-    <button onclick="openAddMembers()" style="width:32px;height:32px;border-radius:50%;background:var(--dark2);border:2px dashed rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;cursor:pointer;margin-left:4px;flex-shrink:0;font-size:14px;color:var(--muted);transition:all 0.15s;-webkit-tap-highlight-color:transparent" title="Add members">+</button>
-    <button onclick="openInviteModal()" style="padding:5px 14px;margin-left:10px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.25);border-radius:20px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:11px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent">📨 Invite</button>
+    <button onclick="openAddMembers()" style="width:32px;height:32px;border-radius:50%;background:var(--dark2);border:2px dashed rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;cursor:pointer;margin-left:4px;flex-shrink:0;font-size:14px;color:var(--muted)">+</button>
+    <button onclick="openInviteModal()" style="padding:5px 14px;margin-left:10px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.25);border-radius:20px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:11px;font-weight:700;cursor:pointer">📨 Invite</button>
   </div>
 </div>
 
-<!-- COUNTDOWN — always rendered, shown if trip_date set -->
+<!-- COUNTDOWN -->
 <div class="sec" style="margin-top:16px">
   ${trip.trip_date ? (() => {
     const tripDateMs = new Date(trip.trip_date + 'T12:00:00').getTime();
@@ -1157,16 +1084,14 @@ ${trip.cover_image
     }
   })() : `<div style="background:var(--dark2);border:1px dashed rgba(255,255,255,0.08);border-radius:14px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between">
     <div style="font-size:13px;color:var(--muted)">📅 No trip date set</div>
-    <div style="font-size:11px;color:var(--muted);font-style:italic">Set date in dashboard to see countdown</div>
+    <div style="font-size:11px;color:var(--muted);font-style:italic">Set date in settings to see countdown</div>
   </div>`}
 </div>
-
-
 
 <!-- WHO OWES WHAT -->
 <div class="sec" style="margin-top:20px">
   <div class="sec-lbl">Who Owes What</div>
-  <div class="card" style="box-shadow:0 0 0 1px rgba(48,209,88,0.08),0 20px 60px rgba(0,0,0,0.4)">
+  <div class="card">
     ${people.map((p, i) => `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)">
       <div style="display:flex;align-items:center;gap:10px">
@@ -1190,7 +1115,7 @@ ${trip.cover_image
   <button class="btn-green" id="add-receipt-btn" onclick="openReceiptForm()">📸 Add a Receipt</button>
   <div style="display:flex;gap:10px">
     <button class="btn-purple" onclick="openInviteModal()" style="flex:1">🔗 Share</button>
-    <button onclick="openSettingsModal()" style="flex:1;padding:13px;background:var(--dark2);border:1px solid var(--border2);border-radius:12px;color:var(--muted2);font-family:'Epilogue',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.15s">⚙️ Settings</button>
+    <button onclick="openSettingsModal()" style="flex:1;padding:13px;background:var(--dark2);border:1px solid var(--border2);border-radius:12px;color:var(--muted2);font-family:'Epilogue',sans-serif;font-size:14px;font-weight:600;cursor:pointer">⚙️ Settings</button>
   </div>
 </div>
 
@@ -1199,10 +1124,10 @@ ${trip.cover_image
   <div class="sec" style="margin-top:16px">
     <div class="sec-lbl">New Receipt</div>
     <div class="card" style="padding:20px;display:flex;flex-direction:column;gap:14px">
-      <div><div style="font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600">Receipt Name</div><input id="r-name" type="text" placeholder="e.g. Dinner at Casa Marina"></div>
+      <div><div style="font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600">Receipt Name</div><input id="r-name" type="text" placeholder="e.g. Dinner at Casa Marina" style="background:var(--dark2);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:'Epilogue',sans-serif;font-size:14px;outline:none;padding:12px 16px;width:100%"></div>
       <div>
         <div style="font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:600">Photo — AI scans automatically</div>
-        <div id="r-drop" style="border:2px dashed rgba(48,209,88,0.25);border-radius:12px;padding:20px;text-align:center;cursor:pointer;transition:all 0.2s" onclick="document.getElementById('r-file').click()">
+        <div id="r-drop" style="border:2px dashed rgba(48,209,88,0.25);border-radius:12px;padding:20px;text-align:center;cursor:pointer" onclick="document.getElementById('r-file').click()">
           <div id="r-empty" style="color:var(--muted);font-size:13px">📸 Tap to upload receipt photo</div>
           <img id="r-preview" style="display:none;max-width:100%;border-radius:8px;max-height:220px;object-fit:contain">
         </div>
@@ -1215,7 +1140,7 @@ ${trip.cover_image
       </div>
       <div id="r-even-sec">
         <div style="font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600">Total Amount</div>
-        <div style="position:relative"><span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--muted)">$</span><input id="r-total" type="number" placeholder="0.00" step="0.01" style="padding-left:28px" oninput="updateEven()"></div>
+        <div style="position:relative"><span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--muted)">$</span><input id="r-total" type="number" placeholder="0.00" step="0.01" style="padding-left:28px;background:var(--dark2);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:'Epilogue',sans-serif;font-size:14px;outline:none;padding:12px 16px;padding-left:28px;width:100%" oninput="updateEven()"></div>
         <div id="r-even-prev" style="margin-top:10px;display:none;background:var(--dark2);border-radius:10px;padding:10px 14px">
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);font-weight:600;margin-bottom:8px">Per Person</div>
           ${people.map(p => `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px"><span style="color:var(--muted2)">${p}</span><span id="ep-${p.toLowerCase().replace(/\s+/g,'_')}" style="color:var(--green);font-weight:600">$0.00</span></div>`).join('')}
@@ -1224,8 +1149,8 @@ ${trip.cover_image
       <div id="r-item-sec" style="display:none">
         <div id="r-items-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
         <div style="display:flex;gap:8px">
-          <input id="r-iname" type="text" placeholder="Item name" style="flex:1">
-          <div style="position:relative;display:flex;align-items:center"><span style="position:absolute;left:10px;color:var(--muted);font-size:13px">$</span><input id="r-iprice" type="number" placeholder="0.00" step="0.01" style="width:80px;padding-left:24px"></div>
+          <input id="r-iname" type="text" placeholder="Item name" style="flex:1;background:var(--dark2);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:'Epilogue',sans-serif;font-size:14px;outline:none;padding:12px 16px">
+          <div style="position:relative;display:flex;align-items:center"><span style="position:absolute;left:10px;color:var(--muted);font-size:13px">$</span><input id="r-iprice" type="number" placeholder="0.00" step="0.01" style="width:80px;padding-left:24px;background:var(--dark2);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:'Epilogue',sans-serif;font-size:14px;outline:none;padding:12px 16px;padding-left:24px"></div>
           <button onclick="addItem()" style="padding:0 14px;background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.3);border-radius:8px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-weight:700;cursor:pointer;font-size:18px;flex-shrink:0">+</button>
         </div>
       </div>
@@ -1255,41 +1180,41 @@ ${trip.cover_image
   </div>
   <div style="margin-top:12px;background:var(--dark);border:1px solid var(--border2);border-radius:14px;overflow:hidden">
     <input id="comment-author" type="text" placeholder="Your name" style="border-radius:0;border:none;border-bottom:1px solid var(--border);background:transparent;padding:12px 16px;font-size:14px;color:#F0EEF8;font-family:inherit;width:100%;outline:none">
-    <div id="gif-preview-wrap" style="display:none;padding:10px 12px;border-bottom:1px solid var(--border)">
+    <div id="trip-gif-preview-wrap" style="display:none;padding:10px 12px;border-bottom:1px solid var(--border)">
       <div style="display:flex;align-items:center;gap:8px">
-        <img id="gif-preview-img" style="height:80px;border-radius:8px;object-fit:cover">
-        <button onclick="clearGif()" style="padding:4px 10px;background:rgba(255,68,68,0.12);border:1px solid rgba(255,68,68,0.25);border-radius:6px;color:#FF6B6B;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">✕ Remove</button>
+        <img id="trip-gif-preview-img" style="height:80px;border-radius:8px;object-fit:cover">
+        <button onclick="clearTripGif()" style="padding:4px 10px;background:rgba(255,68,68,0.12);border:1px solid rgba(255,68,68,0.25);border-radius:6px;color:#FF6B6B;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">✕ Remove</button>
       </div>
     </div>
     <textarea id="comment-body" placeholder="Add a comment..." rows="2" style="border-radius:0;border:none;border-bottom:1px solid var(--border);background:transparent;resize:none;padding:12px 16px;font-size:14px;line-height:1.5;width:100%;color:#F0EEF8;font-family:inherit;outline:none;display:block"></textarea>
-    <div id="gif-panel" style="display:none;border-bottom:1px solid var(--border);background:var(--dark2)">
+    <div id="trip-gif-panel" style="display:none;border-bottom:1px solid var(--border);background:var(--dark2)">
       <div style="padding:8px 12px">
-        <input id="gif-search-input" type="text" placeholder="Search GIFs..." style="padding:10px 14px;font-size:13px;background:var(--dark3);border:1px solid var(--border);border-radius:8px;color:#F0EEF8;font-family:inherit;outline:none;width:100%" oninput="searchGifs(this.value)">
+        <input id="trip-gif-search" type="text" placeholder="Search GIFs..." style="padding:10px 14px;font-size:13px;background:var(--dark3);border:1px solid var(--border);border-radius:8px;color:#F0EEF8;font-family:inherit;outline:none;width:100%;border-radius:8px" oninput="searchTripGifs(this.value)">
       </div>
-      <div id="gif-results" style="display:flex;flex-wrap:wrap;gap:4px;padding:0 12px 10px;max-height:180px;overflow-y:auto">
+      <div id="trip-gif-results" style="display:flex;flex-wrap:wrap;gap:4px;padding:0 12px 10px;max-height:180px;overflow-y:auto">
         <div style="color:var(--muted);font-size:12px;padding:8px 0">Type to search GIFs...</div>
       </div>
     </div>
     <div style="display:flex">
-      <button id="gif-toggle-btn" onclick="toggleGifPanel()" style="padding:13px 16px;background:transparent;border:none;border-right:1px solid var(--border);color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;-webkit-tap-highlight-color:transparent;flex-shrink:0">🎭 GIF</button>
-      <button onclick="postComment()" style="flex:1;padding:13px;background:rgba(48,209,88,0.12);border:none;color:var(--green);font-family:inherit;font-size:15px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent">💬 Post</button>
+      <button id="trip-gif-toggle-btn" onclick="toggleTripGifPanel()" style="padding:13px 16px;background:transparent;border:none;border-right:1px solid var(--border);color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;flex-shrink:0">🎭 GIF</button>
+      <button onclick="postComment()" style="flex:1;padding:13px;background:rgba(48,209,88,0.12);border:none;color:var(--green);font-family:inherit;font-size:15px;font-weight:700;cursor:pointer">💬 Post</button>
     </div>
   </div>
 </div>
 
 <!-- SETTINGS MODAL -->
-<div class="modal-overlay" id="settings-modal" onclick="if(event.target.id==='settings-modal')closeSettingsModal()">
-  <div class="modal-sheet">
+<div class="modal-overlay" id="settings-modal">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
     <div class="modal-handle"></div>
     <div class="modal-title">Trip Settings</div>
     <div style="display:flex;flex-direction:column;gap:14px;margin-bottom:16px">
       <div>
         <div style="font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">Trip Name</div>
-        <input id="settings-name" type="text" value="\${trip.name.replace(/"/g,\'&quot;\')}" placeholder="Trip name">
+        <input id="settings-name" type="text" value="${trip.name.replace(/"/g,'&quot;')}" placeholder="Trip name">
       </div>
       <div>
         <div style="font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">Trip Date</div>
-        <input id="settings-date" type="date" value="\${trip.trip_date || \'\'}">
+        <input id="settings-date" type="date" value="${trip.trip_date || ''}">
       </div>
     </div>
     <button onclick="saveSettings()" class="btn-green" style="margin-bottom:10px">💾 Save Changes</button>
@@ -1298,11 +1223,11 @@ ${trip.cover_image
 </div>
 
 <!-- ADD MEMBERS MODAL -->
-<div class="modal-overlay" id="add-members-modal" onclick="if(event.target.id==='add-members-modal')closeAddMembers()">
-  <div class="modal-sheet">
+<div class="modal-overlay" id="add-members-modal">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
     <div class="modal-handle"></div>
     <div class="modal-title">Add Members</div>
-    <div class="modal-sub">Add more people to this trip. They'll appear in all receipt splits going forward.</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.6">Add more people to this trip. They'll appear in all receipt splits going forward.</div>
     <div style="display:flex;gap:8px;margin-bottom:14px">
       <input id="new-member-input" type="text" placeholder="Enter name" style="flex:1" onkeydown="if(event.key==='Enter')addNewMember()">
       <button onclick="addNewMember()" style="padding:12px 18px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.25);border-radius:10px;color:var(--green);font-family:'Epilogue',sans-serif;font-size:14px;font-weight:700;cursor:pointer;flex-shrink:0">+ Add</button>
@@ -1318,364 +1243,452 @@ ${trip.cover_image
 </div>
 
 <!-- INVITE MODAL -->
-<div class="modal-overlay" id="invite-modal" onclick="if(event.target.id==='invite-modal')closeInvite()">
-  <div class="modal-sheet">
+<div class="modal-overlay" id="invite-modal">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
     <div class="modal-handle"></div>
     <div class="modal-title">Invite to Trip</div>
 
-    <!-- TRIP LINK -->
     <div style="background:var(--dark2);border:1px solid var(--border2);border-radius:14px;padding:16px;margin-bottom:12px">
       <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted2);margin-bottom:6px">📋 Trip Link</div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:10px">For people already added to the trip</div>
       <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted2);background:var(--dark3);border-radius:8px;padding:8px 12px;margin-bottom:10px;word-break:break-all">${tripUrl}</div>
       <div style="display:flex;gap:8px">
         <button onclick="copyAndToast('${tripUrl}','✅ Trip link copied!')" style="flex:1;padding:11px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.25);border-radius:9px;color:var(--green);font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📋 Copy</button>
-        <button onclick="shareNative('${tripUrl}','${trip.name.replace(/'/g,"\\'")}')" style="flex:1;padding:11px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.25);border-radius:9px;color:var(--green);font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📤 Share</button>
+        <button onclick="shareNative('${tripUrl}','${tripNameEscaped}')" style="flex:1;padding:11px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.25);border-radius:9px;color:var(--green);font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📤 Share</button>
       </div>
     </div>
 
-    <!-- INVITE LINK -->
     <div style="background:var(--dark2);border:1px solid rgba(124,58,237,0.25);border-radius:14px;padding:16px;margin-bottom:16px">
-      <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--purple3,#C084FC);margin-bottom:6px">📨 Invite Link (New Members)</div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#C084FC;margin-bottom:6px">📨 Invite Link (New Members)</div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Requires creating a RAVEN account — send to group chat</div>
       <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted2);background:var(--dark3);border-radius:8px;padding:8px 12px;margin-bottom:10px;word-break:break-all">${inviteUrl}</div>
       <div style="display:flex;gap:8px">
-        <button onclick="copyAndToast('${inviteUrl}','📨 Invite link copied! Paste in your group chat')" style="flex:1;padding:11px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.3);border-radius:9px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📋 Copy Invite</button>
-        <button onclick="shareNative('${inviteUrl}','Join '+${JSON.stringify(trip.name)}+' on RAVEN')" style="flex:1;padding:11px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.3);border-radius:9px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📤 Share</button>
+        <button onclick="copyAndToast('${inviteUrl}','📨 Invite link copied!')" style="flex:1;padding:11px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.3);border-radius:9px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📋 Copy Invite</button>
+        <button onclick="shareNative('${inviteUrl}','Join ${tripNameEscaped} on RAVEN')" style="flex:1;padding:11px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.3);border-radius:9px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📤 Share</button>
       </div>
     </div>
 
-    <button class="btn-outline" onclick="closeInvite()">Done</button>
+    <button class="btn-outline" onclick="closeInviteModal()">Done</button>
   </div>
 </div>
 
 <!-- TOAST -->
-<div id="toast" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--dark2);border:1px solid var(--border2);border-radius:12px;padding:12px 20px;font-size:13px;color:var(--white);z-index:9999;opacity:0;transition:all 0.3s cubic-bezier(0.34,1.56,0.64,1);white-space:nowrap;box-shadow:0 20px 60px rgba(0,0,0,0.5)"></div>
-
-<style>
-@keyframes blink{0%,100%{opacity:1}50%{opacity:0.4}}
-</style>
+<div id="trip-toast" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--dark2);border:1px solid var(--border2);border-radius:12px;padding:12px 20px;font-size:13px;color:var(--white);z-index:9999;opacity:0;transition:all 0.3s;white-space:nowrap;box-shadow:0 20px 60px rgba(0,0,0,0.5)"></div>
 
 <script>
-  const TRIP_ID='${tripId}',TRIP_TOKEN='${trip.share_token}',BACKEND='${baseUrl}';
-  let PEOPLE=${JSON.stringify(people)};
-  let splitType='even',tripItems=[],imgBase64=null,newMembers=[];
-  let selectedGifUrl=null,gifTimer=null;
-  const avatarColors=${JSON.stringify(avatarColors)};
+  const TRIP_ID = '${tripId}';
+  const TRIP_TOKEN = '${trip.share_token}';
+  const BACKEND = '${baseUrl}';
+  let PEOPLE = ${JSON.stringify(people)};
+  let splitType = 'even';
+  let tripItems = [];
+  let imgBase64 = null;
+  let newMembers = [];
+  let tripSelectedGif = null;
+  let tripGifTimer = null;
+  let tripGifPanelOpen = false;
 
-  function toast(msg,ok=true){
-    const t=document.getElementById('toast');
-    t.textContent=msg;t.style.borderColor=ok?'rgba(48,209,88,0.3)':'rgba(255,68,68,0.3)';
-    t.style.opacity='1';t.style.transform='translateX(-50%) translateY(0)';
-    setTimeout(()=>{t.style.opacity='0';t.style.transform='translateX(-50%) translateY(80px)'},3000);
+  // ── TOAST ──
+  function toast(msg, ok) {
+    const t = document.getElementById('trip-toast');
+    t.textContent = msg;
+    t.style.borderColor = (ok === false) ? 'rgba(255,68,68,0.3)' : 'rgba(48,209,88,0.3)';
+    t.style.opacity = '1';
+    t.style.transform = 'translateX(-50%) translateY(0)';
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => {
+      t.style.opacity = '0';
+      t.style.transform = 'translateX(-50%) translateY(80px)';
+    }, 3000);
   }
 
-  function openReceiptForm(){document.getElementById('receipt-form').style.display='block';document.getElementById('add-receipt-btn').style.display='none';setTimeout(()=>document.getElementById('receipt-form').scrollIntoView({behavior:'smooth',block:'start'}),50);}
-  function closeReceiptForm(){document.getElementById('receipt-form').style.display='none';document.getElementById('add-receipt-btn').style.display='block';}
-  function openInviteModal(){document.getElementById('invite-modal').classList.add('open')}
-  function closeInvite(){document.getElementById('invite-modal').classList.remove('open')}
-  function openAddMembers(){newMembers=[];renderNewMembers();document.getElementById('add-members-modal').classList.add('open')}
-  function closeAddMembers(){document.getElementById('add-members-modal').classList.remove('open')}
-  function openSettingsModal(){document.getElementById('settings-modal').classList.add('open')}
-  function closeSettingsModal(){document.getElementById('settings-modal').classList.remove('open')}
-  function copyLink(url){navigator.clipboard.writeText(url).then(()=>toast('✈️ Link copied!')).catch(()=>prompt('Copy:',url));}
-  function copyAndToast(url,msg){navigator.clipboard.writeText(url).then(()=>toast(msg)).catch(()=>{prompt('Copy this link:',url);toast(msg);});}
-  function shareNative(url,title){if(navigator.share)navigator.share({title,url}).catch(()=>copyLink(url));else copyAndToast(url,'📋 Copied!');}
+  // ── AUTO-FILL NAME ──
+  (function(){
+    try {
+      const urlName = new URLSearchParams(window.location.search).get('name');
+      if(urlName) {
+        const el = document.getElementById('comment-author');
+        if(el){ el.value = decodeURIComponent(urlName); el.style.color = 'var(--muted2)'; }
+        sessionStorage.setItem('trip_commenter_name', decodeURIComponent(urlName));
+        return;
+      }
+      const sessName = sessionStorage.getItem('trip_commenter_name');
+      if(sessName) {
+        const el = document.getElementById('comment-author');
+        if(el){ el.value = sessName; el.style.color = 'var(--muted2)'; }
+        return;
+      }
+      const profile = JSON.parse(localStorage.getItem('raven_profile') || '{}');
+      if(profile.first_name) {
+        const el = document.getElementById('comment-author');
+        if(el){ el.value = profile.first_name; el.style.color = 'var(--muted2)'; }
+      }
+    } catch(e){}
+  })();
 
   // ── AUTO-OPEN receipt form if ?action=receipt ──
   (function(){
     const params = new URLSearchParams(window.location.search);
-    if(params.get('action')==='receipt') setTimeout(openReceiptForm, 300);
+    if(params.get('action') === 'receipt') setTimeout(openReceiptForm, 300);
   })();
 
-  // Auto-fill name — from URL param (passed by dashboard) or localStorage
-  (function(){
-    try{
-      // Check URL param first (set by dashboard when opening trip)
-      const urlName = new URLSearchParams(window.location.search).get('name');
-      if(urlName){
-        const el=document.getElementById('comment-author');
-        if(el){el.value=decodeURIComponent(urlName);el.style.color='var(--muted2)';}
-        // Store in sessionStorage for page reloads
-        sessionStorage.setItem('trip_commenter_name', decodeURIComponent(urlName));
-        return;
-      }
-      // Check sessionStorage (survives reloads on same trip)
-      const sessName = sessionStorage.getItem('trip_commenter_name');
-      if(sessName){
-        const el=document.getElementById('comment-author');
-        if(el){el.value=sessName;el.style.color='var(--muted2)';}
-        return;
-      }
-      // Fallback: localStorage (same origin only)
-      const profile=JSON.parse(localStorage.getItem('raven_profile')||'{}');
-      const name=(profile.first_name||'').trim();
-      if(name){
-        const el=document.getElementById('comment-author');
-        if(el){el.value=name;el.style.color='var(--muted2)';}
-      }
-    }catch(e){}
-  })();
+  // ── MODALS ──
+  function openSettingsModal() {
+    document.getElementById('settings-modal').classList.add('open');
+  }
+  function closeSettingsModal() {
+    document.getElementById('settings-modal').classList.remove('open');
+  }
+  function openInviteModal() {
+    document.getElementById('invite-modal').classList.add('open');
+  }
+  function closeInviteModal() {
+    document.getElementById('invite-modal').classList.remove('open');
+  }
+  function openAddMembers() {
+    newMembers = [];
+    renderNewMembers();
+    document.getElementById('add-members-modal').classList.add('open');
+  }
+  function closeAddMembers() {
+    document.getElementById('add-members-modal').classList.remove('open');
+  }
 
-  // ── GIF SUPPORT ──
-  let gifPanelOpen = false;
-  function toggleGifPanel(){
-    gifPanelOpen = !gifPanelOpen;
-    const p = document.getElementById('gif-panel');
-    p.style.display = gifPanelOpen ? 'block' : 'none';
-    const btn = document.getElementById('gif-toggle-btn');
-    btn.style.color = gifPanelOpen ? 'var(--green)' : 'var(--muted)';
-    if(gifPanelOpen) document.getElementById('gif-search-input').focus();
+  // Close modals when clicking backdrop
+  document.getElementById('settings-modal').addEventListener('click', function(e) {
+    if(e.target === this) closeSettingsModal();
+  });
+  document.getElementById('invite-modal').addEventListener('click', function(e) {
+    if(e.target === this) closeInviteModal();
+  });
+  document.getElementById('add-members-modal').addEventListener('click', function(e) {
+    if(e.target === this) closeAddMembers();
+  });
+
+  // ── RECEIPT FORM ──
+  function openReceiptForm() {
+    document.getElementById('receipt-form').style.display = 'block';
+    document.getElementById('add-receipt-btn').style.display = 'none';
+    setTimeout(() => document.getElementById('receipt-form').scrollIntoView({behavior:'smooth',block:'start'}), 50);
   }
-  function clearGif(){
-    selectedGifUrl=null;
-    document.getElementById('gif-preview-wrap').style.display='none';
-    document.getElementById('gif-preview-img').src='';
+  function closeReceiptForm() {
+    document.getElementById('receipt-form').style.display = 'none';
+    document.getElementById('add-receipt-btn').style.display = 'block';
   }
-  function selectGif(url){
-    selectedGifUrl=url;
-    document.getElementById('gif-preview-img').src=url;
-    document.getElementById('gif-preview-wrap').style.display='block';
-    gifPanelOpen=false;
-    document.getElementById('gif-panel').style.display='none';
-    document.getElementById('gif-toggle-btn').style.color='var(--muted)';
-    document.getElementById('gif-search-input').value='';
-    document.getElementById('gif-results').innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px 0">Type to search GIFs...</div>';
+
+  // ── SHARE/COPY ──
+  function copyAndToast(url, msg) {
+    navigator.clipboard.writeText(url)
+      .then(() => toast(msg))
+      .catch(() => { prompt('Copy this link:', url); toast(msg); });
   }
-  function searchGifs(q){
-    clearTimeout(gifTimer);
-    const container = document.getElementById('gif-results');
-    if(!q.trim()){container.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px 0">Type to search GIFs...</div>';return;}
-    container.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px 0">Searching...</div>';
-    gifTimer=setTimeout(function(){
-      fetch(BACKEND+'/gif-search?q='+encodeURIComponent(q))
-        .then(r=>r.json())
-        .then(d=>{
-          const gifs = d.gifs || d.results || [];
-          if(!gifs.length){container.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px 0">No results — try another search</div>';return;}
-          container.innerHTML=gifs.map(function(g){
-            const url = g.preview || g.url || '';
-            return '<img src="'+url+'" onclick="selectGif(\''+url+'\')" style="height:80px;width:auto;border-radius:6px;cursor:pointer;object-fit:cover;border:2px solid transparent" onmouseover="this.style.borderColor=\'#30D158\'" onmouseout="this.style.borderColor=\'transparent\'">';
-          }).join('');
-        })
-        .catch(()=>{container.innerHTML='<div style="color:#FF6B6B;font-size:12px;padding:8px 0">Error loading GIFs</div>';});
-    },500);
+  function shareNative(url, title) {
+    if(navigator.share) navigator.share({ title, url }).catch(() => copyAndToast(url, '📋 Copied!'));
+    else copyAndToast(url, '📋 Copied!');
   }
-    const file=input.files[0];if(!file)return;
-    const reader=new FileReader();
-    reader.onload=function(e){
-      const dataUrl=e.target.result;
-      const img=new Image();
-      img.onload=function(){
-        const tw=800,th=400;
-        let{width:w,height:h}=img;
-        const scale=Math.max(tw/w,th/h);
-        w=Math.round(w*scale);h=Math.round(h*scale);
-        const c=document.createElement('canvas');c.width=tw;c.height=th;
-        c.getContext('2d').drawImage(img,(tw-w)/2,(th-h)/2,w,h);
-        const resized=c.toDataURL('image/jpeg',0.88);
-        // Show preview immediately
-        const existing=document.getElementById('cover-img');
-        if(existing){existing.src=resized;}
+
+  // ── COVER PHOTO UPLOAD ──
+  function uploadCover(input) {
+    const file = input.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const dataUrl = e.target.result;
+      const img = new Image();
+      img.onload = function() {
+        const tw = 800, th = 400;
+        let {width: w, height: h} = img;
+        const scale = Math.max(tw/w, th/h);
+        w = Math.round(w * scale);
+        h = Math.round(h * scale);
+        const c = document.createElement('canvas');
+        c.width = tw; c.height = th;
+        c.getContext('2d').drawImage(img, (tw-w)/2, (th-h)/2, w, h);
+        const resized = c.toDataURL('image/jpeg', 0.88);
+        const existing = document.getElementById('cover-img');
+        if(existing) { existing.src = resized; }
         toast('Saving cover...');
-        fetch(BACKEND+'/trip/'+TRIP_ID+'/cover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,image:resized.split(',')[1]})})
-          .then(r=>r.json())
-          .then(d=>{if(d.success){toast('🖼 Cover saved!');setTimeout(()=>location.reload(),1200);}else toast(d.error||'Error',false);})
-          .catch(()=>toast('Network error',false));
+        fetch(BACKEND + '/trip/' + TRIP_ID + '/cover', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({token: TRIP_TOKEN, image: resized.split(',')[1]})
+        })
+        .then(r => r.json())
+        .then(d => {
+          if(d.success) { toast('🖼 Cover saved!'); setTimeout(() => location.reload(), 1200); }
+          else toast(d.error || 'Error saving cover', false);
+        })
+        .catch(() => toast('Network error', false));
       };
-      img.src=dataUrl;
+      img.src = dataUrl;
     };
     reader.readAsDataURL(file);
   }
 
   // ── SETTINGS SAVE ──
-  async function saveSettings(){
-    const name=document.getElementById('settings-name').value.trim();
-    const date=document.getElementById('settings-date').value;
-    if(!name){toast('Trip name cannot be empty',false);return;}
-    try{
-      const r=await fetch(BACKEND+'/trip/'+TRIP_ID+'/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,name,trip_date:date||null})});
-      const d=await r.json();
-      if(d.success){toast('✅ Trip updated!');setTimeout(()=>location.reload(),1200);}
-      else toast(d.error||'Error',false);
-    }catch(e){toast('Network error',false);}
-  }
-
-  // ── GIF SUPPORT FOR COMMENTS ──
-  function toggleGifPanel(){
-    const p=document.getElementById('gif-panel');
-    p.style.display=p.style.display==='none'?'block':'none';
-    if(p.style.display==='block')document.getElementById('gif-search-input').focus();
-  }
-  function clearGif(){
-    selectedGifUrl=null;
-    document.getElementById('gif-preview-wrap').style.display='none';
-    document.getElementById('gif-preview-img').src='';
-  }
-  function selectGif(url){
-    selectedGifUrl=url;
-    document.getElementById('gif-preview-img').src=url;
-    document.getElementById('gif-preview-wrap').style.display='block';
-    document.getElementById('gif-panel').style.display='none';
-    document.getElementById('gif-search-input').value='';
-    document.getElementById('gif-results').innerHTML='';
-  }
-  function searchGifs(q){
-    clearTimeout(gifTimer);
-    if(!q.trim()){document.getElementById('gif-results').innerHTML='';return;}
-    gifTimer=setTimeout(async()=>{
-      try{
-        const r=await fetch(BACKEND+'/gif-search?q='+encodeURIComponent(q));
-        const d=await r.json();
-        document.getElementById('gif-results').innerHTML=(d.results||[]).map(g=>
-          '<img src="'+g.url+'" onclick="selectGif(\''+g.url+'\')" style="height:80px;width:auto;border-radius:6px;cursor:pointer;object-fit:cover;border:2px solid transparent;transition:border-color 0.15s" onmouseover="this.style.borderColor=\'#30D158\'" onmouseout="this.style.borderColor=\'transparent\'">'
-        ).join('');
-      }catch(e){}
-    },400);
-  }
-
-  // ── COMMENTS ──
-  async function postComment(){
-    const author=document.getElementById('comment-author').value.trim();
-    const body=document.getElementById('comment-body').value.trim();
-    if(!author){toast('Enter your name',false);return;}
-    if(!body&&!selectedGifUrl){toast('Add a message or GIF',false);return;}
-    // Remember name across reloads
-    try{sessionStorage.setItem('trip_commenter_name',author);}catch(e){}
-    try{
-      const r=await fetch(BACKEND+'/trip/'+TRIP_ID+'/comment',{
-        method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({token:TRIP_TOKEN,author_name:author,body,gif_url:selectedGifUrl||null})
+  async function saveSettings() {
+    const name = document.getElementById('settings-name').value.trim();
+    const date = document.getElementById('settings-date').value;
+    if(!name) { toast('Trip name cannot be empty', false); return; }
+    try {
+      const r = await fetch(BACKEND + '/trip/' + TRIP_ID + '/settings', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({token: TRIP_TOKEN, name, trip_date: date || null})
       });
-      const d=await r.json();
-      if(d.success){
-        document.getElementById('comment-body').value='';
-        clearGif();
-        toast('✅ Posted!');
-        setTimeout(()=>location.reload(),900);
-      }else toast(d.error||'Error',false);
-    }catch(e){toast('Network error',false);}
+      const d = await r.json();
+      if(d.success) { toast('✅ Trip updated!'); setTimeout(() => location.reload(), 1200); }
+      else toast(d.error || 'Error', false);
+    } catch(e) { toast('Network error', false); }
   }
 
   // ── ADD MEMBERS ──
-  function addNewMember(){
-    const inp=document.getElementById('new-member-input');
-    const name=inp.value.trim();if(!name)return;
-    if(PEOPLE.map(p=>p.toLowerCase()).includes(name.toLowerCase())){toast('Already on this trip',false);return;}
-    if(newMembers.map(p=>p.toLowerCase()).includes(name.toLowerCase())){toast('Already added',false);return;}
-    newMembers.push(name);inp.value='';renderNewMembers();
+  function addNewMember() {
+    const inp = document.getElementById('new-member-input');
+    const name = inp.value.trim();
+    if(!name) return;
+    if(PEOPLE.map(p => p.toLowerCase()).includes(name.toLowerCase())) { toast('Already on this trip', false); return; }
+    if(newMembers.map(p => p.toLowerCase()).includes(name.toLowerCase())) { toast('Already added', false); return; }
+    newMembers.push(name);
+    inp.value = '';
+    renderNewMembers();
   }
-  function removeNewMember(name){newMembers=newMembers.filter(p=>p!==name);renderNewMembers();}
-  function renderNewMembers(){
-    const c=document.getElementById('new-members-list');
-    const btn=document.getElementById('save-members-btn');
-    c.innerHTML=newMembers.map(function(n){
-      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:rgba(48,209,88,0.05);border:1px solid rgba(48,209,88,0.2);border-radius:10px">'
-        +'<div style="display:flex;align-items:center;gap:9px">'
-        +'<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#30D158,#0EA5E9);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff">'+n[0].toUpperCase()+'</div>'
-        +'<span style="font-size:13px;font-weight:600;color:#F0EEF8">'+n+'</span></div>'
-        +'<button onclick="removeNewMember(\''+n.replace(/\'/g,"\\'")+'\')" style="background:none;border:none;color:#6E6B80;cursor:pointer;font-size:18px;padding:0">\xd7</button>'
-        +'</div>';
-    }).join('');
-    btn.style.display=newMembers.length>0?'block':'none';
+  function removeNewMember(name) {
+    newMembers = newMembers.filter(p => p !== name);
+    renderNewMembers();
   }
-  async function saveMembersToTrip(){
-    const btn=document.getElementById('save-members-btn');btn.textContent='Saving...';btn.disabled=true;
-    try{
-      const r=await fetch(BACKEND+'/trip/'+TRIP_ID+'/add-members',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,members:newMembers})});
-      const d=await r.json();
-      if(d.success){toast('✅ Members added!');setTimeout(()=>location.reload(),1200);}
-      else{toast(d.error||'Error',false);btn.textContent='✓ Save';btn.disabled=false;}
-    }catch(e){toast('Network error',false);btn.textContent='✓ Save';btn.disabled=false;}
+  function renderNewMembers() {
+    const c = document.getElementById('new-members-list');
+    const btn = document.getElementById('save-members-btn');
+    c.innerHTML = newMembers.map(n =>
+      '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:rgba(48,209,88,0.05);border:1px solid rgba(48,209,88,0.2);border-radius:10px">'
+      + '<div style="display:flex;align-items:center;gap:9px">'
+      + '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#30D158,#0EA5E9);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff">' + n[0].toUpperCase() + '</div>'
+      + '<span style="font-size:13px;font-weight:600;color:#F0EEF8">' + n + '</span></div>'
+      + '<button onclick="removeNewMember(\'' + n.replace(/'/g, "\\'") + '\')" style="background:none;border:none;color:#6E6B80;cursor:pointer;font-size:18px;padding:0">×</button>'
+      + '</div>'
+    ).join('');
+    btn.style.display = newMembers.length > 0 ? 'block' : 'none';
+  }
+  async function saveMembersToTrip() {
+    const btn = document.getElementById('save-members-btn');
+    btn.textContent = 'Saving...'; btn.disabled = true;
+    try {
+      const r = await fetch(BACKEND + '/trip/' + TRIP_ID + '/add-members', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({token: TRIP_TOKEN, members: newMembers})
+      });
+      const d = await r.json();
+      if(d.success) { toast('✅ Members added!'); setTimeout(() => location.reload(), 1200); }
+      else { toast(d.error || 'Error', false); btn.textContent = '✓ Save'; btn.disabled = false; }
+    } catch(e) { toast('Network error', false); btn.textContent = '✓ Save'; btn.disabled = false; }
+  }
+
+  // ── TRIP GIF (separate from bill GIF, no naming conflicts) ──
+  function toggleTripGifPanel() {
+    tripGifPanelOpen = !tripGifPanelOpen;
+    const p = document.getElementById('trip-gif-panel');
+    p.style.display = tripGifPanelOpen ? 'block' : 'none';
+    const btn = document.getElementById('trip-gif-toggle-btn');
+    btn.style.color = tripGifPanelOpen ? 'var(--green)' : 'var(--muted)';
+    if(tripGifPanelOpen) document.getElementById('trip-gif-search').focus();
+  }
+  function clearTripGif() {
+    tripSelectedGif = null;
+    document.getElementById('trip-gif-preview-wrap').style.display = 'none';
+    document.getElementById('trip-gif-preview-img').src = '';
+  }
+  function selectTripGif(url) {
+    tripSelectedGif = url;
+    document.getElementById('trip-gif-preview-img').src = url;
+    document.getElementById('trip-gif-preview-wrap').style.display = 'block';
+    tripGifPanelOpen = false;
+    document.getElementById('trip-gif-panel').style.display = 'none';
+    document.getElementById('trip-gif-toggle-btn').style.color = 'var(--muted)';
+    document.getElementById('trip-gif-search').value = '';
+    document.getElementById('trip-gif-results').innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px 0">Type to search GIFs...</div>';
+    toast('GIF selected ✓');
+  }
+  function searchTripGifs(q) {
+    clearTimeout(tripGifTimer);
+    const container = document.getElementById('trip-gif-results');
+    if(!q.trim()) { container.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px 0">Type to search GIFs...</div>'; return; }
+    container.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px 0">Searching...</div>';
+    tripGifTimer = setTimeout(function() {
+      fetch(BACKEND + '/gif-search?q=' + encodeURIComponent(q))
+        .then(r => r.json())
+        .then(d => {
+          const gifs = d.gifs || [];
+          if(!gifs.length) { container.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px 0">No results</div>'; return; }
+          container.innerHTML = '';
+          gifs.forEach(function(g) {
+            const url = g.preview || g.full || '';
+            if(!url) return;
+            const img = document.createElement('img');
+            img.src = url;
+            img.style.cssText = 'height:80px;width:auto;border-radius:6px;cursor:pointer;object-fit:cover;border:2px solid transparent';
+            img.addEventListener('mouseover', function(){ this.style.borderColor='#30D158'; });
+            img.addEventListener('mouseout', function(){ this.style.borderColor='transparent'; });
+            img.addEventListener('click', function(){ selectTripGif(g.full || url); });
+            container.appendChild(img);
+          });
+        })
+        .catch(() => { container.innerHTML = '<div style="color:#FF6B6B;font-size:12px;padding:8px 0">Error loading GIFs</div>'; });
+    }, 500);
+  }
+
+  // ── COMMENTS ──
+  async function postComment() {
+    const author = document.getElementById('comment-author').value.trim();
+    const body = document.getElementById('comment-body').value.trim();
+    if(!author) { toast('Enter your name', false); return; }
+    if(!body && !tripSelectedGif) { toast('Add a message or GIF', false); return; }
+    try { sessionStorage.setItem('trip_commenter_name', author); } catch(e) {}
+    try {
+      const r = await fetch(BACKEND + '/trip/' + TRIP_ID + '/comment', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({token: TRIP_TOKEN, author_name: author, body, gif_url: tripSelectedGif || null})
+      });
+      const d = await r.json();
+      if(d.success) {
+        document.getElementById('comment-body').value = '';
+        clearTripGif();
+        toast('✅ Posted!');
+        setTimeout(() => location.reload(), 900);
+      } else toast(d.error || 'Error', false);
+    } catch(e) { toast('Network error', false); }
   }
 
   // ── SPLIT ──
-  function setSplit(t){
-    splitType=t;
-    document.getElementById('r-even-sec').style.display=t==='even'?'block':'none';
-    document.getElementById('r-item-sec').style.display=t==='itemized'?'block':'none';
-    document.getElementById('r-btn-e').className='split-btn'+(t==='even'?' ae':'');
-    document.getElementById('r-btn-i').className='split-btn'+(t==='itemized'?' ai':'');
+  function setSplit(t) {
+    splitType = t;
+    document.getElementById('r-even-sec').style.display = t === 'even' ? 'block' : 'none';
+    document.getElementById('r-item-sec').style.display = t === 'itemized' ? 'block' : 'none';
+    document.getElementById('r-btn-e').className = 'split-btn' + (t === 'even' ? ' ae' : '');
+    document.getElementById('r-btn-i').className = 'split-btn' + (t === 'itemized' ? ' ai' : '');
   }
-  function updateEven(){
-    const v=parseFloat(document.getElementById('r-total').value)||0,per=v/PEOPLE.length;
-    document.getElementById('r-even-prev').style.display=v>0?'block':'none';
-    PEOPLE.forEach(p=>{const el=document.getElementById('ep-'+p.toLowerCase().replace(/\\s+/g,'_'));if(el)el.textContent='$'+per.toFixed(2);});
+  function updateEven() {
+    const v = parseFloat(document.getElementById('r-total').value) || 0;
+    const per = v / PEOPLE.length;
+    document.getElementById('r-even-prev').style.display = v > 0 ? 'block' : 'none';
+    PEOPLE.forEach(p => {
+      const el = document.getElementById('ep-' + p.toLowerCase().replace(/\\s+/g,'_'));
+      if(el) el.textContent = '$' + per.toFixed(2);
+    });
   }
-  function addItem(){
-    const n=document.getElementById('r-iname').value.trim(),p=parseFloat(document.getElementById('r-iprice').value);
-    if(!n||isNaN(p)||p<=0)return;
-    tripItems.push({id:Date.now(),name:n,price:p,assignees:[]});
-    document.getElementById('r-iname').value='';document.getElementById('r-iprice').value='';renderItems();
+  function addItem() {
+    const n = document.getElementById('r-iname').value.trim();
+    const p = parseFloat(document.getElementById('r-iprice').value);
+    if(!n || isNaN(p) || p <= 0) return;
+    tripItems.push({id: Date.now(), name: n, price: p, assignees: []});
+    document.getElementById('r-iname').value = '';
+    document.getElementById('r-iprice').value = '';
+    renderItems();
   }
-  function renderItems(){
-    document.getElementById('r-items-list').innerHTML=tripItems.map(item=>
+  function renderItems() {
+    document.getElementById('r-items-list').innerHTML = tripItems.map(item =>
       '<div style="background:var(--dark2);border:1px solid var(--border);border-radius:10px;padding:10px 12px">'
-      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
-      +'<span style="flex:1;font-size:13px;font-weight:500">'+item.name+'</span>'
-      +'<span style="font-family:monospace;font-size:13px;color:var(--muted2)">$'+item.price.toFixed(2)+'</span>'
-      +'<button onclick="tripItems=tripItems.filter(i=>i.id!=='+item.id+');renderItems()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;flex-shrink:0">×</button>'
-      +'</div><div style="display:flex;gap:6px;flex-wrap:wrap">'
-      +PEOPLE.map(p=>{const on=item.assignees.includes(p);return '<button onclick="toggleAssign('+item.id+',\''+p.replace(/\'/g,"\\'")+'\')" style="padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;background:'+(on?'rgba(48,209,88,0.15)':'rgba(255,255,255,0.05)')+';border:1px solid '+(on?'rgba(48,209,88,0.3)':'rgba(255,255,255,0.1)')+';color:'+(on?'#30D158':'#9896A8')+';-webkit-tap-highlight-color:transparent">'+(on?'✓ ':'')+p+'</button>';}).join('')
-      +'</div></div>'
+      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+      + '<span style="flex:1;font-size:13px;font-weight:500">' + item.name + '</span>'
+      + '<span style="font-family:monospace;font-size:13px;color:var(--muted2)">$' + item.price.toFixed(2) + '</span>'
+      + '<button onclick="tripItems=tripItems.filter(i=>i.id!==' + item.id + ');renderItems()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;flex-shrink:0">×</button>'
+      + '</div><div style="display:flex;gap:6px;flex-wrap:wrap">'
+      + PEOPLE.map(p => {
+          const on = item.assignees.includes(p);
+          return '<button onclick="toggleAssign(' + item.id + ',\'' + p.replace(/'/g,"\\'") + '\')" style="padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;background:' + (on?'rgba(48,209,88,0.15)':'rgba(255,255,255,0.05)') + ';border:1px solid ' + (on?'rgba(48,209,88,0.3)':'rgba(255,255,255,0.1)') + ';color:' + (on?'#30D158':'#9896A8') + '">' + (on?'✓ ':'') + p + '</button>';
+        }).join('')
+      + '</div></div>'
     ).join('');
   }
-  function toggleAssign(id,p){const item=tripItems.find(i=>i.id===id);if(!item)return;if(item.assignees.includes(p))item.assignees=item.assignees.filter(a=>a!==p);else item.assignees.push(p);renderItems();}
+  function toggleAssign(id, p) {
+    const item = tripItems.find(i => i.id === id);
+    if(!item) return;
+    if(item.assignees.includes(p)) item.assignees = item.assignees.filter(a => a !== p);
+    else item.assignees.push(p);
+    renderItems();
+  }
 
-  function tripPhoto(input){
-    const file=input.files[0];if(!file)return;
-    const reader=new FileReader();
-    reader.onload=function(e){
-      document.getElementById('r-preview').src=e.target.result;
-      document.getElementById('r-preview').style.display='block';
-      document.getElementById('r-empty').style.display='none';
-      const img=new Image();
-      img.onload=function(){
-        let{width:w,height:h}=img;
-        if(w>1600||h>1600){if(w>h){h=Math.round(h*1600/w);w=1600;}else{w=Math.round(w*1600/h);h=1600;}}
-        const c=document.createElement('canvas');c.width=w;c.height=h;
-        c.getContext('2d').drawImage(img,0,0,w,h);
-        imgBase64=c.toDataURL('image/jpeg',0.88).split(',')[1];
-        const st=document.getElementById('r-scan-status');st.style.display='block';
-        st.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:8px"><div class="spinner"></div><span style="font-size:13px;color:#C084FC;font-weight:600">Scanning receipt with AI...</span></div>';
-        fetch(BACKEND+'/demo/scan-receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:imgBase64,mediaType:file.type||'image/jpeg'})})
-          .then(r=>r.json())
-          .then(d=>{
-            if(d.success&&d.items&&d.items.length){
-              if(!document.getElementById('r-name').value&&d.bill_name)document.getElementById('r-name').value=d.bill_name;
-              const tot=d.total||d.items.reduce((s,i)=>s+i.price,0);
-              document.getElementById('r-total').value=tot.toFixed(2);updateEven();
-              tripItems=d.items.map((item,idx)=>({id:Date.now()+idx,name:item.name,price:parseFloat(item.price)||0,assignees:[]}));
-              setSplit('itemized');renderItems();
-              st.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:8px"><span>✅</span><span style="font-size:13px;color:#30D158;font-weight:600">'+d.items.length+' items found!</span></div>';
-            }else{st.innerHTML='<div style="padding:10px 14px;background:rgba(255,68,68,0.07);border:1px solid rgba(255,68,68,0.2);border-radius:8px;font-size:13px;color:#FF6B6B">Could not scan — enter manually</div>';}
-          })
-          .catch(()=>{document.getElementById('r-scan-status').style.display='none';});
+  function tripPhoto(input) {
+    const file = input.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      document.getElementById('r-preview').src = e.target.result;
+      document.getElementById('r-preview').style.display = 'block';
+      document.getElementById('r-empty').style.display = 'none';
+      const img = new Image();
+      img.onload = function() {
+        let {width: w, height: h} = img;
+        if(w > 1600 || h > 1600) {
+          if(w > h) { h = Math.round(h*1600/w); w = 1600; }
+          else { w = Math.round(w*1600/h); h = 1600; }
+        }
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        imgBase64 = c.toDataURL('image/jpeg', 0.88).split(',')[1];
+        const st = document.getElementById('r-scan-status');
+        st.style.display = 'block';
+        st.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:8px"><div class="spinner"></div><span style="font-size:13px;color:#C084FC;font-weight:600">Scanning receipt with AI...</span></div>';
+        fetch(BACKEND + '/demo/scan-receipt', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({image: imgBase64, mediaType: file.type || 'image/jpeg'})
+        })
+        .then(r => r.json())
+        .then(d => {
+          if(d.success && d.items && d.items.length) {
+            if(!document.getElementById('r-name').value && d.bill_name) document.getElementById('r-name').value = d.bill_name;
+            const tot = d.total || d.items.reduce((s,i) => s+i.price, 0);
+            document.getElementById('r-total').value = tot.toFixed(2);
+            updateEven();
+            tripItems = d.items.map((item, idx) => ({id: Date.now()+idx, name: item.name, price: parseFloat(item.price)||0, assignees: []}));
+            setSplit('itemized');
+            renderItems();
+            st.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:8px"><span>✅</span><span style="font-size:13px;color:#30D158;font-weight:600">' + d.items.length + ' items found!</span></div>';
+          } else {
+            st.innerHTML = '<div style="padding:10px 14px;background:rgba(255,68,68,0.07);border:1px solid rgba(255,68,68,0.2);border-radius:8px;font-size:13px;color:#FF6B6B">Could not scan — enter manually</div>';
+          }
+        })
+        .catch(() => { document.getElementById('r-scan-status').style.display = 'none'; });
       };
-      img.src=e.target.result;
+      img.src = e.target.result;
     };
     reader.readAsDataURL(file);
   }
 
-  async function saveReceipt(){
-    const name=document.getElementById('r-name').value.trim()||'Receipt';
-    const btn=document.getElementById('r-save');btn.textContent='Saving...';btn.disabled=true;
-    let total=0,splits={};
-    if(splitType==='even'){
-      total=parseFloat(document.getElementById('r-total').value)||0;
-      if(total<=0){btn.textContent='Save Receipt';btn.disabled=false;toast('Enter a total amount',false);return;}
-      const per=total/PEOPLE.length;PEOPLE.forEach(p=>{splits[p]=per;});
-    }else{
-      PEOPLE.forEach(p=>{splits[p]=0;});
-      tripItems.forEach(item=>{const as=item.assignees.length>0?item.assignees:PEOPLE;const sh=item.price/as.length;as.forEach(p=>{splits[p]=(splits[p]||0)+sh;});total+=item.price;});
-      if(total<=0){btn.textContent='Save Receipt';btn.disabled=false;toast('Add at least one item',false);return;}
+  async function saveReceipt() {
+    const name = document.getElementById('r-name').value.trim() || 'Receipt';
+    const btn = document.getElementById('r-save');
+    btn.textContent = 'Saving...'; btn.disabled = true;
+    let total = 0, splits = {};
+    if(splitType === 'even') {
+      total = parseFloat(document.getElementById('r-total').value) || 0;
+      if(total <= 0) { btn.textContent = 'Save Receipt'; btn.disabled = false; toast('Enter a total amount', false); return; }
+      const per = total / PEOPLE.length;
+      PEOPLE.forEach(p => { splits[p] = per; });
+    } else {
+      PEOPLE.forEach(p => { splits[p] = 0; });
+      tripItems.forEach(item => {
+        const as = item.assignees.length > 0 ? item.assignees : PEOPLE;
+        const sh = item.price / as.length;
+        as.forEach(p => { splits[p] = (splits[p] || 0) + sh; });
+        total += item.price;
+      });
+      if(total <= 0) { btn.textContent = 'Save Receipt'; btn.disabled = false; toast('Add at least one item', false); return; }
     }
-    try{
-      const r=await fetch(BACKEND+'/trip/'+TRIP_ID+'/receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,total,splits,token:TRIP_TOKEN,items:splitType==='itemized'?tripItems:[]})});
-      const d=await r.json();
-      if(d.success){toast('✅ Receipt saved!');setTimeout(()=>location.reload(),1200);}
-      else{btn.textContent='Save Receipt';btn.disabled=false;toast(d.error||'Error',false);}
-    }catch(e){btn.textContent='Save Receipt';btn.disabled=false;toast('Network error',false);}
+    try {
+      const r = await fetch(BACKEND + '/trip/' + TRIP_ID + '/receipt', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name, total, splits, token: TRIP_TOKEN, items: splitType === 'itemized' ? tripItems : []})
+      });
+      const d = await r.json();
+      if(d.success) { toast('✅ Receipt saved!'); setTimeout(() => location.reload(), 1200); }
+      else { btn.textContent = 'Save Receipt'; btn.disabled = false; toast(d.error || 'Error', false); }
+    } catch(e) { btn.textContent = 'Save Receipt'; btn.disabled = false; toast('Network error', false); }
   }
 </script>
 </body>
@@ -1684,7 +1697,7 @@ ${trip.cover_image
   res.send(html);
 });
 
-// ── TRIP COMMENT ────────────────────────────────────────────────────────────────
+// ── TRIP COMMENT ──────────────────────────────────────────────────────────────
 app.post('/trip/:tripId/comment', async (req, res) => {
   try {
     const { tripId } = req.params;
@@ -1719,7 +1732,6 @@ app.post('/trip/:tripId/settings', async (req, res) => {
   } catch(err) { res.json({ success: false, error: err.message }); }
 });
 
-
 // ── TRIP COVER PHOTO ──────────────────────────────────────────────────────────
 app.post('/trip/:tripId/cover', async (req, res) => {
   try {
@@ -1732,8 +1744,6 @@ app.post('/trip/:tripId/cover', async (req, res) => {
     res.json({ success: true });
   } catch(err) { res.json({ success: false, error: err.message }); }
 });
-
-
 
 // ── ADD MEMBERS TO TRIP ────────────────────────────────────────────────────────
 app.post('/trip/:tripId/add-members', async (req, res) => {
@@ -1851,12 +1861,45 @@ app.get('/test-bill/:billId', async (req, res) => {
   res.json({ bill: b.data, bill_err: b.error?.message, comments: c.data, profile: pf.data, profile_err: pf.error?.message, participants: pt.data });
 });
 
+// ─── DEMO SCAN RECEIPT ────────────────────────────────────────────────────────
+app.post('/demo/scan-receipt', async (req, res) => {
+  try {
+    const { image, mediaType } = req.body;
+    if (!image) return res.json({ success: false, error: 'No image provided' });
+    const message = await getAnthropic().messages.create({
+      model: 'claude-opus-4-5',
+      max_tokens: 1024,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: mediaType || 'image/jpeg', data: image } },
+          { type: 'text', text: `Parse this receipt and return ONLY a JSON object:
+{
+  "bill_name": "Restaurant or store name",
+  "items": [{"name": "Item Name", "price": 0.00}],
+  "subtotal": 0.00,
+  "tax": 0.00,
+  "tip": 0.00,
+  "total": 0.00
+}
+Return ONLY the JSON, no other text.` }
+        ]
+      }]
+    });
+    const text = message.content[0].text;
+    const clean = text.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(clean);
+    res.json({ success: true, ...parsed });
+  } catch(err) {
+    console.error('Demo scan error:', err);
+    res.json({ success: false, error: err.message });
+  }
+});
 
 app.get('/', (req, res) => {
   res.json({ status: 'RAVEN is live 🪶', version: '2.0.0', twilio: TWILIO_READY ? 'connected' : 'pending' });
 });
 
-// ─── WAITLIST ─────────────────────────────────────────────────────────────────
 app.post('/waitlist', async (req, res) => {
   try {
     const { email, source } = req.body;
@@ -1869,10 +1912,9 @@ app.post('/waitlist', async (req, res) => {
     res.json({ success: true });
   } catch(err) {
     console.error('Waitlist error:', err);
-    res.json({ success: true }); // always return success to user
+    res.json({ success: true });
   }
 });
-
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🪶 RAVEN SMS server running on port ${PORT}`));
