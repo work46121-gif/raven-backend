@@ -1819,153 +1819,46 @@ function viewSavedReceipt(id) {
     const pending = JSON.parse(localStorage.getItem('raven_pending_receipts') || '[]');
     const r = pending.find(x => x.id === id);
     if (!r) return;
-    // Show full-screen preview
     const overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.95);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px';
-    overlay.innerHTML =
-      '<button onclick="this.parentNode.remove()" style="position:absolute;top:16px;right:16px;background:rgba(255,255,255,0.1);border:none;color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:16px">✕</button>' +
-      '<img src="data:' + (r.mediaType||'image/jpeg') + ';base64,' + r.imageBase64 + '" style="max-width:100%;max-height:80vh;border-radius:12px;object-fit:contain">' +
-      '<div style="margin-top:12px;font-size:13px;color:#9896A8">' + (r.scanned ? '✅ Successfully scanned' : '⏳ Not yet scanned') + '</div>';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.96);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px';
+    const closeBtn = document.createElement('button');
+    closeBtn.style.cssText = 'position:absolute;top:16px;right:16px;background:rgba(255,255,255,0.1);border:none;color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:16px';
+    closeBtn.textContent = '\u2715';
+    closeBtn.addEventListener('click', () => overlay.remove());
+    const img = document.createElement('img');
+    img.src = 'data:' + (r.mediaType||'image/jpeg') + ';base64,' + r.imageBase64;
+    img.style.cssText = 'max-width:100%;max-height:72vh;border-radius:12px;object-fit:contain';
+    const statusEl = document.createElement('div');
+    statusEl.style.cssText = 'margin-top:12px;font-size:13px;color:#9896A8';
+    statusEl.textContent = r.scanned ? '\u2705 Successfully scanned' : '\u23f3 Not yet scanned';
+    const delBtn = document.createElement('button');
+    delBtn.style.cssText = 'margin-top:14px;padding:10px 24px;background:rgba(255,68,68,0.12);border:1px solid rgba(255,68,68,0.3);border-radius:10px;color:#FF6B6B;font-size:13px;font-weight:700;cursor:pointer';
+    delBtn.textContent = '\ud83d\uddd1 Remove from saved photos';
+    delBtn.addEventListener('click', () => {
+      if (delBtn.dataset.confirming === '1') {
+        try {
+          const all = JSON.parse(localStorage.getItem('raven_pending_receipts') || '[]');
+          localStorage.setItem('raven_pending_receipts', JSON.stringify(all.filter(x => x.id !== id)));
+        } catch(e) {}
+        overlay.remove();
+        toast('Photo removed \u2713', true);
+        const old = document.getElementById('saved-receipts-section');
+        if (old) old.remove();
+        buildSavedReceiptsGallery();
+      } else {
+        delBtn.dataset.confirming = '1';
+        delBtn.textContent = '\u26a0\ufe0f Tap again to confirm';
+        setTimeout(() => { if (delBtn.dataset.confirming==='1'){delBtn.dataset.confirming='';delBtn.textContent='\ud83d\uddd1 Remove from saved photos';} }, 3000);
+      }
+    });
+    overlay.appendChild(closeBtn);
+    overlay.appendChild(img);
+    overlay.appendChild(statusEl);
+    overlay.appendChild(delBtn);
     document.body.appendChild(overlay);
   } catch(e) {}
 }
 
-// ── ADMIN: show delete buttons on receipt cards if viewer is admin ──
-// Run after DOM is fully loaded — never blocks page render
-document.addEventListener('DOMContentLoaded', function() {
-  try {
-    IS_ADMIN = checkIsAdmin();
-    if (!IS_ADMIN) return;
-    document.querySelectorAll('.admin-delete-receipt-btn').forEach(btn => {
-      btn.style.display = 'flex';
-    });
-  } catch(e) {}
-});
-
-async function adminDeleteReceipt(btn) {
-  const receiptId = btn.dataset.receiptId;
-  const name = btn.dataset.receiptName || 'this receipt';
-  // Inline confirm — no browser confirm() (broken on iOS)
-  const existing = document.getElementById('delete-receipt-confirm-' + receiptId);
-  if (existing) { existing.remove(); return; }
-  const wrap = document.createElement('div');
-  wrap.id = 'delete-receipt-confirm-' + receiptId;
-  wrap.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:9998;background:#13131A;border:1px solid rgba(255,68,68,0.3);border-radius:14px;padding:16px 20px;max-width:340px;width:calc(100% - 32px);box-shadow:0 20px 60px rgba(0,0,0,0.6)';
-  wrap.innerHTML =
-    '<div style="font-size:14px;font-weight:700;color:#FF6B6B;margin-bottom:6px">🗑 Delete "' + name + '"?</div>' +
-    '<div style="font-size:12px;color:#6E6B80;margin-bottom:14px">This will permanently remove the receipt and recalculate the trip total.</div>' +
-    '<div style="display:flex;gap:8px">' +
-    '<button id="drc-cancel-' + receiptId + '" style="flex:1;padding:10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#9896A8;font-size:13px;font-weight:600;cursor:pointer">Cancel</button>' +
-    '<button id="drc-confirm-' + receiptId + '" style="flex:1;padding:10px;background:rgba(255,68,68,0.15);border:1px solid rgba(255,68,68,0.3);border-radius:8px;color:#FF6B6B;font-size:13px;font-weight:700;cursor:pointer">Delete</button>' +
-    '</div>';
-  document.body.appendChild(wrap);
-  document.getElementById('drc-cancel-' + receiptId).addEventListener('click', () => wrap.remove());
-  document.getElementById('drc-confirm-' + receiptId).addEventListener('click', async () => {
-    wrap.innerHTML = '<div style="text-align:center;padding:8px;color:#9896A8;font-size:13px">Deleting...</div>';
-    try {
-      const r = await fetch(BACKEND + '/trip/' + TRIP_ID + '/receipt/' + receiptId + '/delete', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: TRIP_TOKEN })
-      });
-      const d = await r.json();
-      if (d.success) {
-        wrap.remove();
-        // Remove receipt card from DOM
-        const card = document.getElementById('receipt-' + receiptId + '-wrap') ||
-                     btn.closest('[id$="-wrap"]');
-        if (card) card.remove();
-        toast('Receipt deleted ✓', true);
-      } else {
-        wrap.innerHTML = '<div style="color:#FF6B6B;font-size:13px;text-align:center;padding:8px">' + (d.error || 'Delete failed') + '</div>';
-        setTimeout(() => wrap.remove(), 2500);
-      }
-    } catch(e) {
-      wrap.innerHTML = '<div style="color:#FF6B6B;font-size:13px;text-align:center;padding:8px">Network error</div>';
-      setTimeout(() => wrap.remove(), 2500);
-    }
-  });
-}
-
-async function retryPendingScans() {
-  try {
-    const pending = JSON.parse(localStorage.getItem('raven_pending_receipts') || '[]');
-    const unscanned = pending.filter(p => !p.scanned && p.tripId === TRIP_ID);
-    if (unscanned.length === 0) { toast('No pending receipts to scan'); return; }
-    const banner = document.getElementById('pending-receipts-banner');
-    if (banner) banner.innerHTML = '<div style="font-size:13px;color:#FF6B35;font-weight:600">↻ Scanning saved receipts...</div>';
-    // Load the first unscanned receipt into the form and trigger scan
-    const first = unscanned[0];
-    imgBase64 = first.imageBase64;
-    window._currentPendingId = first.id;
-    // Show the receipt form
-    document.getElementById('receipt-form-wrap').style.display = 'block';
-    document.getElementById('open-receipt-btn').style.display = 'none';
-    // Show preview
-    document.getElementById('r-preview').src = 'data:' + (first.mediaType||'image/jpeg') + ';base64,' + first.imageBase64;
-    document.getElementById('r-preview').style.display = 'block';
-    document.getElementById('r-empty').style.display = 'none';
-    // Show scan status and fire scan
-    const st = document.getElementById('r-scan-status');
-    st.style.display = 'block';
-    st.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:8px"><div class="spinner"></div><span style="font-size:13px;color:#C084FC;font-weight:600">Scanning saved receipt...</span></div>';
-    document.getElementById('receipt-form-wrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    // Reuse the doScan logic by dispatching through the file change path
-    // Trigger the scan directly using stored base64
-    try { await Promise.race([fetch(BACKEND+'/'), new Promise(r=>setTimeout(r,20000))]); } catch(e) {}
-    const controller = new AbortController();
-    setTimeout(() => controller.abort(), 60000);
-    const r = await fetch(BACKEND+'/demo/scan-receipt', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ image: imgBase64, mediaType: first.mediaType||'image/jpeg' }), signal: controller.signal });
-    const d = await r.json();
-    if (d.success && d.items && d.items.length) {
-      if (d.bill_name && !document.getElementById('r-name').value) document.getElementById('r-name').value = d.bill_name;
-      const tot = d.total || d.items.reduce((s,i)=>s+i.price,0);
-      document.getElementById('r-total').value = tot.toFixed(2); updateEven();
-      tripItems = d.items.map((item,idx)=>({id:Date.now()+idx,name:item.name,price:parseFloat(item.price)||0,assignees:[]}));
-      setSplit('itemized'); renderItems();
-      st.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:8px"><span>✅</span><span style="font-size:13px;color:#30D158;font-weight:600">' + d.items.length + ' items found from saved receipt!</span></div>';
-      // Mark scanned
-      const idx = pending.findIndex(p=>p.id===first.id);
-      if (idx>=0) { pending[idx].scanned=true; localStorage.setItem('raven_pending_receipts', JSON.stringify(pending)); }
-      if (banner) banner.remove();
-    } else {
-      st.innerHTML = '<div style="padding:10px 14px;background:rgba(255,68,68,0.07);border:1px solid rgba(255,68,68,0.2);border-radius:8px;font-size:13px;color:#FF6B6B">Still could not scan — enter manually or try again later</div>';
-      if (banner) banner.innerHTML = '<div style="font-size:13px;color:#FF6B35;font-weight:600">📸 ' + unscanned.length + ' saved receipt' + (unscanned.length>1?'s':'') + ' — server still starting up, try again in a minute</div>';
-    }
-  } catch(e) {
-    const banner = document.getElementById('pending-receipts-banner');
-    if (banner) banner.innerHTML = '<div style="font-size:13px;color:#FF6B35">Server not ready yet — your photos are safe, try again shortly</div>';
-  }
-}
-
-// ── INJECT CURRENT USER AVATAR into receipt breakdowns ──
-// Receipts are server-rendered with initials — this swaps in the real photo for the logged-in user
-(function injectUserAvatars() {
-  try {
-    const profile = JSON.parse(localStorage.getItem('raven_profile') || '{}');
-    const firstName = profile.first_name || '';
-    const avatarUrl = profile.avatar_url || '';
-    if (!firstName) return; // can't match without a name
-
-    // Run after a short delay so avatar fetch has time to complete
-    setTimeout(() => {
-      const updatedProfile = JSON.parse(localStorage.getItem('raven_profile') || '{}');
-      const av = updatedProfile.avatar_url || '';
-      const fn = updatedProfile.first_name || firstName;
-      if (!fn) return;
-
-      // Find all avatar circles that show this user's initial
-      document.querySelectorAll('[data-person-avatar]').forEach(el => {
-        if (el.getAttribute('data-person-avatar').toLowerCase() === fn.toLowerCase()) {
-          if (av) {
-            el.innerHTML = '<img src="' + av + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%">';
-            el.style.background = 'transparent';
-          }
-        }
-      });
-    }, 1200); // wait for avatar fetch to complete
-  } catch(e) {}
-})();
-// ── RENDER PAY BUTTONS client-side ──
 function renderPaySlots() {
   document.querySelectorAll('.pay-slot').forEach(slot => {
     if (slot.getAttribute('data-rendered') === '1') return;
