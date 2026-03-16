@@ -661,7 +661,7 @@ app.get('/bill/:billId', async (req, res) => {
   </div>
 
   <script>
-    const BID = '${billId}';
+    const BID = ${JSON.stringify(billId)};
     let selectedGif = null;
     let gifTimer = null;
 
@@ -973,7 +973,7 @@ app.get('/trip/:tripId', async (req, res) => {
   }).join('');
 
   // Safely escape values for JS embedding
-  const tripNameEscaped = trip.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"');
+  // tripName is embedded safely via JSON.stringify in the script block
   const tripDateEscaped = trip.trip_date || '';
 
   const html = `<!DOCTYPE html>
@@ -1251,20 +1251,20 @@ ${trip.cover_image
     <div style="background:var(--dark2);border:1px solid var(--border2);border-radius:14px;padding:16px;margin-bottom:12px">
       <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted2);margin-bottom:6px">📋 Trip Link</div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:10px">For people already added to the trip</div>
-      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted2);background:var(--dark3);border-radius:8px;padding:8px 12px;margin-bottom:10px;word-break:break-all">${tripUrl}</div>
+      <div id="trip-url-display" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted2);background:var(--dark3);border-radius:8px;padding:8px 12px;margin-bottom:10px;word-break:break-all">${tripUrl}</div>
       <div style="display:flex;gap:8px">
-        <button onclick="copyAndToast('${tripUrl}','✅ Trip link copied!')" style="flex:1;padding:11px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.25);border-radius:9px;color:var(--green);font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📋 Copy</button>
-        <button onclick="shareNative('${tripUrl}','${tripNameEscaped}')" style="flex:1;padding:11px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.25);border-radius:9px;color:var(--green);font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📤 Share</button>
+        <button onclick="copyTripLink()" style="flex:1;padding:11px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.25);border-radius:9px;color:var(--green);font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📋 Copy</button>
+        <button onclick="shareTripLink()" style="flex:1;padding:11px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.25);border-radius:9px;color:var(--green);font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📤 Share</button>
       </div>
     </div>
 
     <div style="background:var(--dark2);border:1px solid rgba(124,58,237,0.25);border-radius:14px;padding:16px;margin-bottom:16px">
       <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#C084FC;margin-bottom:6px">📨 Invite Link (New Members)</div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Requires creating a RAVEN account — send to group chat</div>
-      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted2);background:var(--dark3);border-radius:8px;padding:8px 12px;margin-bottom:10px;word-break:break-all">${inviteUrl}</div>
+      <div id="invite-url-display" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted2);background:var(--dark3);border-radius:8px;padding:8px 12px;margin-bottom:10px;word-break:break-all">${inviteUrl}</div>
       <div style="display:flex;gap:8px">
-        <button onclick="copyAndToast('${inviteUrl}','📨 Invite link copied!')" style="flex:1;padding:11px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.3);border-radius:9px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📋 Copy Invite</button>
-        <button onclick="shareNative('${inviteUrl}','Join ${tripNameEscaped} on RAVEN')" style="flex:1;padding:11px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.3);border-radius:9px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📤 Share</button>
+        <button onclick="copyInviteLink()" style="flex:1;padding:11px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.3);border-radius:9px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📋 Copy Invite</button>
+        <button onclick="shareInviteLink()" style="flex:1;padding:11px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.3);border-radius:9px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📤 Share</button>
       </div>
     </div>
 
@@ -1276,9 +1276,12 @@ ${trip.cover_image
 <div id="trip-toast" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--dark2);border:1px solid var(--border2);border-radius:12px;padding:12px 20px;font-size:13px;color:var(--white);z-index:9999;opacity:0;transition:all 0.3s;white-space:nowrap;box-shadow:0 20px 60px rgba(0,0,0,0.5)"></div>
 
 <script>
-  const TRIP_ID = '${tripId}';
-  const TRIP_TOKEN = '${trip.share_token}';
-  const BACKEND = '${baseUrl}';
+  const TRIP_ID = ${JSON.stringify(tripId)};
+  const TRIP_TOKEN = ${JSON.stringify(trip.share_token)};
+  const BACKEND = ${JSON.stringify(baseUrl)};
+  const TRIP_URL = ${JSON.stringify(tripUrl)};
+  const INVITE_URL = ${JSON.stringify(inviteUrl)};
+  const TRIP_NAME = ${JSON.stringify(trip.name)};
   let PEOPLE = ${JSON.stringify(people)};
   let splitType = 'even';
   let tripItems = [];
@@ -1287,6 +1290,21 @@ ${trip.cover_image
   let tripSelectedGif = null;
   let tripGifTimer = null;
   let tripGifPanelOpen = false;
+
+  function copyTripLink() {
+    navigator.clipboard.writeText(TRIP_URL).then(() => toast('Trip link copied!')).catch(() => { prompt('Copy:', TRIP_URL); });
+  }
+  function shareTripLink() {
+    if(navigator.share) navigator.share({title: TRIP_NAME, url: TRIP_URL}).catch(() => copyTripLink());
+    else copyTripLink();
+  }
+  function copyInviteLink() {
+    navigator.clipboard.writeText(INVITE_URL).then(() => toast('Invite link copied!')).catch(() => { prompt('Copy:', INVITE_URL); });
+  }
+  function shareInviteLink() {
+    if(navigator.share) navigator.share({title: 'Join ' + TRIP_NAME + ' on RAVEN', url: INVITE_URL}).catch(() => copyInviteLink());
+    else copyInviteLink();
+  }
 
   // ── TOAST ──
   function toast(msg, ok) {
