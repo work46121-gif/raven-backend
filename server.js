@@ -877,10 +877,48 @@ app.get('/trip/:tripId', async (req, res) => {
 
   // Invite-only link → show join page
   if (validInvite && !validShare) {
-    const coverImg = trip.cover_image
-      ? `<div style="width:100%;height:160px;border-radius:20px;overflow:hidden;margin-bottom:24px"><img src="data:image/jpeg;base64,${trip.cover_image}" style="width:100%;height:100%;object-fit:cover"></div>`
-      : '';
-    return res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Join ${trip.name} — RAVEN</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center}</style></head><body><div style="max-width:400px;width:100%">${coverImg}<div style="font-size:40px;margin-bottom:12px">✈️</div><div style="font-size:30px;font-weight:800;margin-bottom:8px">${trip.name}</div><div style="font-size:14px;color:#6E6B80;margin-bottom:32px">You've been invited to join this trip hub on RAVEN</div><div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:24px"><a href="https://work46121-gif.github.io/raven-site/dashboard.html?join_trip=${tripId}&join_token=${trip.invite_token}" style="display:block;width:100%;padding:15px;background:#30D158;color:#000;border-radius:12px;font-size:15px;font-weight:800;text-decoration:none;margin-bottom:10px">🪶 Create Account &amp; Join Trip</a><a href="https://work46121-gif.github.io/raven-site/dashboard.html?join_trip=${tripId}&join_token=${trip.invite_token}&signin=1" style="display:block;width:100%;padding:13px;background:transparent;border:1px solid rgba(255,255,255,0.12);color:#9896A8;border-radius:12px;font-size:14px;font-weight:600;text-decoration:none">Already have an account? Sign In</a></div></div></body></html>`);
+    const invBaseUrl = process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : `https://raven-backend-production-fb1f.up.railway.app`;
+    const ogImage = trip.cover_image
+      ? `${invBaseUrl}/trip/${tripId}/cover-image`
+      : 'https://work46121-gif.github.io/raven-site/raven-hero.png';
+    const coverImgHTML = trip.cover_image
+      ? `<div style="width:100%;height:160px;border-radius:20px;overflow:hidden;margin-bottom:24px;border:1px solid rgba(255,255,255,0.1)"><img src="${ogImage}" style="width:100%;height:100%;object-fit:cover"></div>`
+      : '<div style="font-size:52px;margin-bottom:16px">✈️</div>';
+    const peopleArr = Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people || '[]');
+    const invEsc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    return res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Join ${invEsc(trip.name)} — RAVEN</title>
+<meta property="og:title" content="✈️ You're invited to join ${invEsc(trip.name)}">
+<meta property="og:description" content="${peopleArr.length} people on this trip · Tap to join on RAVEN">
+<meta property="og:image" content="${ogImage}">
+<meta property="og:image:width" content="800">
+<meta property="og:image:height" content="400">
+<meta property="og:url" content="${invBaseUrl}/trip/${tripId}?t=${trip.invite_token}&invite=1">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="✈️ Join ${invEsc(trip.name)} on RAVEN">
+<meta name="twitter:description" content="${peopleArr.length} people · Tap to join">
+<meta name="twitter:image" content="${ogImage}">
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center}</style>
+</head>
+<body>
+<div style="max-width:400px;width:100%;position:relative;z-index:1">
+  ${coverImgHTML}
+  <div style="font-size:30px;font-weight:800;margin-bottom:8px">${invEsc(trip.name)}</div>
+  <div style="font-size:14px;color:#6E6B80;margin-bottom:8px">${peopleArr.length} people already on this trip</div>
+  <div style="font-size:14px;color:#6E6B80;margin-bottom:32px">You've been invited to join this trip hub on RAVEN</div>
+  <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:24px">
+    <a href="https://work46121-gif.github.io/raven-site/dashboard.html?join_trip=${tripId}&join_token=${trip.invite_token}" style="display:block;width:100%;padding:15px;background:#30D158;color:#000;border-radius:12px;font-size:15px;font-weight:800;text-decoration:none;margin-bottom:10px">🪶 Create Account &amp; Join Trip</a>
+    <a href="https://work46121-gif.github.io/raven-site/dashboard.html?join_trip=${tripId}&join_token=${trip.invite_token}&signin=1" style="display:block;width:100%;padding:13px;background:transparent;border:1px solid rgba(255,255,255,0.12);color:#9896A8;border-radius:12px;font-size:14px;font-weight:600;text-decoration:none">Already have an account? Sign In</a>
+  </div>
+  <div style="margin-top:20px;font-size:11px;color:#6E6B80">Powered by <b style="color:#C084FC">RAVEN</b> — Scan. Share. Settle.</div>
+</div>
+</body>
+</html>`);
   }
 
   const { data: receipts } = await supabase.from('trip_receipts').select('*').eq('trip_id', tripId).order('created_at', { ascending: false });
@@ -1702,15 +1740,27 @@ app.post('/trip/:tripId/join', async (req, res) => {
       newPeople.push(display_name);
     }
 
-    // Save email to a trip_members table so this trip shows in their dashboard
-    await supabase.from('trip_members').upsert({
-      trip_id: tripId,
-      user_email: user_email.toLowerCase(),
-      joined_at: new Date().toISOString()
-    }, { onConflict: 'trip_id,user_email' });
+    // Store the joining user's email in a member_emails JSON array on the trip row itself
+    // This avoids needing a separate trip_members table
+    let memberEmails = [];
+    try { memberEmails = Array.isArray(trip.member_emails) ? trip.member_emails : JSON.parse(trip.member_emails || '[]'); } catch(e) {}
+    const emailLower = user_email.toLowerCase();
+    if (!memberEmails.includes(emailLower)) memberEmails.push(emailLower);
 
-    // Update people list
-    await supabase.from('trips').update({ people: JSON.stringify(newPeople) }).eq('id', tripId);
+    // Update people list and member_emails together
+    await supabase.from('trips').update({
+      people: JSON.stringify(newPeople),
+      member_emails: JSON.stringify(memberEmails)
+    }).eq('id', tripId);
+
+    // Also try trip_members table if it exists — gracefully ignore if it doesn't
+    try {
+      await supabase.from('trip_members').upsert({
+        trip_id: tripId,
+        user_email: emailLower,
+        joined_at: new Date().toISOString()
+      }, { onConflict: 'trip_id,user_email' });
+    } catch(e) { /* table may not exist yet, that's ok */ }
 
     res.json({ success: true, share_token: trip.share_token, trip_name: trip.name, people: newPeople });
   } catch(err) {
