@@ -997,20 +997,27 @@ app.get('/trip/:tripId', async (req, res) => {
 
   let countdownHTML = '';
   if (trip.trip_date) {
-    // Compare dates in Eastern Time to avoid UTC offset issues
-    const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
-    const todayET = new Date(nowET.getFullYear(), nowET.getMonth(), nowET.getDate());
-    const [y, m, d] = trip.trip_date.split('-').map(Number);
-    const tripDay = new Date(y, m - 1, d);
-    const diffMs = tripDay.getTime() - todayET.getTime();
-    const days = Math.round(diffMs / 86400000);
+    // Pure date arithmetic — no timezone Date objects to avoid UTC/ET drift on Railway servers
+    const now = new Date();
+    // Get today's date in Eastern Time as YYYY-MM-DD string
+    const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }); // en-CA gives YYYY-MM-DD
+    const [ty, tm, td] = todayStr.split('-').map(Number);
+    const [ry, rm, rd] = trip.trip_date.split('-').map(Number);
+    // Compare as plain numbers — no timezone conversion needed
+    const todayNum = ty * 10000 + tm * 100 + td;
+    const tripNum  = ry * 10000 + rm * 100 + rd;
+    // Days between: use UTC dates with same time to avoid DST issues
+    const todayUTC = Date.UTC(ty, tm-1, td);
+    const tripUTC  = Date.UTC(ry, rm-1, rd);
+    const days = Math.round((tripUTC - todayUTC) / 86400000);
+    const tripDateLabel = new Date(tripUTC).toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric', timeZone:'UTC' });
     if (days > 0) {
-      countdownHTML = `<div style="background:linear-gradient(135deg,rgba(124,58,237,0.12),rgba(48,209,88,0.08));border:1px solid rgba(124,58,237,0.22);border-radius:16px;padding:20px;text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#C084FC;font-weight:700;margin-bottom:8px">✈️ Countdown to Trip</div><div style="font-size:72px;font-weight:900;line-height:1;color:#F0EEF8;margin-bottom:4px">${days}</div><div style="font-size:13px;color:#9896A8">day${days!==1?'s':''} to go · ${tripDay.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric',timeZone:'America/New_York'})}</div></div>`;
+      countdownHTML = `<div style="background:linear-gradient(135deg,rgba(124,58,237,0.12),rgba(48,209,88,0.08));border:1px solid rgba(124,58,237,0.22);border-radius:16px;padding:20px;text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#C084FC;font-weight:700;margin-bottom:8px">✈️ Countdown to Trip</div><div style="font-size:72px;font-weight:900;line-height:1;color:#F0EEF8;margin-bottom:4px">${days}</div><div style="font-size:13px;color:#9896A8">day${days!==1?'s':''} to go · ${tripDateLabel}</div></div>`;
     } else if (days === 0) {
-      countdownHTML = `<div style="background:linear-gradient(135deg,rgba(48,209,88,0.12),rgba(124,58,237,0.08));border:1px solid rgba(48,209,88,0.3);border-radius:16px;padding:20px;text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#30D158;font-weight:700;margin-bottom:8px">✈️ Today's the Day!</div><div style="font-size:48px;font-weight:900;line-height:1;color:#30D158;margin-bottom:4px">🛫</div><div style="font-size:13px;color:#9896A8">${tripDay.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</div></div>`;
+      countdownHTML = `<div style="background:linear-gradient(135deg,rgba(48,209,88,0.12),rgba(124,58,237,0.08));border:1px solid rgba(48,209,88,0.3);border-radius:16px;padding:20px;text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#30D158;font-weight:700;margin-bottom:8px">✈️ Today's the Day!</div><div style="font-size:48px;font-weight:900;line-height:1;color:#30D158;margin-bottom:4px">🛫</div><div style="font-size:13px;color:#9896A8">${tripDateLabel}</div></div>`;
     } else {
       const ago = Math.abs(days);
-      countdownHTML = `<div style="background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.18);border-radius:16px;padding:16px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:600">✅ Trip was ${ago>0?ago+' day'+(ago!==1?'s':'')+' ago':'today'} · ${tripDay.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</div></div>`;
+      countdownHTML = `<div style="background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.18);border-radius:16px;padding:16px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:600">✅ Trip was ${ago>0?ago+' day'+(ago!==1?'s':'')+' ago':'today'} · ${tripDateLabel}</div></div>`;
     }
   } else {
     countdownHTML = `<div style="background:#13131A;border:1px dashed rgba(255,255,255,0.08);border-radius:14px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="font-size:13px;color:#6E6B80">📅 No trip date set</div><div style="font-size:11px;color:#6E6B80;font-style:italic">Set date in settings</div></div>`;
@@ -1444,13 +1451,12 @@ ${coverHTML}
 
 <!-- MEMBER PROFILE MODAL -->
 <div class="modal-bg" id="member-profile-modal" onclick="if(event.target.id==='member-profile-modal')closeMemberProfile()">
-  <div style="background:#13131A;border:1px solid rgba(255,255,255,0.1);border-radius:24px 24px 0 0;width:100%;max-width:480px;overflow:hidden">
-    <!-- Header gradient band — tall enough for avatar overlap -->
-    <div style="height:110px;background:linear-gradient(135deg,#7C3AED,#30D158);position:relative;flex-shrink:0">
-      <button onclick="closeMemberProfile()" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,0.3);border:none;color:#fff;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;line-height:1">✕</button>
+  <div style="background:#13131A;border:1px solid rgba(255,255,255,0.1);border-radius:24px 24px 0 0;width:100%;max-width:480px">
+    <div style="height:130px;background:linear-gradient(135deg,#7C3AED,#30D158);border-radius:24px 24px 0 0;position:relative">
+      <button onclick="closeMemberProfile()" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,0.3);border:none;color:#fff;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;line-height:1;z-index:1">✕</button>
+      <div id="mp-avatar" style="position:absolute;bottom:-36px;left:24px;width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#30D158);border:4px solid #13131A;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;color:#fff;overflow:hidden"></div>
     </div>
-    <div style="padding:0 24px 32px;margin-top:-46px">
-      <div id="mp-avatar" style="width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#30D158);border:4px solid #13131A;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;color:#fff;overflow:hidden;margin-bottom:12px;flex-shrink:0"></div>
+    <div style="padding:48px 24px 32px">
       <div style="display:flex;align-items:flex-end;gap:10px;margin-bottom:4px;flex-wrap:wrap">
         <div id="mp-name" style="font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:0.04em"></div>
         <div id="mp-raven-id" style="font-size:13px;color:#A855F7;font-weight:700;padding-bottom:4px"></div>
@@ -2667,7 +2673,7 @@ app.post('/demo/scan-receipt', async (req, res) => {
 
     const message = await getAnthropic().messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1024,
+      max_tokens: 4096,
       messages: [{
         role: 'user',
         content: [
