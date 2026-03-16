@@ -119,7 +119,7 @@ async function parseReceiptWithClaude(imageUrl) {
     const contentType = response.headers.get('content-type') || 'image/jpeg';
 
     const message = await getAnthropic().messages.create({
-      model: 'claude-opus-4-5',
+      model: 'claude-sonnet-4-6',
       max_tokens: 1024,
       messages: [{
         role: 'user',
@@ -2636,33 +2636,38 @@ app.post('/demo/scan-receipt', async (req, res) => {
   try {
     const { image, mediaType } = req.body;
     if (!image) return res.json({ success: false, error: 'No image provided' });
+
+    const validTypes = ['image/jpeg','image/png','image/gif','image/webp'];
+    const mt = validTypes.includes(mediaType) ? mediaType : 'image/jpeg';
+
     const message = await getAnthropic().messages.create({
-      model: 'claude-opus-4-5',
+      model: 'claude-sonnet-4-6',
       max_tokens: 1024,
       messages: [{
         role: 'user',
         content: [
-          { type: 'image', source: { type: 'base64', media_type: mediaType || 'image/jpeg', data: image } },
-          { type: 'text', text: `Parse this receipt and return ONLY a JSON object:
-{
-  "bill_name": "Restaurant or store name",
-  "items": [{"name": "Item Name", "price": 0.00}],
-  "subtotal": 0.00,
-  "tax": 0.00,
-  "tip": 0.00,
-  "total": 0.00
-}
-Return ONLY the JSON, no other text.` }
+          { type: 'image', source: { type: 'base64', media_type: mt, data: image } },
+          { type: 'text', text: 'Parse this receipt image and return ONLY a JSON object with no markdown or extra text:\n{"bill_name":"Store name","items":[{"name":"Item","price":0.00}],"subtotal":0.00,"tax":0.00,"tip":0.00,"total":0.00}\nReturn your best attempt even if unclear. ONLY the JSON object.' }
         ]
       }]
     });
-    const text = message.content[0].text;
-    const clean = text.replace(/```json|```/g, '').trim();
-    const parsed = JSON.parse(clean);
+
+    const raw = message.content[0]?.text || '';
+    const cleaned = raw.replace(/```json|```/g, '').trim();
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (!match) {
+      console.error('Scan: no JSON in response:', raw.slice(0, 200));
+      return res.json({ success: false, error: 'Could not read receipt — try a clearer photo' });
+    }
+    const parsed = JSON.parse(match[0]);
+    console.log('Scan success:', parsed.bill_name, parsed.items?.length, 'items');
     res.json({ success: true, ...parsed });
   } catch(err) {
-    console.error('Demo scan error:', err);
-    res.json({ success: false, error: err.message });
+    console.error('Scan error:', err.status, err.message);
+    if (err.status === 401) return res.json({ success: false, error: 'API key issue — contact support' });
+    if (err.status === 429) return res.json({ success: false, error: 'Rate limited — wait a moment and retry' });
+    if (err.status === 529) return res.json({ success: false, error: 'AI overloaded — retrying shortly' });
+    res.json({ success: false, error: err.message || 'Scan failed' });
   }
 });
 
