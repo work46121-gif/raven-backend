@@ -2236,11 +2236,17 @@ function renderItems() {
     d.style.cssText='background:#13131A;border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:10px 12px';
     const row = document.createElement('div');
     row.style.cssText='display:flex;align-items:center;gap:8px;margin-bottom:8px';
-    const nameSpan=document.createElement('span'); nameSpan.style.cssText='flex:1;font-size:13px;font-weight:500'; nameSpan.textContent=item.name;
-    const priceSpan=document.createElement('span'); priceSpan.style.cssText='font-family:monospace;font-size:13px;color:#9896A8'; priceSpan.textContent='$'+item.price.toFixed(2);
+    // Editable name input
+    const nameInput=document.createElement('input');
+    nameInput.type='text';
+    nameInput.value=item.name;
+    nameInput.style.cssText='flex:1;font-size:13px;font-weight:500;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.1);color:#F0EEF8;font-family:inherit;padding:2px 4px;outline:none';
+    nameInput.addEventListener('change',()=>{ item.name=nameInput.value.trim()||item.name; });
+    nameInput.addEventListener('blur',()=>{ item.name=nameInput.value.trim()||item.name; });
+    const priceSpan=document.createElement('span'); priceSpan.style.cssText='font-family:monospace;font-size:13px;color:#9896A8;flex-shrink:0'; priceSpan.textContent='$'+item.price.toFixed(2);
     const del=document.createElement('button'); del.textContent='×'; del.style.cssText='background:none;border:none;color:#6E6B80;cursor:pointer;font-size:16px;flex-shrink:0';
     del.addEventListener('click',()=>{ tripItems=tripItems.filter(i=>i.id!==item.id); renderItems(); });
-    row.appendChild(nameSpan); row.appendChild(priceSpan); row.appendChild(del);
+    row.appendChild(nameInput); row.appendChild(priceSpan); row.appendChild(del);
     const btns=document.createElement('div'); btns.style.cssText='display:flex;gap:6px;flex-wrap:wrap';
     PEOPLE.forEach(p => {
       const on=item.assignees.includes(p);
@@ -2372,8 +2378,20 @@ async function saveReceipt() {
   try{
     const r=await fetch(BACKEND+'/trip/'+TRIP_ID+'/receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,total,splits,token:TRIP_TOKEN,items:splitType==='itemized'?tripItems:[],paid_by:paidBy||null})});
     const d=await r.json();
-    if(d.success){toast('✅ Receipt saved!');setTimeout(()=>location.reload(),1200);}
-    else{btn.textContent='Save Receipt';btn.disabled=false;toast(d.error||'Error',false);}
+    if(d.success){
+      toast('✅ Receipt saved!');
+      // Reset form for next receipt — then reload to show updated totals
+      document.getElementById('r-name').value='';
+      document.getElementById('r-total').value='';
+      document.getElementById('r-preview').style.display='none';
+      document.getElementById('r-empty').style.display='block';
+      document.getElementById('r-scan-status').style.display='none';
+      document.getElementById('r-scan-status').innerHTML='';
+      const paidByEl=document.getElementById('r-paidby'); if(paidByEl) paidByEl.value='';
+      tripItems=[]; imgBase64=null; splitType='even';
+      setSplit('even'); renderItems();
+      setTimeout(()=>location.reload(),1200);
+    } else{btn.textContent='Save Receipt';btn.disabled=false;toast(d.error||'Error',false);}
   }catch(e){btn.textContent='Save Receipt';btn.disabled=false;toast('Network error',false);}
 }
 </script>
