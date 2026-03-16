@@ -1311,6 +1311,7 @@ input:focus,textarea:focus{border-color:var(--purple)}
 <script id="page-data" type="application/json">${pageData}</script>
 
 <div class="hdr"><div class="hdr-inner">
+  <a href="https://work46121-gif.github.io/raven-site/dashboard.html" style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;text-decoration:none;color:#9896A8;font-size:13px;font-weight:600;transition:all 0.15s" onmouseover="this.style.color='#F0EEF8';this.style.borderColor='rgba(255,255,255,0.25)'" onmouseout="this.style.color='#9896A8';this.style.borderColor='rgba(255,255,255,0.1)'">← Dashboard</a>
   <a href="https://work46121-gif.github.io/raven-site/" style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:0.15em;text-decoration:none;color:#F0EEF8">🪶 RAVEN</a>
   <div style="font-size:10px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:12px;font-weight:600">${esc(tripId)}</div>
 </div></div>
@@ -2242,13 +2243,15 @@ function renderItems() {
     d.style.cssText='background:#13131A;border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:10px 12px';
     const row = document.createElement('div');
     row.style.cssText='display:flex;align-items:center;gap:8px;margin-bottom:8px';
-    // Editable name input
+    // Editable name input — clearly styled so it's obvious it's editable
     const nameInput=document.createElement('input');
     nameInput.type='text';
     nameInput.value=item.name;
-    nameInput.style.cssText='flex:1;font-size:13px;font-weight:500;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.1);color:#F0EEF8;font-family:inherit;padding:2px 4px;outline:none';
-    nameInput.addEventListener('change',()=>{ item.name=nameInput.value.trim()||item.name; });
-    nameInput.addEventListener('blur',()=>{ item.name=nameInput.value.trim()||item.name; });
+    nameInput.placeholder='Item name';
+    nameInput.style.cssText='flex:1;font-size:13px;font-weight:500;background:#0C0C12;border:1px solid rgba(255,255,255,0.15);border-radius:7px;color:#F0EEF8;font-family:inherit;padding:6px 10px;outline:none;min-width:0';
+    nameInput.addEventListener('focus',()=>{ nameInput.style.borderColor='rgba(124,58,237,0.6)'; });
+    nameInput.addEventListener('blur',()=>{ nameInput.style.borderColor='rgba(255,255,255,0.15)'; item.name=nameInput.value.trim()||item.name; });
+    nameInput.addEventListener('input',()=>{ item.name=nameInput.value; });
     const priceSpan=document.createElement('span'); priceSpan.style.cssText='font-family:monospace;font-size:13px;color:#9896A8;flex-shrink:0'; priceSpan.textContent='$'+item.price.toFixed(2);
     const del=document.createElement('button'); del.textContent='×'; del.style.cssText='background:none;border:none;color:#6E6B80;cursor:pointer;font-size:16px;flex-shrink:0';
     del.addEventListener('click',()=>{ tripItems=tripItems.filter(i=>i.id!==item.id); renderItems(); });
@@ -2672,27 +2675,74 @@ app.post('/demo/scan-receipt', async (req, res) => {
     const mt = validTypes.includes(mediaType) ? mediaType : 'image/jpeg';
 
     const message = await getAnthropic().messages.create({
-      model: 'claude-sonnet-4-6',
+      model: 'claude-opus-4-6',
       max_tokens: 4096,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'image', source: { type: 'base64', media_type: mt, data: image } },
-          { type: 'text', text: 'Parse this receipt image and return ONLY a JSON object with no markdown or extra text:\n{"bill_name":"Store name","items":[{"name":"Item","price":0.00}],"subtotal":0.00,"tax":0.00,"tip":0.00,"total":0.00}\nReturn your best attempt even if unclear. ONLY the JSON object.' }
-        ]
-      }]
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: mt, data: image } },
+            { type: 'text', text: `You are an expert receipt parser. Your job is to extract every line item from this receipt image with maximum accuracy.
+
+INSTRUCTIONS:
+1. Look at EVERY line on the receipt
+2. Extract ALL purchasable line items (food, drinks, products, services)
+3. For each item, get the name and price
+4. Also extract subtotal, tax, tip if present, and final total
+5. For the bill_name, use the restaurant/store name at the top
+6. IGNORE: item codes/SKUs, member numbers, transaction IDs, payment method lines, barcode numbers, "APPROVED", "CHIP Read", "CHANGE", "AMOUNT", "VISA" lines
+7. For Costco/warehouse receipts: item numbers before the name are codes — include only the item name
+8. If an item has a quantity (e.g. "2x Coffee $8.00"), keep it as one line item with total price
+
+You MUST return ONLY a valid JSON object. No markdown, no explanation, no extra text. Just the JSON:
+{
+  "bill_name": "Store or Restaurant Name",
+  "items": [
+    {"name": "Item Name", "price": 12.99},
+    {"name": "Another Item", "price": 5.50}
+  ],
+  "subtotal": 18.49,
+  "tax": 1.85,
+  "tip": 0.00,
+  "total": 20.34
+}
+
+CRITICAL: You MUST include at least the items you can read. Even if the image is slightly blurry, give your best attempt. Do NOT return an empty items array if there are any visible prices on the receipt.` }
+          ]
+        }
+      ]
     });
 
     const raw = message.content[0]?.text || '';
-    const cleaned = raw.replace(/```json|```/g, '').trim();
+    console.log('Scan raw response (first 300):', raw.slice(0, 300));
+
+    // Try to extract JSON even if there's surrounding text
+    const cleaned = raw.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
     const match = cleaned.match(/\{[\s\S]*\}/);
     if (!match) {
-      console.error('Scan: no JSON in response:', raw.slice(0, 200));
-      return res.json({ success: false, error: 'Could not read receipt — try a clearer photo' });
+      console.error('Scan: no JSON found in:', raw.slice(0, 400));
+      return res.json({ success: false, error: 'Could not parse receipt — please try again' });
     }
-    const parsed = JSON.parse(match[0]);
-    console.log('Scan success:', parsed.bill_name, parsed.items?.length, 'items');
+
+    let parsed;
+    try {
+      parsed = JSON.parse(match[0]);
+    } catch(parseErr) {
+      console.error('Scan: JSON parse error:', parseErr.message, match[0].slice(0, 200));
+      return res.json({ success: false, error: 'Receipt data malformed — please try again' });
+    }
+
+    // Ensure items is always an array
+    if (!parsed.items || !Array.isArray(parsed.items)) parsed.items = [];
+
+    // If no items found but we have a total, create one generic item
+    if (parsed.items.length === 0 && parsed.total > 0) {
+      parsed.items = [{ name: parsed.bill_name || 'Receipt total', price: parsed.total }];
+    }
+
+    console.log('Scan success:', parsed.bill_name, parsed.items.length, 'items, total:', parsed.total);
     res.json({ success: true, ...parsed });
+
   } catch(err) {
     console.error('Scan error:', err.status, err.message);
     if (err.status === 401) return res.json({ success: false, error: 'API key issue — contact support' });
