@@ -1814,7 +1814,7 @@ function renderPaySlots() {
       const info = document.createElement('div');
       info.innerHTML = '<div style="font-size:14px;font-weight:700;color:#F0EEF8">' + m.label + '</div><div style="font-size:12px;color:#6E6B80">' + m.sub + (m.copy ? ' · tap to copy' : '') + '</div>';
       const amt = document.createElement('div');
-      amt.style.cssText = 'margin-left:auto;font-family:\'Bebas Neue\',sans-serif;font-size:20px;color:#30D158';
+      amt.style.marginLeft='auto'; amt.style.fontFamily='Bebas Neue,sans-serif'; amt.style.fontSize='20px'; amt.style.color='#30D158';
       amt.textContent = '$' + a;
       row.appendChild(icon); row.appendChild(info); row.appendChild(amt);
       panel.appendChild(row);
