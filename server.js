@@ -574,7 +574,14 @@ app.get('/bill/:billId', async (req, res) => {
         ${bill.tip ? `<div style="display:flex;justify-content:space-between;padding:11px 16px;border-bottom:1px solid rgba(255,255,255,0.05)"><span style="font-size:13px;color:#6E6B80">Tip</span><span style="font-size:13px;color:#6E6B80">$${parseFloat(bill.tip).toFixed(2)}</span></div>` : ''}
         <div style="display:flex;justify-content:space-between;padding:14px 16px"><span style="font-size:15px;font-weight:700;color:#F0EEF8">Total</span><span style="font-size:15px;font-weight:700;color:#30D158">$${parseFloat(bill.total || 0).toFixed(2)}</span></div>
       </div>
-    </div>` : '';
+    </div>` : (bill.tax || bill.tip ? `
+    <div style="max-width:500px;margin:20px auto 0;padding:0 20px">
+      <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:16px;overflow:hidden">
+        ${bill.tax ? `<div style="display:flex;justify-content:space-between;padding:11px 16px;border-bottom:1px solid rgba(255,255,255,0.05)"><span style="font-size:13px;color:#6E6B80">Tax</span><span style="font-size:13px;color:#6E6B80">$${parseFloat(bill.tax).toFixed(2)}</span></div>` : ''}
+        ${bill.tip ? `<div style="display:flex;justify-content:space-between;padding:11px 16px;border-bottom:1px solid rgba(255,255,255,0.05)"><span style="font-size:13px;color:#6E6B80">Tip</span><span style="font-size:13px;color:#6E6B80">$${parseFloat(bill.tip).toFixed(2)}</span></div>` : ''}
+        <div style="display:flex;justify-content:space-between;padding:14px 16px"><span style="font-size:15px;font-weight:700;color:#F0EEF8">Total</span><span style="font-size:15px;font-weight:700;color:#30D158">$${parseFloat(bill.total || 0).toFixed(2)}</span></div>
+      </div>
+    </div>` : '');
 
   const profileB64 = Buffer.from(JSON.stringify(creatorProfile || {})).toString('base64');
 
@@ -1708,23 +1715,61 @@ if (new URLSearchParams(window.location.search).get('action') === 'receipt') {
   setTimeout(() => { document.getElementById('receipt-form-wrap').style.display='block'; document.getElementById('open-receipt-btn').style.display='none'; }, 300);
 }
 
-// ── PENDING RECEIPTS — check for unscanned photos saved during offline ──
-(function checkPendingReceipts() {
+// ── SAVED RECEIPTS — build gallery from localStorage photos ──
+(function buildSavedReceiptsGallery() {
   try {
     const pending = JSON.parse(localStorage.getItem('raven_pending_receipts') || '[]');
-    const unscanned = pending.filter(p => !p.scanned && p.tripId === TRIP_ID);
-    if (unscanned.length === 0) return;
-    // Show banner
-    const banner = document.createElement('div');
-    banner.id = 'pending-receipts-banner';
-    banner.style.cssText = 'margin:12px 0;padding:14px 16px;background:rgba(255,107,53,0.08);border:1px solid rgba(255,107,53,0.25);border-radius:12px;display:flex;align-items:center;justify-content:space-between;gap:12px';
-    banner.innerHTML = '<div><div style="font-size:13px;font-weight:700;color:#FF6B35;margin-bottom:2px">📸 ' + unscanned.length + ' unscanned receipt photo' + (unscanned.length>1?'s':'') + ' saved on this device</div>'
-      + '<div style="font-size:12px;color:#9896A8">Tap to retry scanning when the server is available</div></div>'
-      + '<button onclick="retryPendingScans()" style="padding:8px 14px;background:rgba(255,107,53,0.15);border:1px solid rgba(255,107,53,0.35);border-radius:8px;color:#FF6B35;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0">↻ Retry</button>';
-    const firstSec = document.querySelector('.sec');
-    if (firstSec) firstSec.parentNode.insertBefore(banner, firstSec);
-  } catch(e) {}
+    const mine = pending.filter(p => p.tripId === TRIP_ID);
+    if (mine.length === 0) return;
+    // Inject saved receipts section before the receipts accordion
+    const section = document.createElement('div');
+    section.className = 'sec';
+    section.style.marginTop = '16px';
+    const unscanned = mine.filter(p => !p.scanned);
+    section.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;cursor:pointer" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'block\':\'none\';this.querySelector(\'span\').textContent=this.nextElementSibling.style.display===\'none\'?\'▾ Show\':\'▴ Hide\'">' +
+        '<div class="sec-lbl" style="margin-bottom:0">📸 Saved Receipt Photos (' + mine.length + ')' + (unscanned.length > 0 ? ' <span style="font-size:10px;background:rgba(255,107,53,0.15);color:#FF6B35;border-radius:6px;padding:2px 8px;font-weight:700">'+unscanned.length+' unscanned</span>' : '') + '</div>' +
+        '<div style="font-size:12px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:8px;user-select:none"><span>▾ Show</span></div>' +
+      '</div>' +
+      '<div style="display:none">' +
+        '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">' +
+        mine.map(r => {
+          const d = new Date(r.savedAt);
+          const label = d.toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'America/New_York'}) + ' ' + d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',timeZone:'America/New_York'});
+          return '<div style="position:relative;border-radius:10px;overflow:hidden;cursor:pointer;border:2px solid ' + (r.scanned ? 'rgba(48,209,88,0.4)' : 'rgba(255,107,53,0.4)') + '" onclick="viewSavedReceipt(\''+r.id+'\')">' +
+            '<img src="data:' + (r.mediaType||'image/jpeg') + ';base64,' + r.imageBase64 + '" style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block">' +
+            '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.7);padding:4px 6px">' +
+              '<div style="font-size:9px;color:#fff;font-weight:600">' + (r.scanned ? '✅ Scanned' : '⏳ Pending') + '</div>' +
+              '<div style="font-size:8px;color:#9896A8">' + label + '</div>' +
+            '</div>' +
+          '</div>';
+        }).join('') +
+        '</div>' +
+        (unscanned.length > 0 ?
+          '<button onclick="retryPendingScans()" style="width:100%;padding:10px;background:rgba(255,107,53,0.1);border:1px solid rgba(255,107,53,0.3);border-radius:10px;color:#FF6B35;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">↻ Retry scanning ' + unscanned.length + ' pending photo' + (unscanned.length>1?'s':'') + '</button>'
+          : '<div style="font-size:12px;color:#30D158;text-align:center;padding:6px 0">All photos scanned ✅</div>') +
+      '</div>';
+    // Insert before the All Receipts section
+    const receiptsSec = document.getElementById('receipts-body');
+    if (receiptsSec) receiptsSec.closest('.sec').parentNode.insertBefore(section, receiptsSec.closest('.sec'));
+  } catch(e) { console.error('Saved receipts gallery error:', e); }
 })();
+
+function viewSavedReceipt(id) {
+  try {
+    const pending = JSON.parse(localStorage.getItem('raven_pending_receipts') || '[]');
+    const r = pending.find(x => x.id === id);
+    if (!r) return;
+    // Show full-screen preview
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.95);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px';
+    overlay.innerHTML =
+      '<button onclick="this.parentNode.remove()" style="position:absolute;top:16px;right:16px;background:rgba(255,255,255,0.1);border:none;color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:16px">✕</button>' +
+      '<img src="data:' + (r.mediaType||'image/jpeg') + ';base64,' + r.imageBase64 + '" style="max-width:100%;max-height:80vh;border-radius:12px;object-fit:contain">' +
+      '<div style="margin-top:12px;font-size:13px;color:#9896A8">' + (r.scanned ? '✅ Successfully scanned' : '⏳ Not yet scanned') + '</div>';
+    document.body.appendChild(overlay);
+  } catch(e) {}
+}
 
 async function retryPendingScans() {
   try {
