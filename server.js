@@ -1726,29 +1726,63 @@ if (new URLSearchParams(window.location.search).get('action') === 'receipt') {
     section.className = 'sec';
     section.style.marginTop = '16px';
     const unscanned = mine.filter(p => !p.scanned);
-    section.innerHTML =
-      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;cursor:pointer" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'block\':\'none\';this.querySelector(\'span\').textContent=this.nextElementSibling.style.display===\'none\'?\'▾ Show\':\'▴ Hide\'">' +
-        '<div class="sec-lbl" style="margin-bottom:0">📸 Saved Receipt Photos (' + mine.length + ')' + (unscanned.length > 0 ? ' <span style="font-size:10px;background:rgba(255,107,53,0.15);color:#FF6B35;border-radius:6px;padding:2px 8px;font-weight:700">'+unscanned.length+' unscanned</span>' : '') + '</div>' +
-        '<div style="font-size:12px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:8px;user-select:none"><span>▾ Show</span></div>' +
-      '</div>' +
-      '<div style="display:none">' +
-        '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">' +
-        mine.map(r => {
-          const d = new Date(r.savedAt);
-          const label = d.toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'America/New_York'}) + ' ' + d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',timeZone:'America/New_York'});
-          return '<div style="position:relative;border-radius:10px;overflow:hidden;cursor:pointer;border:2px solid ' + (r.scanned ? 'rgba(48,209,88,0.4)' : 'rgba(255,107,53,0.4)') + '" onclick="viewSavedReceipt(\''+r.id+'\')">' +
-            '<img src="data:' + (r.mediaType||'image/jpeg') + ';base64,' + r.imageBase64 + '" style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block">' +
-            '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.7);padding:4px 6px">' +
-              '<div style="font-size:9px;color:#fff;font-weight:600">' + (r.scanned ? '✅ Scanned' : '⏳ Pending') + '</div>' +
-              '<div style="font-size:8px;color:#9896A8">' + label + '</div>' +
-            '</div>' +
-          '</div>';
-        }).join('') +
-        '</div>' +
-        (unscanned.length > 0 ?
-          '<button onclick="retryPendingScans()" style="width:100%;padding:10px;background:rgba(255,107,53,0.1);border:1px solid rgba(255,107,53,0.3);border-radius:10px;color:#FF6B35;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">↻ Retry scanning ' + unscanned.length + ' pending photo' + (unscanned.length>1?'s':'') + '</button>'
-          : '<div style="font-size:12px;color:#30D158;text-align:center;padding:6px 0">All photos scanned ✅</div>') +
-      '</div>';
+
+    // Header row — clicking toggles body
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;cursor:pointer';
+    const labelHtml = '📸 Saved Receipt Photos (' + mine.length + ')' +
+      (unscanned.length > 0 ? ' <span style="font-size:10px;background:rgba(255,107,53,0.15);color:#FF6B35;border-radius:6px;padding:2px 8px;font-weight:700">'+unscanned.length+' unscanned</span>' : '');
+    header.innerHTML =
+      '<div class="sec-lbl" style="margin-bottom:0">' + labelHtml + '</div>' +
+      '<div style="font-size:12px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:8px;user-select:none"><span id="saved-receipts-toggle">▾ Show</span></div>';
+
+    // Body — hidden by default
+    const body = document.createElement('div');
+    body.id = 'saved-receipts-body';
+    body.style.display = 'none';
+
+    // Photo grid
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px';
+    mine.forEach(r => {
+      const d = new Date(r.savedAt);
+      const label = d.toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'America/New_York'});
+      const cell = document.createElement('div');
+      cell.style.cssText = 'position:relative;border-radius:10px;overflow:hidden;cursor:pointer;border:2px solid ' + (r.scanned ? 'rgba(48,209,88,0.4)' : 'rgba(255,107,53,0.4)');
+      cell.innerHTML =
+        '<img src="data:' + (r.mediaType||'image/jpeg') + ';base64,' + r.imageBase64 + '" style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block">' +
+        '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.7);padding:4px 6px">' +
+          '<div style="font-size:9px;color:#fff;font-weight:600">' + (r.scanned ? '✅' : '⏳') + '</div>' +
+          '<div style="font-size:8px;color:#9896A8">' + label + '</div>' +
+        '</div>';
+      cell.addEventListener('click', () => viewSavedReceipt(r.id));
+      grid.appendChild(cell);
+    });
+    body.appendChild(grid);
+
+    if (unscanned.length > 0) {
+      const retryBtn = document.createElement('button');
+      retryBtn.style.cssText = 'width:100%;padding:10px;background:rgba(255,107,53,0.1);border:1px solid rgba(255,107,53,0.3);border-radius:10px;color:#FF6B35;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer';
+      retryBtn.textContent = '↻ Retry scanning ' + unscanned.length + ' pending photo' + (unscanned.length>1?'s':'');
+      retryBtn.addEventListener('click', retryPendingScans);
+      body.appendChild(retryBtn);
+    } else {
+      const doneMsg = document.createElement('div');
+      doneMsg.style.cssText = 'font-size:12px;color:#30D158;text-align:center;padding:6px 0';
+      doneMsg.textContent = 'All photos scanned ✅';
+      body.appendChild(doneMsg);
+    }
+
+    // Toggle on header click
+    header.addEventListener('click', () => {
+      const open = body.style.display !== 'none';
+      body.style.display = open ? 'none' : 'block';
+      const tog = document.getElementById('saved-receipts-toggle');
+      if (tog) tog.textContent = open ? '▾ Show' : '▴ Hide';
+    });
+
+    section.appendChild(header);
+    section.appendChild(body);
     // Insert before the All Receipts section
     const receiptsSec = document.getElementById('receipts-body');
     if (receiptsSec) receiptsSec.closest('.sec').parentNode.insertBefore(section, receiptsSec.closest('.sec'));
