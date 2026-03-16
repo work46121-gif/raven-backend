@@ -2868,6 +2868,69 @@ Return this exact JSON structure:
   }
 });
 
+// ── REMIND UNPAID — send email reminders to participants who haven't paid ──────
+app.post('/remind-dashboard', async (req, res) => {
+  try {
+    const { billId, userEmail } = req.body;
+    if (!billId) return res.json({ success: false, error: 'No bill ID' });
+
+    // Verify requester is the creator
+    const { data: bill } = await supabase.from('bills').select('*, participants(*)').eq('id', billId).single();
+    if (!bill) return res.json({ success: false, error: 'Bill not found' });
+    if (bill.creator_phone !== userEmail) return res.json({ success: false, error: 'Not authorized' });
+
+    const unpaid = (bill.participants || []).filter(p => !p.paid);
+    if (unpaid.length === 0) return res.json({ success: true, sent: 0, message: 'Everyone has paid!' });
+
+    const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+      : `https://raven-backend-production-fb1f.up.railway.app`;
+    const billUrl = `${baseUrl}/bill/${billId}${bill.share_token ? '?t=' + bill.share_token : ''}`;
+
+    let sent = 0;
+    for (const p of unpaid) {
+      const isEmail = p.phone && p.phone.includes('@') && !p.phone.startsWith('unknown_');
+      if (isEmail) {
+        // Send via Supabase Auth email (uses your configured SMTP)
+        try {
+          await supabase.auth.admin.sendRawEmail({
+            to: p.phone,
+            subject: `🪶 RAVEN — Reminder: You owe $${parseFloat(p.amount).toFixed(2)} for ${bill.name}`,
+            html: `
+              <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;background:#0C0C12;color:#F0EEF8;border-radius:16px">
+                <div style="text-align:center;margin-bottom:24px">
+                  <div style="font-size:32px">🪶</div>
+                  <div style="font-size:20px;font-weight:800;letter-spacing:0.1em">RAVEN</div>
+                </div>
+                <h2 style="font-size:18px;margin-bottom:8px">Hey ${p.name} 👋</h2>
+                <p style="color:#9896A8;font-size:14px;margin-bottom:20px">Just a reminder — you still owe <strong style="color:#30D158">$${parseFloat(p.amount).toFixed(2)}</strong> for <strong style="color:#F0EEF8">${bill.name}</strong>.</p>
+                <a href="${billUrl}" style="display:block;text-align:center;background:#30D158;color:#000;font-weight:700;font-size:15px;padding:14px 24px;border-radius:10px;text-decoration:none;margin-bottom:16px">💳 Pay Now →</a>
+                <p style="color:#6E6B80;font-size:12px;text-align:center">Sent via RAVEN by ${bill.creator_phone}</p>
+              </div>`,
+          });
+          sent++;
+        } catch(emailErr) {
+          // Fall back to SMS if email fails
+          if (p.phone && !p.phone.startsWith('unknown_')) {
+            await sendSMS(p.phone, `🪶 RAVEN Reminder: You owe $${parseFloat(p.amount).toFixed(2)} for ${bill.name}. Pay here: ${billUrl}`);
+            sent++;
+          }
+        }
+      } else if (p.phone && !p.phone.startsWith('unknown_')) {
+        // SMS for phone numbers
+        await sendSMS(p.phone, `🪶 RAVEN Reminder: Hey ${p.name}, you owe $${parseFloat(p.amount).toFixed(2)} for ${bill.name}. Pay: ${billUrl}`);
+        sent++;
+      }
+    }
+
+    console.log(`Reminders sent: ${sent}/${unpaid.length} for bill ${billId}`);
+    res.json({ success: true, sent, total: unpaid.length });
+  } catch(err) {
+    console.error('Remind error:', err);
+    res.json({ success: false, error: err.message });
+  }
+});
+
 app.get('/ping', (req, res) => {
   res.json({ ok: true, ts: Date.now() });
 });
