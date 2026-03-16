@@ -1186,7 +1186,7 @@ app.get('/trip/:tripId', async (req, res) => {
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
           <div style="font-family:'Bebas Neue',sans-serif;font-size:26px;color:#30D158;letter-spacing:0.03em;line-height:1">$${total.toFixed(2)}</div>
-          <button onclick="event.stopPropagation();openEditReceipt('${esc(r.id)}','${esc(r.name||'Receipt')}','${esc(payer)}',${total.toFixed(2)})" style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.06);border:none;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0" title="Edit receipt">✏️</button>
+          <button onclick="event.stopPropagation();openEditReceipt('${esc(r.id)}')" style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.06);border:none;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0" title="Edit receipt">✏️</button>
           <div id="${receiptId}-chevron" style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center;font-size:12px;color:#6E6B80;transition:transform 0.2s;flex-shrink:0">▾</div>
         </div>
       </div>
@@ -1233,7 +1233,13 @@ app.get('/trip/:tripId', async (req, res) => {
     tripDate: trip.trip_date || '',
     people,
     hasCoverImage: !!trip.cover_image,
-    memberPayProfiles
+    memberPayProfiles,
+    receiptsData: (receipts||[]).map(r => ({
+      id: r.id,
+      name: r.name || 'Receipt',
+      paid_by: r.paid_by || '',
+      total: parseFloat(r.total||0)
+    }))
   });
 
   res.send(`<!DOCTYPE html>
@@ -1523,7 +1529,9 @@ const INVITE_URL = D.inviteUrl;
 const TRIP_NAME  = D.tripName;
 const TRIP_DATE  = D.tripDate;
 let   PEOPLE     = D.people;
-const PAY_PROFILES = D.memberPayProfiles || {}; // { "Name": { venmo, cashapp, zelle, applepay } }
+const PAY_PROFILES = D.memberPayProfiles || {};
+const receiptsDataMap = {}; // keyed by receipt id — safe lookup, no user data in onclick
+(D.receiptsData || []).forEach(r => { receiptsDataMap[r.id] = r; });
 
 // Enrich PAY_PROFILES with the current user's payment methods from localStorage
 // (catches cases where server-side lookup didn't find them)
@@ -1837,12 +1845,14 @@ function toggleReceipt(id) {
 
 // ── EDIT RECEIPT ──
 let _editReceiptId = null;
-function openEditReceipt(id, name, paidBy, total) {
+function openEditReceipt(id) {
+  const r = receiptsDataMap[id];
+  if (!r) { toast('Receipt data not found', false); return; }
   _editReceiptId = id;
-  document.getElementById('edit-r-name').value = name;
-  document.getElementById('edit-r-total').value = total;
+  document.getElementById('edit-r-name').value = r.name;
+  document.getElementById('edit-r-total').value = r.total;
   const sel = document.getElementById('edit-r-paidby');
-  sel.value = paidBy || '';
+  sel.value = r.paid_by || '';
   document.getElementById('edit-receipt-modal').classList.add('open');
 }
 function closeEditReceipt() {
