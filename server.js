@@ -2677,92 +2677,91 @@ app.post('/demo/scan-receipt', async (req, res) => {
     const validTypes = ['image/jpeg','image/png','image/gif','image/webp'];
     const mt = validTypes.includes(mediaType) ? mediaType : 'image/jpeg';
 
-    const message = await getAnthropic().messages.create({
-      model: 'claude-opus-4-6',
-      max_tokens: 4096,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'image', source: { type: 'base64', media_type: mt, data: image } },
-            { type: 'text', text: `You are an expert receipt and order parser. You can read receipts from ANY source: physical receipts, restaurant bills, app screenshots (Uber Eats, DoorDash, Instacart, Grubhub, etc.), digital invoices, and order summaries.
+    console.log('Scan request: mediaType=' + mt + ' imageSize=' + Math.round(image.length * 0.75 / 1024) + 'KB');
 
-YOUR JOB: Extract every purchasable line item with its price.
+    // Try models in order — fall back if one fails
+    const modelsToTry = ['claude-opus-4-5-20251101', 'claude-sonnet-4-5-20251022', 'claude-sonnet-4-6', 'claude-opus-4-6'];
+    let lastError = null;
+    let raw = '';
 
-WHAT TO INCLUDE:
-- Food items, drinks, products (include quantities if shown, e.g. "2x Burrito Bowl")
-- Add-ons or modifications that have a price (e.g. "Grilled Chicken +$3.49")
-- Delivery fees, service fees if listed as separate line items
+    for (const model of modelsToTry) {
+      try {
+        console.log('Trying model:', model);
+        const message = await getAnthropic().messages.create({
+          model,
+          max_tokens: 4096,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'base64', media_type: mt, data: image } },
+              { type: 'text', text: `You are a receipt parser. Look at this receipt image carefully.
 
-WHAT TO IGNORE:
-- Discount lines (negative amounts like "Uber One savings")
-- Payment method lines (VISA, CHIP Read, APPROVED)
-- Item codes/SKUs (numbers before item names on warehouse receipts)  
-- Barcode numbers, transaction IDs, member numbers
-- "CHANGE", "AMOUNT", "APPROVED" lines
+Extract ALL line items and return ONLY valid JSON. No markdown, no explanation.
 
-FOR APP SCREENSHOTS (Uber Eats, DoorDash etc):
-- The items are listed with a quantity number on the left and price on the right
-- Include the full item name
-- If an item has a quantity of 2, list it as one item with the total price
+INCLUDE: food items, products, any purchased items with prices
+IGNORE: barcodes, transaction IDs, payment method lines (VISA/CHIP), member numbers, store addresses, "APPROVED", "CHANGE", "AMOUNT" lines, tax category codes (E/A/S letters)
+FOR COSTCO/WAREHOUSE: lines start with item number then item name then price — use the item name only
 
-CRITICAL RULES:
-- You MUST return valid JSON only — no markdown, no explanation
-- You MUST include every item you can see, even if the image is a screenshot
-- Do NOT return empty items array if there are any prices visible
-- If quantities are shown (e.g. "2 Burrito Bowl $33.96"), include as one entry
+Return this exact JSON structure:
+{"bill_name":"Store Name","items":[{"name":"Item Name","price":9.99}],"subtotal":0.00,"tax":0.00,"tip":0.00,"total":0.00}` }
+            ]
+          }]
+        });
+        raw = message.content[0]?.text || '';
+        console.log('Model', model, 'responded, length:', raw.length);
+        console.log('First 200 chars:', raw.slice(0, 200));
+        lastError = null;
+        break; // success — exit loop
+      } catch(modelErr) {
+        console.error('Model', model, 'failed:', modelErr.status, modelErr.message?.slice(0,100));
+        lastError = modelErr;
+        if (modelErr.status === 401) break; // bad API key — don't retry
+      }
+    }
 
-Return ONLY this JSON:
-{
-  "bill_name": "Restaurant or app name",
-  "items": [
-    {"name": "Item Name", "price": 12.99}
-  ],
-  "subtotal": 0.00,
-  "tax": 0.00,
-  "tip": 0.00,
-  "total": 0.00
-}` }
-          ]
-        }
-      ]
-    });
+    if (lastError) {
+      if (lastError.status === 401) return res.json({ success: false, error: 'API key invalid — check ANTHROPIC_API_KEY in Railway' });
+      if (lastError.status === 429) return res.json({ success: false, error: 'Rate limited — try again in a moment' });
+      return res.json({ success: false, error: 'AI unavailable: ' + (lastError.message || 'unknown') });
+    }
 
-    const raw = message.content[0]?.text || '';
-    console.log('Scan raw response (first 300):', raw.slice(0, 300));
+    if (!raw) return res.json({ success: false, error: 'AI returned empty response' });
 
-    // Try to extract JSON even if there's surrounding text
+    // Extract JSON — handle markdown fences and surrounding text
     const cleaned = raw.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
     const match = cleaned.match(/\{[\s\S]*\}/);
     if (!match) {
-      console.error('Scan: no JSON found in:', raw.slice(0, 400));
-      return res.json({ success: false, error: 'Could not parse receipt — please try again' });
+      console.error('No JSON found. Full response:', raw);
+      // Last resort: try to extract just a total from the text
+      const totalMatch = raw.match(/total[:\s]*\$?([\d,]+\.\d{2})/i);
+      if (totalMatch) {
+        const total = parseFloat(totalMatch[1].replace(',',''));
+        console.log('Extracted total from text:', total);
+        return res.json({ success: true, bill_name: 'Receipt', items: [{ name: 'Total', price: total }], subtotal: total, tax: 0, tip: 0, total });
+      }
+      return res.json({ success: false, error: 'Could not parse receipt' });
     }
 
     let parsed;
-    try {
-      parsed = JSON.parse(match[0]);
-    } catch(parseErr) {
-      console.error('Scan: JSON parse error:', parseErr.message, match[0].slice(0, 200));
-      return res.json({ success: false, error: 'Receipt data malformed — please try again' });
+    try { parsed = JSON.parse(match[0]); }
+    catch(e) {
+      console.error('JSON parse failed:', e.message, match[0].slice(0, 300));
+      return res.json({ success: false, error: 'Receipt data malformed' });
     }
 
-    // Ensure items is always an array
     if (!parsed.items || !Array.isArray(parsed.items)) parsed.items = [];
 
-    // If no items found but we have a total, create one generic item
-    if (parsed.items.length === 0 && parsed.total > 0) {
-      parsed.items = [{ name: parsed.bill_name || 'Receipt total', price: parsed.total }];
+    // If no items but have total, make one item
+    if (parsed.items.length === 0 && (parsed.total > 0 || parsed.subtotal > 0)) {
+      const amt = parsed.total || parsed.subtotal;
+      parsed.items = [{ name: parsed.bill_name || 'Receipt', price: amt }];
     }
 
     console.log('Scan success:', parsed.bill_name, parsed.items.length, 'items, total:', parsed.total);
     res.json({ success: true, ...parsed });
 
   } catch(err) {
-    console.error('Scan error:', err.status, err.message);
-    if (err.status === 401) return res.json({ success: false, error: 'API key issue — contact support' });
-    if (err.status === 429) return res.json({ success: false, error: 'Rate limited — wait a moment and retry' });
-    if (err.status === 529) return res.json({ success: false, error: 'AI overloaded — retrying shortly' });
+    console.error('Scan top-level error:', err.status, err.message);
     res.json({ success: false, error: err.message || 'Scan failed' });
   }
 });
