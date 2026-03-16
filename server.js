@@ -1533,7 +1533,7 @@ async function retryPendingScans() {
       if (idx>=0) { pending[idx].scanned=true; localStorage.setItem('raven_pending_receipts', JSON.stringify(pending)); }
       if (banner) banner.remove();
     } else {
-      st.innerHTML = '<div style="padding:10px 14px;background:rgba(255,68,68,0.07);border:1px solid rgba(255,68,68,0.2);border-radius:8px;font-size:13px;color:#FF6B6B">Still couldn\'t scan — enter manually or try again later</div>';
+      st.innerHTML = '<div style="padding:10px 14px;background:rgba(255,68,68,0.07);border:1px solid rgba(255,68,68,0.2);border-radius:8px;font-size:13px;color:#FF6B6B">Still could not scan — enter manually or try again later</div>';
       if (banner) banner.innerHTML = '<div style="font-size:13px;color:#FF6B35;font-weight:600">📸 ' + unscanned.length + ' saved receipt' + (unscanned.length>1?'s':'') + ' — server still starting up, try again in a minute</div>';
     }
   } catch(e) {
@@ -1570,6 +1570,14 @@ async function retryPendingScans() {
     }, 1200); // wait for avatar fetch to complete
   } catch(e) {}
 })();
+function retryLastScan() {
+  if (imgBase64) {
+    retryPendingScans();
+  } else {
+    toast('Please re-upload the receipt photo to retry', false);
+  }
+}
+
 function toggleReceipts() {
   const body = document.getElementById('receipts-body');
   const btn  = document.getElementById('receipts-toggle');
@@ -1905,9 +1913,9 @@ function tripPhoto(file) {
             return doScan(attempt+1);
           } else {
             st.innerHTML='<div style="padding:10px 14px;background:rgba(255,107,53,0.07);border:1px solid rgba(255,107,53,0.25);border-radius:8px">'
-              +'<div style="font-size:13px;color:#FF6B35;font-weight:600;margin-bottom:6px">⚠️ AI couldn\'t read it — but your photo is saved!</div>'
+              +'<div style="font-size:13px;color:#FF6B35;font-weight:600;margin-bottom:6px">AI could not read it — but your photo is saved!</div>'
               +'<div style="font-size:12px;color:#9896A8;margin-bottom:8px">You can enter amounts manually now, or tap Retry Scan later when the server is back.</div>'
-              +'<button onclick="doScan(1)" style="padding:6px 14px;background:rgba(255,107,53,0.12);border:1px solid rgba(255,107,53,0.3);border-radius:7px;color:#FF6B35;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer">↻ Retry Scan</button>'
+              +'<button onclick="retryLastScan()" style="padding:6px 14px;background:rgba(255,107,53,0.12);border:1px solid rgba(255,107,53,0.3);border-radius:7px;color:#FF6B35;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer">↻ Retry Scan</button>'
               +'</div>';
           }
         } catch(e) {
@@ -1916,7 +1924,7 @@ function tripPhoto(file) {
           st.innerHTML='<div style="padding:10px 14px;background:rgba(255,107,53,0.07);border:1px solid rgba(255,107,53,0.25);border-radius:8px">'
             +'<div style="font-size:13px;color:#FF6B35;font-weight:600;margin-bottom:6px">⚠️ Server waking up — photo is saved!</div>'
             +'<div style="font-size:12px;color:#9896A8;margin-bottom:8px">Your receipt photo is stored on this device. Enter details manually or retry the scan.</div>'
-            +'<button onclick="doScan(1)" style="padding:6px 14px;background:rgba(255,107,53,0.12);border:1px solid rgba(255,107,53,0.3);border-radius:7px;color:#FF6B35;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer">↻ Retry Scan</button>'
+            +'<button onclick="retryLastScan()" style="padding:6px 14px;background:rgba(255,107,53,0.12);border:1px solid rgba(255,107,53,0.3);border-radius:7px;color:#FF6B35;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer">↻ Retry Scan</button>'
             +'</div>';
         }
       }
