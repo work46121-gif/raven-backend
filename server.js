@@ -1411,19 +1411,31 @@ function applyNameAndAvatar(firstName, avatarUrl) {
     const inp = document.getElementById('comment-author');
     if (inp) {
       inp.value = firstName;
-      inp.style.color = 'var(--muted2)';
       inp.readOnly = true;
       inp.style.cssText = 'flex:1;background:transparent;border:none;color:#9896A8;font-family:inherit;font-size:14px;font-weight:600;outline:none;cursor:default';
     }
     sessionStorage.setItem('raven_trip_name', firstName);
   }
+  // Update comment box avatar
   const avatarEl = document.getElementById('comment-avatar');
   if (avatarEl) {
     if (avatarUrl) {
       avatarEl.innerHTML = '<img src="' + avatarUrl + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%">';
+      avatarEl.style.background = 'transparent';
     } else if (firstName) {
       avatarEl.textContent = firstName[0].toUpperCase();
     }
+  }
+  // Update ALL avatar circles on the page for this user (receipt breakdowns, people row, etc.)
+  if (firstName) {
+    document.querySelectorAll('[data-person-avatar]').forEach(el => {
+      if (el.getAttribute('data-person-avatar').toLowerCase() === firstName.toLowerCase()) {
+        if (avatarUrl) {
+          el.innerHTML = '<img src="' + avatarUrl + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%">';
+          el.style.background = 'transparent';
+        }
+      }
+    });
   }
 }
 
@@ -1450,7 +1462,7 @@ function applyNameAndAvatar(firstName, avatarUrl) {
       const accessToken = sbSession?.access_token;
       const userId = sbSession?.user?.id;
       if (accessToken && userId) {
-        const profResp = await fetch(SUPA_URL + '/rest/v1/profiles?select=first_name,avatar_url&id=eq.' + userId, {
+        const profResp = await fetch(SUPA_URL + '/rest/v1/profiles?select=*&id=eq.' + userId, {
           headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + accessToken, 'Accept': 'application/json' }
         });
         if (profResp.ok) {
