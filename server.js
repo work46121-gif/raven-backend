@@ -515,26 +515,32 @@ app.get('/bill/:billId', async (req, res) => {
   }
 
   function buildBreakdown(p, myItems, bill, participantCount) {
+    const amount = parseFloat(p.amount || 0);
     if (myItems.length === 0) {
-      const amount = parseFloat(p.amount || 0);
       if (amount <= 0) return '';
       return '<div style="margin-top:6px;background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px"><div style="display:flex;justify-content:space-between"><span style="font-size:11px;font-weight:700;color:#F0EEF8">Total</span><span style="font-size:12px;font-weight:700;color:#30D158;font-family:monospace">$' + amount.toFixed(2) + '</span></div></div>';
     }
     const tax = parseFloat(bill.tax || 0);
     const tip = parseFloat(bill.tip || 0);
-    const shared = participantCount > 0 ? (tax + tip) / participantCount : 0;
+    const billSubtotal = items.reduce((s,i) => s + parseFloat(i.price||0), 0);
     const itemsTotal = myItems.reduce((s, i) => s + i.price / i.splitWith, 0);
+    // Proportional tax/tip — person with bigger order pays more
+    const proportion = billSubtotal > 0 ? itemsTotal / billSubtotal : (participantCount > 0 ? 1/participantCount : 0);
+    const myTax = tax * proportion;
+    const myTip = tip * proportion;
+
     let rows = myItems.map(i => {
       const share = (i.price / i.splitWith).toFixed(2);
       const split = i.splitWith > 1 ? ` <span style="color:#9896A8;font-size:10px">(÷${i.splitWith})</span>` : '';
       return `<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6E6B80">${i.name}${split}</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$${share}</span></div>`;
     }).join('');
+
     let shared_rows = '';
-    if (tax) shared_rows += `<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="font-size:11px;color:#6E6B80">Tax (split)</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$${(tax / participantCount).toFixed(2)}</span></div>`;
-    if (tip) shared_rows += `<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="font-size:11px;color:#6E6B80">Tip (split)</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$${(tip / participantCount).toFixed(2)}</span></div>`;
+    if (tax) shared_rows += `<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="font-size:11px;color:#6E6B80">Tax</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$${myTax.toFixed(2)}</span></div>`;
+    if (tip) shared_rows += `<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="font-size:11px;color:#6E6B80">Tip</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$${myTip.toFixed(2)}</span></div>`;
     const divider = shared_rows ? `<div style="border-top:1px solid rgba(255,255,255,0.06);margin-top:4px;padding-top:4px">${shared_rows}</div>` : '';
-    const total = (itemsTotal + shared).toFixed(2);
-    return `<div style="margin-top:8px;background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px">${rows}${divider}<div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:4px;padding-top:5px;display:flex;justify-content:space-between"><span style="font-size:11px;font-weight:700;color:#F0EEF8">Total</span><span style="font-size:12px;font-weight:700;color:#30D158;font-family:monospace">$${total}</span></div></div>`;
+
+    return `<div style="margin-top:8px;background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px">${rows}${divider}<div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:4px;padding-top:5px;display:flex;justify-content:space-between"><span style="font-size:11px;font-weight:700;color:#F0EEF8">Total</span><span style="font-size:12px;font-weight:700;color:#30D158;font-family:monospace">$${amount.toFixed(2)}</span></div></div>`;
   }
 
   const participantsHTML = participants.length > 0 ? `
@@ -681,7 +687,9 @@ app.get('/bill/:billId', async (req, res) => {
       const pid = btn.dataset.pid, name = btn.dataset.name, amount = btn.dataset.amount;
       let p = {};
       try { p = JSON.parse(atob(document.getElementById('pd').value||'')); } catch(e){}
-      document.getElementById('pname').textContent = name;
+      // "Pay [creator name]" not "Pay [participant name]"
+      const creatorName = p.first_name || 'Bill Creator';
+      document.getElementById('pname').textContent = creatorName;
       document.getElementById('pamt').textContent = '$' + parseFloat(amount).toFixed(2);
       const amt = parseFloat(amount).toFixed(2);
       const mc = document.getElementById('pmethods');
@@ -2317,50 +2325,62 @@ function tripPhoto(file) {
       // Wake server then scan with retry (handles Railway cold starts)
       async function doScan(attempt) {
         if (attempt === 1) {
-          // Ping server to wake from sleep
           try { await Promise.race([fetch(BACKEND+'/'), new Promise(r=>setTimeout(r,20000))]); } catch(e) {}
           st.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:8px"><div class="spinner"></div><span style="font-size:13px;color:#C084FC;font-weight:600">Scanning receipt with AI...</span></div>';
         } else {
-          st.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:8px"><div class="spinner"></div><span style="font-size:13px;color:#C084FC;font-weight:600">Retrying... (attempt '+attempt+' of 3)</span></div>';
+          st.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:8px"><div class="spinner"></div><span style="font-size:13px;color:#C084FC;font-weight:600">Retrying... ('+attempt+' of 3)</span></div>';
           await new Promise(r=>setTimeout(r,2000));
         }
         const controller = new AbortController();
         const timer = setTimeout(()=>controller.abort(), 60000);
         try {
-          const r = await fetch(BACKEND+'/demo/scan-receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:imgBase64,mediaType:file.type||'image/jpeg'}),signal:controller.signal});
+          const mt = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+          const r = await fetch(BACKEND+'/demo/scan-receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:imgBase64,mediaType:mt}),signal:controller.signal});
           clearTimeout(timer);
           const d = await r.json();
-          if(d.success&&d.items&&d.items.length){
-            if(!document.getElementById('r-name').value&&d.bill_name) document.getElementById('r-name').value=d.bill_name;
-            const tot=d.total||d.items.reduce((s,i)=>s+i.price,0);
-            document.getElementById('r-total').value=tot.toFixed(2); updateEven();
-            tripItems=d.items.map((item,idx)=>({id:Date.now()+idx,name:item.name,price:parseFloat(item.price)||0,assignees:[]}));
+
+          // Full success — got items
+          if (d.success && d.items && d.items.length > 0) {
+            if (!document.getElementById('r-name').value && d.bill_name) document.getElementById('r-name').value = d.bill_name;
+            const tot = d.total || d.items.reduce((s,i)=>s+i.price,0);
+            document.getElementById('r-total').value = tot.toFixed(2); updateEven();
+            if (d.tax > 0) { /* store tax for display — add to total field note */ }
+            tripItems = d.items.map((item,idx)=>({id:Date.now()+idx,name:item.name,price:parseFloat(item.price)||0,assignees:[]}));
             setSplit('itemized'); renderItems();
-            st.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:8px"><span>✅</span><span style="font-size:13px;color:#30D158;font-weight:600">'+d.items.length+' items found! Photo saved 📸</span></div>';
-            // Mark pending receipt as successfully scanned
-            try {
-              const pid = window._currentPendingId;
-              if (pid) {
-                const pending = JSON.parse(localStorage.getItem('raven_pending_receipts')||'[]');
-                const idx = pending.findIndex(p=>p.id===pid);
-                if (idx>=0) { pending[idx].scanned=true; localStorage.setItem('raven_pending_receipts', JSON.stringify(pending)); }
-              }
-            } catch(e) {}
-          } else if (attempt < 3) {
-            return doScan(attempt+1);
-          } else {
-            st.innerHTML='<div style="padding:10px 14px;background:rgba(255,107,53,0.07);border:1px solid rgba(255,107,53,0.25);border-radius:8px">'
-              +'<div style="font-size:13px;color:#FF6B35;font-weight:600;margin-bottom:6px">AI could not read it — but your photo is saved!</div>'
-              +'<div style="font-size:12px;color:#9896A8;margin-bottom:8px">You can enter amounts manually now, or tap Retry Scan later when the server is back.</div>'
-              +'<button onclick="retryLastScan()" style="padding:6px 14px;background:rgba(255,107,53,0.12);border:1px solid rgba(255,107,53,0.3);border-radius:7px;color:#FF6B35;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer">↻ Retry Scan</button>'
-              +'</div>';
+            st.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:8px"><span>✅</span><span style="font-size:13px;color:#30D158;font-weight:600">'+d.items.length+' items found'+(d.tax>0?' · Tax $'+parseFloat(d.tax).toFixed(2):'')+'! Photo saved 📸</span></div>';
+            try { const pid=window._currentPendingId; if(pid){const pending=JSON.parse(localStorage.getItem('raven_pending_receipts')||'[]');const idx=pending.findIndex(p=>p.id===pid);if(idx>=0){pending[idx].scanned=true;localStorage.setItem('raven_pending_receipts',JSON.stringify(pending));}} } catch(e) {}
+            return;
           }
+
+          // Partial success — got total but no line items
+          if (d.success && d.total > 0 && (!d.items || d.items.length === 0)) {
+            if (!document.getElementById('r-name').value && d.bill_name) document.getElementById('r-name').value = d.bill_name;
+            document.getElementById('r-total').value = parseFloat(d.total).toFixed(2); updateEven();
+            setSplit('even');
+            st.innerHTML = '<div style="padding:10px 14px;background:rgba(255,152,0,0.07);border:1px solid rgba(255,152,0,0.25);border-radius:8px"><div style="font-size:13px;color:#FFA726;font-weight:600;margin-bottom:4px">⚠️ Scanned total: $'+parseFloat(d.total).toFixed(2)+' — line items unclear</div><div style="font-size:12px;color:#9896A8">Total filled in. Add items manually or split evenly.</div></div>';
+            return;
+          }
+
+          // Server error
+          if (d.error && (d.error.includes('API key') || d.error.includes('Rate limit'))) {
+            st.innerHTML = '<div style="padding:10px 14px;background:rgba(255,107,53,0.07);border:1px solid rgba(255,107,53,0.25);border-radius:8px"><div style="font-size:13px;color:#FF6B35;font-weight:600">⚠️ '+d.error+'</div></div>';
+            return;
+          }
+
+          // Retry
+          if (attempt < 3) return doScan(attempt+1);
+
+          st.innerHTML = '<div style="padding:10px 14px;background:rgba(255,107,53,0.07);border:1px solid rgba(255,107,53,0.25);border-radius:8px">'
+            +'<div style="font-size:13px;color:#FF6B35;font-weight:600;margin-bottom:6px">Still could not scan — enter manually or try again later</div>'
+            +'<div style="font-size:12px;color:#9896A8;margin-bottom:8px">Your photo is saved. Enter details manually or retry.</div>'
+            +'<button onclick="retryLastScan()" style="padding:6px 14px;background:rgba(255,107,53,0.12);border:1px solid rgba(255,107,53,0.3);border-radius:7px;color:#FF6B35;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer">↻ Retry Scan</button>'
+            +'</div>';
         } catch(e) {
           clearTimeout(timer);
           if (attempt < 3) return doScan(attempt+1);
-          st.innerHTML='<div style="padding:10px 14px;background:rgba(255,107,53,0.07);border:1px solid rgba(255,107,53,0.25);border-radius:8px">'
+          st.innerHTML = '<div style="padding:10px 14px;background:rgba(255,107,53,0.07);border:1px solid rgba(255,107,53,0.25);border-radius:8px">'
             +'<div style="font-size:13px;color:#FF6B35;font-weight:600;margin-bottom:6px">⚠️ Server waking up — photo is saved!</div>'
-            +'<div style="font-size:12px;color:#9896A8;margin-bottom:8px">Your receipt photo is stored on this device. Enter details manually or retry the scan.</div>'
+            +'<div style="font-size:12px;color:#9896A8;margin-bottom:8px">Enter details manually or retry.</div>'
             +'<button onclick="retryLastScan()" style="padding:6px 14px;background:rgba(255,107,53,0.12);border:1px solid rgba(255,107,53,0.3);border-radius:7px;color:#FF6B35;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer">↻ Retry Scan</button>'
             +'</div>';
         }
