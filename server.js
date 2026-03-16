@@ -1437,40 +1437,109 @@ function applyNameAndAvatar(firstName, avatarUrl) {
     // Apply what we know immediately from localStorage/URL
     applyNameAndAvatar(firstName, local.avatar_url || '');
 
-    // If localStorage has no avatar, fetch from Supabase session
-    if (!local.avatar_url) {
-      try {
-        // Get current session token
-        const sessResp = await fetch(SUPA_URL + '/auth/v1/user', {
-          headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + (local.access_token || '') }
+    // Always try to fetch fresh avatar + name from Supabase
+    try {
+      // Find the Supabase session token — key format varies by supabase-js version
+      let sbSession = null;
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && (k.includes('auth-token') || k.includes('supabase.auth'))) {
+          try { sbSession = JSON.parse(localStorage.getItem(k)); break; } catch(e) {}
+        }
+      }
+      const accessToken = sbSession?.access_token;
+      const userId = sbSession?.user?.id;
+      if (accessToken && userId) {
+        const profResp = await fetch(SUPA_URL + '/rest/v1/profiles?select=first_name,avatar_url&id=eq.' + userId, {
+          headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + accessToken, 'Accept': 'application/json' }
         });
-        // More reliable: use the stored session from supabase-js if available
-        const sbSession = JSON.parse(localStorage.getItem('sb-ffjpzkpdumdcwnakpaje-auth-token') || 'null');
-        const accessToken = sbSession?.access_token;
-        if (accessToken) {
-          const profResp = await fetch(SUPA_URL + '/rest/v1/profiles?select=first_name,avatar_url&id=eq.' + sbSession.user.id, {
-            headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + accessToken, 'Accept': 'application/json' }
-          });
-          if (profResp.ok) {
-            const profiles = await profResp.json();
-            if (profiles && profiles.length > 0) {
-              const p = profiles[0];
-              const fn = p.first_name || firstName;
-              const av = p.avatar_url || '';
-              // Update localStorage cache
-              localStorage.setItem('raven_profile', JSON.stringify({ ...local, first_name: fn, avatar_url: av, user_id: sbSession.user.id }));
-              applyNameAndAvatar(fn, av);
-            }
+        if (profResp.ok) {
+          const profiles = await profResp.json();
+          if (profiles && profiles.length > 0) {
+            const p = profiles[0];
+            const fn = p.first_name || firstName;
+            const av = p.avatar_url || '';
+            localStorage.setItem('raven_profile', JSON.stringify({ ...local, first_name: fn, avatar_url: av, user_id: userId }));
+            applyNameAndAvatar(fn, av);
           }
         }
-      } catch(e) { /* best effort — no avatar is fine */ }
-    }
+      }
+    } catch(e) { /* best effort */ }
   } catch(e) {}
 })();
 
 // ── AUTO-OPEN receipt form ──
 if (new URLSearchParams(window.location.search).get('action') === 'receipt') {
   setTimeout(() => { document.getElementById('receipt-form-wrap').style.display='block'; document.getElementById('open-receipt-btn').style.display='none'; }, 300);
+}
+
+// ── PENDING RECEIPTS — check for unscanned photos saved during offline ──
+(function checkPendingReceipts() {
+  try {
+    const pending = JSON.parse(localStorage.getItem('raven_pending_receipts') || '[]');
+    const unscanned = pending.filter(p => !p.scanned && p.tripId === TRIP_ID);
+    if (unscanned.length === 0) return;
+    // Show banner
+    const banner = document.createElement('div');
+    banner.id = 'pending-receipts-banner';
+    banner.style.cssText = 'margin:12px 0;padding:14px 16px;background:rgba(255,107,53,0.08);border:1px solid rgba(255,107,53,0.25);border-radius:12px;display:flex;align-items:center;justify-content:space-between;gap:12px';
+    banner.innerHTML = '<div><div style="font-size:13px;font-weight:700;color:#FF6B35;margin-bottom:2px">📸 ' + unscanned.length + ' unscanned receipt photo' + (unscanned.length>1?'s':'') + ' saved on this device</div>'
+      + '<div style="font-size:12px;color:#9896A8">Tap to retry scanning when the server is available</div></div>'
+      + '<button onclick="retryPendingScans()" style="padding:8px 14px;background:rgba(255,107,53,0.15);border:1px solid rgba(255,107,53,0.35);border-radius:8px;color:#FF6B35;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0">↻ Retry</button>';
+    const firstSec = document.querySelector('.sec');
+    if (firstSec) firstSec.parentNode.insertBefore(banner, firstSec);
+  } catch(e) {}
+})();
+
+async function retryPendingScans() {
+  try {
+    const pending = JSON.parse(localStorage.getItem('raven_pending_receipts') || '[]');
+    const unscanned = pending.filter(p => !p.scanned && p.tripId === TRIP_ID);
+    if (unscanned.length === 0) { toast('No pending receipts to scan'); return; }
+    const banner = document.getElementById('pending-receipts-banner');
+    if (banner) banner.innerHTML = '<div style="font-size:13px;color:#FF6B35;font-weight:600">↻ Scanning saved receipts...</div>';
+    // Load the first unscanned receipt into the form and trigger scan
+    const first = unscanned[0];
+    imgBase64 = first.imageBase64;
+    window._currentPendingId = first.id;
+    // Show the receipt form
+    document.getElementById('receipt-form-wrap').style.display = 'block';
+    document.getElementById('open-receipt-btn').style.display = 'none';
+    // Show preview
+    document.getElementById('r-preview').src = 'data:' + (first.mediaType||'image/jpeg') + ';base64,' + first.imageBase64;
+    document.getElementById('r-preview').style.display = 'block';
+    document.getElementById('r-empty').style.display = 'none';
+    // Show scan status and fire scan
+    const st = document.getElementById('r-scan-status');
+    st.style.display = 'block';
+    st.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:8px"><div class="spinner"></div><span style="font-size:13px;color:#C084FC;font-weight:600">Scanning saved receipt...</span></div>';
+    document.getElementById('receipt-form-wrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Reuse the doScan logic by dispatching through the file change path
+    // Trigger the scan directly using stored base64
+    try { await Promise.race([fetch(BACKEND+'/'), new Promise(r=>setTimeout(r,20000))]); } catch(e) {}
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 60000);
+    const r = await fetch(BACKEND+'/demo/scan-receipt', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ image: imgBase64, mediaType: first.mediaType||'image/jpeg' }), signal: controller.signal });
+    const d = await r.json();
+    if (d.success && d.items && d.items.length) {
+      if (d.bill_name && !document.getElementById('r-name').value) document.getElementById('r-name').value = d.bill_name;
+      const tot = d.total || d.items.reduce((s,i)=>s+i.price,0);
+      document.getElementById('r-total').value = tot.toFixed(2); updateEven();
+      tripItems = d.items.map((item,idx)=>({id:Date.now()+idx,name:item.name,price:parseFloat(item.price)||0,assignees:[]}));
+      setSplit('itemized'); renderItems();
+      st.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:8px"><span>✅</span><span style="font-size:13px;color:#30D158;font-weight:600">' + d.items.length + ' items found from saved receipt!</span></div>';
+      // Mark scanned
+      const idx = pending.findIndex(p=>p.id===first.id);
+      if (idx>=0) { pending[idx].scanned=true; localStorage.setItem('raven_pending_receipts', JSON.stringify(pending)); }
+      if (banner) banner.remove();
+    } else {
+      st.innerHTML = '<div style="padding:10px 14px;background:rgba(255,68,68,0.07);border:1px solid rgba(255,68,68,0.2);border-radius:8px;font-size:13px;color:#FF6B6B">Still couldn\'t scan — enter manually or try again later</div>';
+      if (banner) banner.innerHTML = '<div style="font-size:13px;color:#FF6B35;font-weight:600">📸 ' + unscanned.length + ' saved receipt' + (unscanned.length>1?'s':'') + ' — server still starting up, try again in a minute</div>';
+    }
+  } catch(e) {
+    const banner = document.getElementById('pending-receipts-banner');
+    if (banner) banner.innerHTML = '<div style="font-size:13px;color:#FF6B35">Server not ready yet — your photos are safe, try again shortly</div>';
+  }
 }
 
 // ── RECEIPT ACCORDION ──
@@ -1747,6 +1816,28 @@ function tripPhoto(file) {
       const c=document.createElement('canvas');c.width=w;c.height=h;
       c.getContext('2d').drawImage(img,0,0,w,h);
       imgBase64=c.toDataURL('image/jpeg',0.88).split(',')[1];
+
+      // ── SAVE TO LOCALSTORAGE IMMEDIATELY ──
+      // Receipt photo is stored offline as soon as it's uploaded.
+      // If AI scan fails, it can be retried later — photo is never lost.
+      try {
+        const pending = JSON.parse(localStorage.getItem('raven_pending_receipts') || '[]');
+        const pendingId = 'pending_' + Date.now();
+        pending.push({
+          id: pendingId,
+          tripId: TRIP_ID,
+          tripToken: TRIP_TOKEN,
+          imageBase64: imgBase64,
+          mediaType: file.type || 'image/jpeg',
+          savedAt: new Date().toISOString(),
+          scanned: false
+        });
+        // Keep max 10 pending receipts (each ~200kb compressed)
+        if (pending.length > 10) pending.shift();
+        localStorage.setItem('raven_pending_receipts', JSON.stringify(pending));
+        window._currentPendingId = pendingId;
+      } catch(storageErr) { console.warn('Could not save receipt offline:', storageErr); }
+
       const st=document.getElementById('r-scan-status');
       st.style.display='block';
       st.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:8px"><div class="spinner"></div><span style="font-size:13px;color:#C084FC;font-weight:600">Waking up AI server...</span></div>';
@@ -1773,16 +1864,33 @@ function tripPhoto(file) {
             document.getElementById('r-total').value=tot.toFixed(2); updateEven();
             tripItems=d.items.map((item,idx)=>({id:Date.now()+idx,name:item.name,price:parseFloat(item.price)||0,assignees:[]}));
             setSplit('itemized'); renderItems();
-            st.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:8px"><span>✅</span><span style="font-size:13px;color:#30D158;font-weight:600">'+d.items.length+' items found!</span></div>';
+            st.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:8px"><span>✅</span><span style="font-size:13px;color:#30D158;font-weight:600">'+d.items.length+' items found! Photo saved 📸</span></div>';
+            // Mark pending receipt as successfully scanned
+            try {
+              const pid = window._currentPendingId;
+              if (pid) {
+                const pending = JSON.parse(localStorage.getItem('raven_pending_receipts')||'[]');
+                const idx = pending.findIndex(p=>p.id===pid);
+                if (idx>=0) { pending[idx].scanned=true; localStorage.setItem('raven_pending_receipts', JSON.stringify(pending)); }
+              }
+            } catch(e) {}
           } else if (attempt < 3) {
             return doScan(attempt+1);
           } else {
-            st.innerHTML='<div style="padding:10px 14px;background:rgba(255,68,68,0.07);border:1px solid rgba(255,68,68,0.2);border-radius:8px;font-size:13px;color:#FF6B6B">Could not detect items — enter manually below</div>';
+            st.innerHTML='<div style="padding:10px 14px;background:rgba(255,107,53,0.07);border:1px solid rgba(255,107,53,0.25);border-radius:8px">'
+              +'<div style="font-size:13px;color:#FF6B35;font-weight:600;margin-bottom:6px">⚠️ AI couldn\'t read it — but your photo is saved!</div>'
+              +'<div style="font-size:12px;color:#9896A8;margin-bottom:8px">You can enter amounts manually now, or tap Retry Scan later when the server is back.</div>'
+              +'<button onclick="doScan(1)" style="padding:6px 14px;background:rgba(255,107,53,0.12);border:1px solid rgba(255,107,53,0.3);border-radius:7px;color:#FF6B35;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer">↻ Retry Scan</button>'
+              +'</div>';
           }
         } catch(e) {
           clearTimeout(timer);
           if (attempt < 3) return doScan(attempt+1);
-          st.innerHTML='<div style="padding:10px 14px;background:rgba(255,68,68,0.07);border:1px solid rgba(255,68,68,0.2);border-radius:8px;font-size:13px;color:#FF6B6B">Server is starting up — please try again in 15 seconds</div>';
+          st.innerHTML='<div style="padding:10px 14px;background:rgba(255,107,53,0.07);border:1px solid rgba(255,107,53,0.25);border-radius:8px">'
+            +'<div style="font-size:13px;color:#FF6B35;font-weight:600;margin-bottom:6px">⚠️ Server waking up — photo is saved!</div>'
+            +'<div style="font-size:12px;color:#9896A8;margin-bottom:8px">Your receipt photo is stored on this device. Enter details manually or retry the scan.</div>'
+            +'<button onclick="doScan(1)" style="padding:6px 14px;background:rgba(255,107,53,0.12);border:1px solid rgba(255,107,53,0.3);border-radius:7px;color:#FF6B35;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer">↻ Retry Scan</button>'
+            +'</div>';
         }
       }
       doScan(1);
