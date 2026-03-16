@@ -2089,6 +2089,10 @@ Return ONLY the JSON, no other text.` }
   }
 });
 
+app.get('/ping', (req, res) => {
+  res.json({ ok: true, ts: Date.now() });
+});
+
 app.get('/', (req, res) => {
   res.json({ status: 'RAVEN is live 🪶', version: '2.0.0', twilio: TWILIO_READY ? 'connected' : 'pending' });
 });
