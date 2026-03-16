@@ -953,7 +953,7 @@ app.get('/trip/:tripId', async (req, res) => {
     : `<div style="max-width:560px;margin:16px auto 0;padding:0 20px"><div id="cover-empty" style="width:100%;height:100px;border:2px dashed rgba(124,58,237,0.3);border-radius:16px;display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;background:rgba(124,58,237,0.03)"><span style="font-size:20px">🖼</span><span style="font-size:13px;color:#6E6B80;font-weight:500">Add a cover photo for this trip</span></div><input id="cover-upload" type="file" accept="image/*" style="display:none"></div>`;
 
   const avatarRow = people.map((p, i) =>
-    `<div style="width:32px;height:32px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};border:2px solid #06060A;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0;margin-left:${i===0?'0':'-8px'}">${esc(p[0].toUpperCase())}</div>`
+    `<div data-person-avatar="${esc(p)}" style="width:32px;height:32px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};border:2px solid #06060A;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0;margin-left:${i===0?'0':'-8px'};overflow:hidden">${esc(p[0].toUpperCase())}</div>`
   ).join('');
 
   let countdownHTML = '';
@@ -973,7 +973,7 @@ app.get('/trip/:tripId', async (req, res) => {
   const owesRows = people.map((p, i) =>
     `<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)">
       <div style="display:flex;align-items:center;gap:10px">
-        <div style="width:34px;height:34px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff">${esc(p[0].toUpperCase())}</div>
+        <div data-person-avatar="${esc(p)}" style="width:34px;height:34px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;overflow:hidden">${esc(p[0].toUpperCase())}</div>
         <div><div style="font-weight:600;font-size:14px">${esc(p)}</div><div style="font-size:11px;color:${(totals[p]||0)>0?'#6E6B80':'#30D158'}">${(totals[p]||0)>0?'outstanding':'all settled ✓'}</div></div>
       </div>
       <div style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${(totals[p]||0)>0?'#30D158':'#9896A8'}">$${(totals[p]||0).toFixed(2)}</div>
@@ -1033,7 +1033,7 @@ app.get('/trip/:tripId', async (req, res) => {
             return `<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:12px 14px">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
                 <div style="display:flex;align-items:center;gap:8px">
-                  <div style="width:28px;height:28px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff">${esc(person[0].toUpperCase())}</div>
+                  <div data-person-avatar="${esc(person)}" style="width:28px;height:28px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;overflow:hidden;flex-shrink:0">${esc(person[0].toUpperCase())}</div>
                   <span style="font-size:14px;font-weight:600">${esc(person)}</span>
                 </div>
                 <div style="text-align:right">
@@ -1542,7 +1542,34 @@ async function retryPendingScans() {
   }
 }
 
-// ── RECEIPT ACCORDION ──
+// ── INJECT CURRENT USER AVATAR into receipt breakdowns ──
+// Receipts are server-rendered with initials — this swaps in the real photo for the logged-in user
+(function injectUserAvatars() {
+  try {
+    const profile = JSON.parse(localStorage.getItem('raven_profile') || '{}');
+    const firstName = profile.first_name || '';
+    const avatarUrl = profile.avatar_url || '';
+    if (!firstName) return; // can't match without a name
+
+    // Run after a short delay so avatar fetch has time to complete
+    setTimeout(() => {
+      const updatedProfile = JSON.parse(localStorage.getItem('raven_profile') || '{}');
+      const av = updatedProfile.avatar_url || '';
+      const fn = updatedProfile.first_name || firstName;
+      if (!fn) return;
+
+      // Find all avatar circles that show this user's initial
+      document.querySelectorAll('[data-person-avatar]').forEach(el => {
+        if (el.getAttribute('data-person-avatar').toLowerCase() === fn.toLowerCase()) {
+          if (av) {
+            el.innerHTML = '<img src="' + av + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%">';
+            el.style.background = 'transparent';
+          }
+        }
+      });
+    }, 1200); // wait for avatar fetch to complete
+  } catch(e) {}
+})();
 function toggleReceipts() {
   const body = document.getElementById('receipts-body');
   const btn  = document.getElementById('receipts-toggle');
