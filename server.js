@@ -857,10 +857,9 @@ app.get('/bill/:billId', async (req, res) => {
 app.get('/trip/:tripId', async (req, res) => {
   const { tripId } = req.params;
   const token = req.query.t;
-  const inviteMode = req.query.invite === '1';
 
   const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
-  if (!trip) return res.status(404).send('<!DOCTYPE html><html><head><meta charset="UTF-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px}</style></head><body><div><div style="font-size:52px;margin-bottom:16px">🪶</div><h2 style="font-size:24px;margin-bottom:8px">Trip Not Found</h2><p style="color:#6E6B80">This trip link may have expired or been deleted.</p></div></body></html>');
+  if (!trip) return res.status(404).send('<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center}</style></head><body><div><div style="font-size:52px">🪶</div><h2>Trip Not Found</h2></div></body></html>');
 
   let inviteToken = trip.invite_token;
   if (!inviteToken) {
@@ -870,40 +869,18 @@ app.get('/trip/:tripId', async (req, res) => {
   }
 
   const validInvite = token === trip.invite_token;
-  const validShare = token === trip.share_token;
+  const validShare  = token === trip.share_token;
+
   if (!validShare && !validInvite) {
-    return res.status(403).send('<!DOCTYPE html><html><head><meta charset="UTF-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px}</style></head><body><div><div style="font-size:52px;margin-bottom:16px">🔒</div><h2 style="font-size:24px;margin-bottom:8px">Private Trip</h2><p style="color:#6E6B80">Ask the trip creator to share the correct link with you.</p></div></body></html>');
+    return res.status(403).send('<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center}</style></head><body><div><div style="font-size:52px">🔒</div><h2>Private Trip</h2><p style="color:#6E6B80">Ask the trip creator to share the correct link.</p></div></body></html>');
   }
 
+  // Invite-only link → show join page
   if (validInvite && !validShare) {
-    const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Join ✈️ ${trip.name} — RAVEN</title>
-  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Epilogue:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <style>
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:'Epilogue',sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center}
-  </style>
-</head>
-<body>
-  <div style="position:relative;z-index:1;max-width:400px;width:100%">
-    ${trip.cover_image ? `<div style="width:100%;height:160px;border-radius:20px;overflow:hidden;margin-bottom:24px;border:1px solid rgba(255,255,255,0.1)"><img src="data:image/jpeg;base64,${trip.cover_image}" style="width:100%;height:100%;object-fit:cover"></div>` : ''}
-    <div style="font-size:40px;margin-bottom:12px">✈️</div>
-    <div style="font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:0.05em;margin-bottom:8px">${trip.name}</div>
-    <div style="font-size:14px;color:#6E6B80;margin-bottom:32px">You've been invited to join this trip hub on RAVEN</div>
-    <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:24px;margin-bottom:16px">
-      <div style="font-size:13px;color:#6E6B80;margin-bottom:16px">Create a free RAVEN account to join the trip, add receipts, and track who owes what.</div>
-      <a href="https://work46121-gif.github.io/raven-site/dashboard.html?join_trip=${tripId}&join_token=${trip.invite_token}" style="display:block;width:100%;padding:15px;background:#30D158;color:#000;border-radius:12px;font-family:'Epilogue',sans-serif;font-size:15px;font-weight:800;text-decoration:none;margin-bottom:10px">🪶 Create Account &amp; Join Trip</a>
-      <a href="https://work46121-gif.github.io/raven-site/dashboard.html?join_trip=${tripId}&join_token=${trip.invite_token}&signin=1" style="display:block;width:100%;padding:13px;background:transparent;border:1px solid rgba(255,255,255,0.12);color:#9896A8;border-radius:12px;font-family:'Epilogue',sans-serif;font-size:14px;font-weight:600;text-decoration:none">Already have an account? Sign In</a>
-    </div>
-    <div style="font-size:11px;color:#6E6B80">Powered by <b style="color:#C084FC">RAVEN</b> — Scan. Share. Settle.</div>
-  </div>
-</body>
-</html>`;
-    return res.send(html);
+    const coverImg = trip.cover_image
+      ? `<div style="width:100%;height:160px;border-radius:20px;overflow:hidden;margin-bottom:24px"><img src="data:image/jpeg;base64,${trip.cover_image}" style="width:100%;height:100%;object-fit:cover"></div>`
+      : '';
+    return res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Join ${trip.name} — RAVEN</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center}</style></head><body><div style="max-width:400px;width:100%">${coverImg}<div style="font-size:40px;margin-bottom:12px">✈️</div><div style="font-size:30px;font-weight:800;margin-bottom:8px">${trip.name}</div><div style="font-size:14px;color:#6E6B80;margin-bottom:32px">You've been invited to join this trip hub on RAVEN</div><div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:24px"><a href="https://work46121-gif.github.io/raven-site/dashboard.html?join_trip=${tripId}&join_token=${trip.invite_token}" style="display:block;width:100%;padding:15px;background:#30D158;color:#000;border-radius:12px;font-size:15px;font-weight:800;text-decoration:none;margin-bottom:10px">🪶 Create Account &amp; Join Trip</a><a href="https://work46121-gif.github.io/raven-site/dashboard.html?join_trip=${tripId}&join_token=${trip.invite_token}&signin=1" style="display:block;width:100%;padding:13px;background:transparent;border:1px solid rgba(255,255,255,0.12);color:#9896A8;border-radius:12px;font-size:14px;font-weight:600;text-decoration:none">Already have an account? Sign In</a></div></div></body></html>`);
   }
 
   const { data: receipts } = await supabase.from('trip_receipts').select('*').eq('trip_id', tripId).order('created_at', { ascending: false });
@@ -911,809 +888,680 @@ app.get('/trip/:tripId', async (req, res) => {
   const people = Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people || '[]');
 
   const totals = {};
-  people.forEach(p => { totals[p.toLowerCase()] = 0; });
+  people.forEach(p => { totals[p] = 0; });
   (receipts || []).forEach(r => {
     try {
       const splits = typeof r.splits === 'string' ? JSON.parse(r.splits) : (r.splits || {});
       Object.entries(splits).forEach(([person, amt]) => {
-        const key = person.toLowerCase();
-        if (totals[key] !== undefined) totals[key] += parseFloat(amt) || 0;
+        // match case-insensitively
+        const key = Object.keys(totals).find(k => k.toLowerCase() === person.toLowerCase());
+        if (key !== undefined) totals[key] += parseFloat(amt) || 0;
       });
     } catch(e) {}
   });
   const grandTotal = Object.values(totals).reduce((s, v) => s + v, 0);
 
-  const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : `https://raven-backend-production-fb1f.up.railway.app`;
-  const tripUrl = `${baseUrl}/trip/${tripId}?t=${trip.share_token}`;
+  const baseUrl   = process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : `https://raven-backend-production-fb1f.up.railway.app`;
+  const tripUrl   = `${baseUrl}/trip/${tripId}?t=${trip.share_token}`;
   const inviteUrl = `${baseUrl}/trip/${tripId}?t=${trip.invite_token}&invite=1`;
 
-  const avatarColors = [
-    'linear-gradient(135deg,#7C3AED,#A855F7)',
-    'linear-gradient(135deg,#E8633A,#FF6B35)',
-    'linear-gradient(135deg,#0EA5E9,#7C3AED)',
-    'linear-gradient(135deg,#30D158,#0EA5E9)',
-    'linear-gradient(135deg,#F59E0B,#EF4444)',
-    'linear-gradient(135deg,#EC4899,#8B5CF6)',
-    'linear-gradient(135deg,#14B8A6,#3B82F6)',
-    'linear-gradient(135deg,#84CC16,#10B981)',
-  ];
+  // Build server-side HTML snippets safely (no user content in JS template literals)
+  const avatarColors = ['linear-gradient(135deg,#7C3AED,#A855F7)','linear-gradient(135deg,#E8633A,#FF6B35)','linear-gradient(135deg,#0EA5E9,#7C3AED)','linear-gradient(135deg,#30D158,#0EA5E9)','linear-gradient(135deg,#F59E0B,#EF4444)','linear-gradient(135deg,#EC4899,#8B5CF6)','linear-gradient(135deg,#14B8A6,#3B82F6)','linear-gradient(135deg,#84CC16,#10B981)'];
 
-  const receiptRowsHtml = (receipts || []).map(r => {
+  function esc(str) { return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  const coverHTML = trip.cover_image
+    ? `<div style="max-width:560px;margin:0 auto;padding:16px 20px 0"><div style="position:relative;width:100%;height:190px;border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,0.07)"><img src="data:image/jpeg;base64,${trip.cover_image}" id="cover-img" style="width:100%;height:100%;object-fit:cover"><button id="cover-change-btn" style="position:absolute;bottom:10px;right:10px;padding:7px 14px;background:rgba(0,0,0,0.7);border:1px solid rgba(255,255,255,0.2);border-radius:8px;color:#fff;font-family:'Epilogue',sans-serif;font-size:12px;font-weight:600;cursor:pointer">📷 Change</button><input id="cover-upload" type="file" accept="image/*" style="display:none"></div></div>`
+    : `<div style="max-width:560px;margin:16px auto 0;padding:0 20px"><div id="cover-empty" style="width:100%;height:100px;border:2px dashed rgba(124,58,237,0.3);border-radius:16px;display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;background:rgba(124,58,237,0.03)"><span style="font-size:20px">🖼</span><span style="font-size:13px;color:#6E6B80;font-weight:500">Add a cover photo for this trip</span></div><input id="cover-upload" type="file" accept="image/*" style="display:none"></div>`;
+
+  const avatarRow = people.map((p, i) =>
+    `<div style="width:32px;height:32px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};border:2px solid #06060A;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0;margin-left:${i===0?'0':'-8px'}">${esc(p[0].toUpperCase())}</div>`
+  ).join('');
+
+  let countdownHTML = '';
+  if (trip.trip_date) {
+    const diff = new Date(trip.trip_date + 'T12:00:00').getTime() - Date.now();
+    if (diff > 0) {
+      const days = Math.ceil(diff / 86400000);
+      countdownHTML = `<div style="background:linear-gradient(135deg,rgba(124,58,237,0.12),rgba(48,209,88,0.08));border:1px solid rgba(124,58,237,0.22);border-radius:16px;padding:20px;text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#C084FC;font-weight:700;margin-bottom:8px">✈️ Countdown to Trip</div><div style="font-size:72px;font-weight:900;line-height:1;color:#F0EEF8;margin-bottom:4px">${days}</div><div style="font-size:13px;color:#9896A8">day${days!==1?'s':''} to go · ${new Date(trip.trip_date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</div></div>`;
+    } else {
+      const ago = Math.abs(Math.floor(diff/86400000));
+      countdownHTML = `<div style="background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.18);border-radius:16px;padding:16px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:600">✅ Trip was ${ago>0?ago+' days ago':'today'} · ${new Date(trip.trip_date+'T12:00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</div></div>`;
+    }
+  } else {
+    countdownHTML = `<div style="background:#13131A;border:1px dashed rgba(255,255,255,0.08);border-radius:14px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="font-size:13px;color:#6E6B80">📅 No trip date set</div><div style="font-size:11px;color:#6E6B80;font-style:italic">Set date in settings</div></div>`;
+  }
+
+  const owesRows = people.map((p, i) =>
+    `<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:34px;height:34px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff">${esc(p[0].toUpperCase())}</div>
+        <div><div style="font-weight:600;font-size:14px">${esc(p)}</div><div style="font-size:11px;color:${(totals[p]||0)>0?'#6E6B80':'#30D158'}">${(totals[p]||0)>0?'outstanding':'all settled ✓'}</div></div>
+      </div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${(totals[p]||0)>0?'#30D158':'#9896A8'}">$${(totals[p]||0).toFixed(2)}</div>
+    </div>`
+  ).join('');
+
+  const receiptRows = (receipts||[]).map(r => {
     let splitsHtml = '';
     try {
-      const sp = typeof r.splits === 'string' ? JSON.parse(r.splits) : (r.splits || {});
-      splitsHtml = Object.entries(sp).filter(([,a]) => parseFloat(a) > 0).map(([p,a]) =>
-        `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(255,255,255,0.05);border-radius:6px;font-size:11px;color:#9896A8">${p} <b style="color:#F0EEF8">$${parseFloat(a).toFixed(2)}</b></span>`
+      const sp = typeof r.splits==='string' ? JSON.parse(r.splits) : (r.splits||{});
+      splitsHtml = Object.entries(sp).filter(([,a])=>parseFloat(a)>0).map(([p,a])=>
+        `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(255,255,255,0.05);border-radius:6px;font-size:11px;color:#9896A8">${esc(p)} <b style="color:#F0EEF8">$${parseFloat(a).toFixed(2)}</b></span>`
       ).join('');
     } catch(e) {}
     return `<div style="padding:16px;border-bottom:1px solid rgba(255,255,255,0.05)">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
-        <div><div style="font-weight:700;font-size:14px;margin-bottom:2px">${r.name||'Receipt'}</div>
-        <div style="font-size:11px;color:#6E6B80">${new Date(r.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div></div>
+        <div><div style="font-weight:700;font-size:14px;margin-bottom:2px">${esc(r.name||'Receipt')}</div><div style="font-size:11px;color:#6E6B80">${new Date(r.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div></div>
         <span style="font-size:17px;font-weight:800;color:#30D158;font-family:monospace;flex-shrink:0;margin-left:12px">$${parseFloat(r.total||0).toFixed(2)}</span>
       </div>
-      ${splitsHtml ? `<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px">${splitsHtml}</div>` : ''}
+      ${splitsHtml?`<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px">${splitsHtml}</div>`:''}
     </div>`;
   }).join('');
 
-  const commentsHtml = (comments || []).map(c => {
-    const initials = c.author_name ? c.author_name[0].toUpperCase() : '?';
+  const commentRows = (comments||[]).map(c => {
+    const initials = c.author_name ? esc(c.author_name[0].toUpperCase()) : '?';
     const timeStr = new Date(c.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
     return `<div style="display:flex;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)">
       <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#30D158);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0">${initials}</div>
       <div style="flex:1;min-width:0">
-        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
-          <span style="font-size:13px;font-weight:700">${c.author_name || 'Anonymous'}</span>
-          <span style="font-size:11px;color:#6E6B80">${timeStr}</span>
-        </div>
-        ${c.body ? `<div style="font-size:14px;line-height:1.6;color:#E0DEF0;word-break:break-word;margin-bottom:${c.gif_url ? '8px' : '0'}">${c.body}</div>` : ''}
-        ${c.gif_url ? `<img src="${c.gif_url}" style="max-width:200px;border-radius:10px;display:block">` : ''}
+        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px"><span style="font-size:13px;font-weight:700">${esc(c.author_name||'Anonymous')}</span><span style="font-size:11px;color:#6E6B80">${timeStr}</span></div>
+        ${c.body?`<div style="font-size:14px;line-height:1.6;color:#E0DEF0;word-break:break-word">${esc(c.body)}</div>`:''}
+        ${c.gif_url?`<img src="${esc(c.gif_url)}" style="max-width:200px;border-radius:10px;display:block;margin-top:6px">`:''}
       </div>
     </div>`;
   }).join('');
 
-  // Safely escape values for JS embedding
-  // tripName is embedded safely via JSON.stringify in the script block
-  const tripDateEscaped = trip.trip_date || '';
+  const perPersonInputs = people.map(p =>
+    `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px"><span style="color:#9896A8">${esc(p)}</span><span id="ep-${esc(p.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,''))}" style="color:#30D158;font-weight:600">$0.00</span></div>`
+  ).join('');
 
-  const html = `<!DOCTYPE html>
+  const existingMemberRows = people.map((p, i) =>
+    `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#13131A;border:1px solid rgba(255,255,255,0.07);border-radius:10px"><div style="display:flex;align-items:center;gap:9px"><div style="width:28px;height:28px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff">${esc(p[0].toUpperCase())}</div><span style="font-size:13px;font-weight:600">${esc(p)}</span></div><span style="font-size:11px;color:#6E6B80">existing</span></div>`
+  ).join('');
+
+  // All user-controlled data goes into a single JSON blob read by JS — NEVER interpolated into JS template literals
+  const pageData = JSON.stringify({
+    tripId,
+    shareToken: trip.share_token,
+    backendUrl: baseUrl,
+    tripUrl,
+    inviteUrl,
+    tripName: trip.name,
+    tripDate: trip.trip_date || '',
+    people,
+    hasCoverImage: !!trip.cover_image
+  });
+
+  res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-  <title>✈️ ${trip.name} — RAVEN</title>
-  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Epilogue:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <style>
-    *{box-sizing:border-box;margin:0;padding:0}
-    :root{--black:#06060A;--dark:#0C0C12;--dark2:#13131A;--dark3:#1A1A24;--border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);--white:#F0EEF8;--muted:#6E6B80;--muted2:#9896A8;--green:#30D158;--purple:#7C3AED;--purple2:#A855F7;--orange:#FF6B35}
-    body{font-family:'Epilogue',sans-serif;background:var(--black);color:var(--white);min-height:100vh;padding-bottom:60px}
-    .hdr{position:sticky;top:0;background:rgba(6,6,10,0.95);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid var(--border);z-index:100}
-    .hdr-inner{max-width:560px;margin:0 auto;height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 20px}
-    .hdr-logo{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:0.15em;background:linear-gradient(135deg,var(--white),var(--purple2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-decoration:none}
-    .hdr-id{font-size:10px;color:var(--muted);background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:12px;font-weight:600;letter-spacing:0.08em}
-    .sec{max-width:560px;margin:20px auto 0;padding:0 20px;position:relative;z-index:1}
-    .sec-lbl{font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:var(--muted);font-weight:700;margin-bottom:10px}
-    .card{background:var(--dark);border:1px solid var(--border);border-radius:16px;overflow:hidden}
-    .btn-green{width:100%;padding:15px;background:var(--green);color:#000;border:none;border-radius:12px;font-family:'Epilogue',sans-serif;font-size:15px;font-weight:800;cursor:pointer}
-    .btn-outline{width:100%;padding:13px;background:transparent;border:1px solid var(--border2);border-radius:12px;color:var(--muted2);font-family:'Epilogue',sans-serif;font-size:14px;font-weight:600;cursor:pointer}
-    .btn-purple{width:100%;padding:13px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.25);border-radius:12px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:14px;font-weight:600;cursor:pointer}
-    .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);backdrop-filter:blur(12px);z-index:500;align-items:flex-end;justify-content:center}
-    .modal-overlay.open{display:flex!important}
-    .modal-sheet{background:var(--dark);border:1px solid var(--border2);border-radius:24px 24px 0 0;padding:24px 20px 52px;width:100%;max-width:520px;max-height:85vh;overflow-y:auto}
-    .modal-handle{width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 20px}
-    .modal-title{font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:0.05em;margin-bottom:4px}
-    input,textarea{background:var(--dark2);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:'Epilogue',sans-serif;font-size:14px;outline:none;padding:12px 16px;width:100%}
-    input:focus,textarea:focus{border-color:var(--purple)}
-    .split-btn{flex:1;padding:10px;border-radius:8px;font-family:'Epilogue',sans-serif;font-size:13px;font-weight:600;cursor:pointer;background:var(--dark3);border:1px solid var(--border);color:var(--muted2)}
-    .split-btn.ae{background:rgba(48,209,88,0.12);border-color:rgba(48,209,88,0.3);color:var(--green)}
-    .split-btn.ai{background:rgba(124,58,237,0.12);border-color:rgba(124,58,237,0.3);color:var(--purple2)}
-    @keyframes spin{to{transform:rotate(360deg)}}
-    .spinner{width:16px;height:16px;border:2px solid rgba(124,58,237,0.3);border-top-color:var(--purple2);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0}
-    @keyframes blink{0%,100%{opacity:1}50%{opacity:0.4}}
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>✈️ ${esc(trip.name)} — RAVEN</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Epilogue:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--black:#06060A;--dark:#0C0C12;--dark2:#13131A;--border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);--white:#F0EEF8;--muted:#6E6B80;--muted2:#9896A8;--green:#30D158;--purple:#7C3AED;--purple2:#A855F7;--orange:#FF6B35}
+body{font-family:'Epilogue',sans-serif;background:var(--black);color:var(--white);min-height:100vh;padding-bottom:60px}
+.hdr{position:sticky;top:0;background:rgba(6,6,10,0.95);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);z-index:100}
+.hdr-inner{max-width:560px;margin:0 auto;height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 20px}
+.sec{max-width:560px;margin:20px auto 0;padding:0 20px}
+.sec-lbl{font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:var(--muted);font-weight:700;margin-bottom:10px}
+.card{background:var(--dark);border:1px solid var(--border);border-radius:16px;overflow:hidden}
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);backdrop-filter:blur(12px);z-index:500;align-items:flex-end;justify-content:center}
+.modal-bg.open{display:flex}
+.modal-box{background:var(--dark);border:1px solid var(--border2);border-radius:24px 24px 0 0;padding:24px 20px 52px;width:100%;max-width:520px;max-height:85vh;overflow-y:auto}
+.handle{width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 20px}
+.btn-g{width:100%;padding:15px;background:var(--green);color:#000;border:none;border-radius:12px;font-family:'Epilogue',sans-serif;font-size:15px;font-weight:800;cursor:pointer}
+.btn-o{width:100%;padding:13px;background:transparent;border:1px solid var(--border2);border-radius:12px;color:var(--muted2);font-family:'Epilogue',sans-serif;font-size:14px;font-weight:600;cursor:pointer}
+.btn-p{width:100%;padding:13px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.25);border-radius:12px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:14px;font-weight:600;cursor:pointer}
+input,textarea{background:var(--dark2);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:'Epilogue',sans-serif;font-size:14px;outline:none;padding:12px 16px;width:100%;transition:border-color 0.2s}
+input:focus,textarea:focus{border-color:var(--purple)}
+.spl{flex:1;padding:10px;border-radius:8px;font-family:'Epilogue',sans-serif;font-size:13px;font-weight:600;cursor:pointer;background:#1A1A24;border:1px solid var(--border);color:var(--muted2)}
+.spl.ae{background:rgba(48,209,88,0.12);border-color:rgba(48,209,88,0.3);color:var(--green)}
+.spl.ai{background:rgba(124,58,237,0.12);border-color:rgba(124,58,237,0.3);color:var(--purple2)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinner{width:16px;height:16px;border:2px solid rgba(124,58,237,0.3);border-top-color:var(--purple2);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0;display:inline-block}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.4}}
+</style>
 </head>
 <body>
 
-<div class="hdr">
-  <div class="hdr-inner">
-    <a href="https://work46121-gif.github.io/raven-site/" class="hdr-logo">🪶 RAVEN</a>
-    <div class="hdr-id">${tripId}</div>
-  </div>
-</div>
+<!-- All page data — safely JSON-encoded, never interpolated into JS -->
+<script id="page-data" type="application/json">${pageData}</script>
 
-<!-- COVER PHOTO -->
-${trip.cover_image
-  ? `<div style="max-width:560px;margin:0 auto;padding:16px 20px 0;position:relative;z-index:1">
-      <div style="position:relative;width:100%;height:190px;border-radius:16px;overflow:hidden;border:1px solid var(--border)">
-        <img src="data:image/jpeg;base64,${trip.cover_image}" id="cover-img" style="width:100%;height:100%;object-fit:cover">
-        <button onclick="document.getElementById('cover-upload').click()" style="position:absolute;bottom:10px;right:10px;padding:7px 14px;background:rgba(0,0,0,0.7);border:1px solid rgba(255,255,255,0.2);border-radius:8px;color:#fff;font-family:'Epilogue',sans-serif;font-size:12px;font-weight:600;cursor:pointer;backdrop-filter:blur(8px)">📷 Change</button>
-        <input id="cover-upload" type="file" accept="image/*" style="display:none" onchange="uploadCover(this)">
-      </div>
-    </div>`
-  : `<div style="max-width:560px;margin:16px auto 0;padding:0 20px;position:relative;z-index:1">
-      <div onclick="document.getElementById('cover-upload').click()" style="width:100%;height:100px;border:2px dashed rgba(124,58,237,0.3);border-radius:16px;display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;background:rgba(124,58,237,0.03)">
-        <span style="font-size:20px">🖼</span>
-        <span style="font-size:13px;color:var(--muted);font-weight:500">Add a cover photo for this trip</span>
-      </div>
-      <input id="cover-upload" type="file" accept="image/*" style="display:none" onchange="uploadCover(this)">
-    </div>`
-}
+<div class="hdr"><div class="hdr-inner">
+  <a href="https://work46121-gif.github.io/raven-site/" style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:0.15em;text-decoration:none;color:#F0EEF8">🪶 RAVEN</a>
+  <div style="font-size:10px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:12px;font-weight:600">${esc(tripId)}</div>
+</div></div>
 
-<!-- TRIP HERO -->
+${coverHTML}
+
 <div class="sec" style="margin-top:16px">
-  <div style="display:inline-flex;align-items:center;gap:6px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);padding:4px 12px;border-radius:12px;font-size:10px;font-weight:700;color:var(--green);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:12px">
-    <span style="width:5px;height:5px;border-radius:50%;background:var(--green);animation:blink 2s infinite"></span>
-    Trip Hub · Live
+  <div style="display:inline-flex;align-items:center;gap:6px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);padding:4px 12px;border-radius:12px;font-size:10px;font-weight:700;color:#30D158;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:12px">
+    <span style="width:5px;height:5px;border-radius:50%;background:#30D158;animation:blink 2s infinite"></span>Trip Hub · Live
   </div>
-  <div style="font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:0.04em;line-height:1;margin-bottom:8px">✈️ ${trip.name}</div>
-  <div style="font-size:13px;color:var(--muted);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+  <div style="font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:0.04em;line-height:1;margin-bottom:8px">✈️ ${esc(trip.name)}</div>
+  <div style="font-size:13px;color:#6E6B80;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
     <span>${people.length} people</span>
-    <span style="width:3px;height:3px;border-radius:50%;background:var(--border2)"></span>
-    <span>${(receipts||[]).length} receipt${(receipts||[]).length !== 1 ? 's' : ''}</span>
-    <span style="width:3px;height:3px;border-radius:50%;background:var(--border2)"></span>
-    <span style="color:var(--green);font-weight:600">$${grandTotal.toFixed(2)} total</span>
+    <span style="width:3px;height:3px;border-radius:50%;background:rgba(255,255,255,0.12)"></span>
+    <span>${(receipts||[]).length} receipt${(receipts||[]).length!==1?'s':''}</span>
+    <span style="width:3px;height:3px;border-radius:50%;background:rgba(255,255,255,0.12)"></span>
+    <span style="color:#30D158;font-weight:600">$${grandTotal.toFixed(2)} total</span>
   </div>
-
-  <!-- MEMBER AVATARS -->
   <div style="display:flex;align-items:center;margin-top:14px;margin-bottom:6px">
-    ${people.map((p, i) => `<div style="width:32px;height:32px;border-radius:50%;background:${avatarColors[i % avatarColors.length]};border:2px solid var(--black);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0;margin-left:${i===0?'0':'-8px'}" title="${p}">${p[0].toUpperCase()}</div>`).join('')}
-    <button onclick="openAddMembers()" style="width:32px;height:32px;border-radius:50%;background:var(--dark2);border:2px dashed rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;cursor:pointer;margin-left:4px;flex-shrink:0;font-size:14px;color:var(--muted)">+</button>
-    <button onclick="openInviteModal()" style="padding:5px 14px;margin-left:10px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.25);border-radius:20px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:11px;font-weight:700;cursor:pointer">📨 Invite</button>
+    ${avatarRow}
+    <button id="open-add-members" style="width:32px;height:32px;border-radius:50%;background:#13131A;border:2px dashed rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;cursor:pointer;margin-left:4px;flex-shrink:0;font-size:14px;color:#6E6B80">+</button>
+    <button id="open-invite" style="padding:5px 14px;margin-left:10px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.25);border-radius:20px;color:#A855F7;font-family:'Epilogue',sans-serif;font-size:11px;font-weight:700;cursor:pointer">📨 Invite</button>
   </div>
 </div>
 
-<!-- COUNTDOWN -->
-<div class="sec" style="margin-top:16px">
-  ${trip.trip_date ? (() => {
-    const tripDateMs = new Date(trip.trip_date + 'T12:00:00').getTime();
-    const nowMs = Date.now();
-    const diff = tripDateMs - nowMs;
-    if (diff > 0) {
-      const days = Math.ceil(diff / (1000*60*60*24));
-      return `<div style="background:linear-gradient(135deg,rgba(124,58,237,0.12),rgba(48,209,88,0.08));border:1px solid rgba(124,58,237,0.22);border-radius:16px;padding:20px;text-align:center">
-        <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#C084FC;font-weight:700;margin-bottom:8px">✈️ Countdown to Trip</div>
-        <div style="font-family:'Bebas Neue',sans-serif;font-size:72px;letter-spacing:0.02em;line-height:1;color:#F0EEF8;margin-bottom:4px">${days}</div>
-        <div style="font-size:13px;color:#9896A8">day${days !== 1 ? 's' : ''} to go</div>
-        <div style="font-size:12px;color:#6E6B80;margin-top:4px">${new Date(trip.trip_date + 'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</div>
-      </div>`;
-    } else {
-      const daysPast = Math.abs(Math.floor(diff / (1000*60*60*24)));
-      return `<div style="background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.18);border-radius:16px;padding:16px;text-align:center">
-        <div style="font-size:13px;color:#30D158;font-weight:600">✅ Trip was ${daysPast > 0 ? daysPast + ' days ago' : 'today'} · ${new Date(trip.trip_date + 'T12:00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</div>
-      </div>`;
-    }
-  })() : `<div style="background:var(--dark2);border:1px dashed rgba(255,255,255,0.08);border-radius:14px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between">
-    <div style="font-size:13px;color:var(--muted)">📅 No trip date set</div>
-    <div style="font-size:11px;color:var(--muted);font-style:italic">Set date in settings to see countdown</div>
-  </div>`}
-</div>
+<div class="sec" style="margin-top:16px">${countdownHTML}</div>
 
-<!-- WHO OWES WHAT -->
 <div class="sec" style="margin-top:20px">
   <div class="sec-lbl">Who Owes What</div>
   <div class="card">
-    ${people.map((p, i) => `
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)">
-      <div style="display:flex;align-items:center;gap:10px">
-        <div style="width:34px;height:34px;border-radius:50%;background:${avatarColors[i % avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0">${p[0].toUpperCase()}</div>
-        <div>
-          <div style="font-weight:600;font-size:14px">${p}</div>
-          <div style="font-size:11px;color:${totals[p.toLowerCase()] > 0 ? 'var(--muted)' : 'var(--green)'}">${totals[p.toLowerCase()] > 0 ? 'outstanding' : 'all settled ✓'}</div>
-        </div>
-      </div>
-      <div style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${totals[p.toLowerCase()] > 0 ? 'var(--green)' : 'var(--muted2)'}">$${(totals[p.toLowerCase()]||0).toFixed(2)}</div>
-    </div>`).join('')}
+    ${owesRows}
     <div style="display:flex;justify-content:space-between;padding:12px 16px;background:rgba(48,209,88,0.04);border-top:1px solid rgba(48,209,88,0.12)">
-      <span style="font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--muted2)">Grand Total</span>
-      <span style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:var(--green)">$${grandTotal.toFixed(2)}</span>
+      <span style="font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#9896A8">Grand Total</span>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:#30D158">$${grandTotal.toFixed(2)}</span>
     </div>
   </div>
 </div>
 
-<!-- ACTION BUTTONS -->
 <div class="sec" style="margin-top:16px;display:flex;flex-direction:column;gap:10px">
-  <button class="btn-green" id="add-receipt-btn" onclick="openReceiptForm()">📸 Add a Receipt</button>
+  <button class="btn-g" id="open-receipt-btn">📸 Add a Receipt</button>
   <div style="display:flex;gap:10px">
-    <button class="btn-purple" onclick="openInviteModal()" style="flex:1">🔗 Share</button>
-    <button onclick="openSettingsModal()" style="flex:1;padding:13px;background:var(--dark2);border:1px solid var(--border2);border-radius:12px;color:var(--muted2);font-family:'Epilogue',sans-serif;font-size:14px;font-weight:600;cursor:pointer">⚙️ Settings</button>
+    <button class="btn-p" id="open-share" style="flex:1">🔗 Share</button>
+    <button id="open-settings" style="flex:1;padding:13px;background:#13131A;border:1px solid var(--border2);border-radius:12px;color:#9896A8;font-family:'Epilogue',sans-serif;font-size:14px;font-weight:600;cursor:pointer">⚙️ Settings</button>
   </div>
 </div>
 
-<!-- RECEIPT FORM -->
-<div id="receipt-form" style="display:none">
+<div id="receipt-form-wrap" style="display:none">
   <div class="sec" style="margin-top:16px">
     <div class="sec-lbl">New Receipt</div>
     <div class="card" style="padding:20px;display:flex;flex-direction:column;gap:14px">
-      <div><div style="font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600">Receipt Name</div><input id="r-name" type="text" placeholder="e.g. Dinner at Casa Marina" style="background:var(--dark2);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:'Epilogue',sans-serif;font-size:14px;outline:none;padding:12px 16px;width:100%"></div>
+      <div><div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600">Receipt Name</div><input id="r-name" type="text" placeholder="e.g. Dinner at Casa Marina"></div>
       <div>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:600">Photo — AI scans automatically</div>
-        <div id="r-drop" style="border:2px dashed rgba(48,209,88,0.25);border-radius:12px;padding:20px;text-align:center;cursor:pointer" onclick="document.getElementById('r-file').click()">
-          <div id="r-empty" style="color:var(--muted);font-size:13px">📸 Tap to upload receipt photo</div>
+        <div style="font-size:12px;color:#6E6B80;margin-bottom:8px;font-weight:600">Photo — AI scans automatically</div>
+        <div id="r-drop" style="border:2px dashed rgba(48,209,88,0.25);border-radius:12px;padding:20px;text-align:center;cursor:pointer">
+          <div id="r-empty" style="color:#6E6B80;font-size:13px">📸 Tap to upload receipt photo</div>
           <img id="r-preview" style="display:none;max-width:100%;border-radius:8px;max-height:220px;object-fit:contain">
         </div>
-        <input id="r-file" type="file" accept="image/*" style="display:none" onchange="tripPhoto(this)">
+        <input id="r-file" type="file" accept="image/*" style="display:none">
       </div>
       <div id="r-scan-status" style="display:none"></div>
       <div>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:600">Split type</div>
-        <div style="display:flex;gap:8px"><button class="split-btn ae" id="r-btn-e" onclick="setSplit('even')">⚖️ Even</button><button class="split-btn" id="r-btn-i" onclick="setSplit('itemized')">📋 Itemized</button></div>
+        <div style="font-size:12px;color:#6E6B80;margin-bottom:8px;font-weight:600">Split type</div>
+        <div style="display:flex;gap:8px"><button class="spl ae" id="r-btn-e" id="r-btn-e">⚖️ Even</button><button class="spl" id="r-btn-i">📋 Itemized</button></div>
       </div>
       <div id="r-even-sec">
-        <div style="font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600">Total Amount</div>
-        <div style="position:relative"><span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--muted)">$</span><input id="r-total" type="number" placeholder="0.00" step="0.01" style="padding-left:28px;background:var(--dark2);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:'Epilogue',sans-serif;font-size:14px;outline:none;padding:12px 16px;padding-left:28px;width:100%" oninput="updateEven()"></div>
-        <div id="r-even-prev" style="margin-top:10px;display:none;background:var(--dark2);border-radius:10px;padding:10px 14px">
-          <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);font-weight:600;margin-bottom:8px">Per Person</div>
-          ${people.map(p => `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px"><span style="color:var(--muted2)">${p}</span><span id="ep-${p.toLowerCase().replace(/\s+/g,'_')}" style="color:var(--green);font-weight:600">$0.00</span></div>`).join('')}
+        <div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600">Total Amount</div>
+        <div style="position:relative"><span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#6E6B80">$</span><input id="r-total" type="number" placeholder="0.00" step="0.01" style="padding-left:28px"></div>
+        <div id="r-even-prev" style="margin-top:10px;display:none;background:#13131A;border-radius:10px;padding:10px 14px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:8px">Per Person</div>
+          ${perPersonInputs}
         </div>
       </div>
       <div id="r-item-sec" style="display:none">
         <div id="r-items-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
         <div style="display:flex;gap:8px">
-          <input id="r-iname" type="text" placeholder="Item name" style="flex:1;background:var(--dark2);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:'Epilogue',sans-serif;font-size:14px;outline:none;padding:12px 16px">
-          <div style="position:relative;display:flex;align-items:center"><span style="position:absolute;left:10px;color:var(--muted);font-size:13px">$</span><input id="r-iprice" type="number" placeholder="0.00" step="0.01" style="width:80px;padding-left:24px;background:var(--dark2);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:'Epilogue',sans-serif;font-size:14px;outline:none;padding:12px 16px;padding-left:24px"></div>
-          <button onclick="addItem()" style="padding:0 14px;background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.3);border-radius:8px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-weight:700;cursor:pointer;font-size:18px;flex-shrink:0">+</button>
+          <input id="r-iname" type="text" placeholder="Item name" style="flex:1">
+          <div style="position:relative;display:flex;align-items:center"><span style="position:absolute;left:10px;color:#6E6B80;font-size:13px">$</span><input id="r-iprice" type="number" placeholder="0.00" step="0.01" style="width:80px;padding-left:24px"></div>
+          <button id="r-add-item" style="padding:0 14px;background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.3);border-radius:8px;color:#A855F7;font-family:'Epilogue',sans-serif;font-weight:700;cursor:pointer;font-size:18px;flex-shrink:0">+</button>
         </div>
       </div>
       <div style="display:flex;gap:10px">
-        <button class="btn-outline" style="flex:1" onclick="closeReceiptForm()">Cancel</button>
-        <button class="btn-green" id="r-save" onclick="saveReceipt()" style="flex:2">Save Receipt</button>
+        <button class="btn-o" id="close-receipt-btn" style="flex:1">Cancel</button>
+        <button class="btn-g" id="r-save" style="flex:2">Save Receipt</button>
       </div>
     </div>
   </div>
 </div>
 
-<!-- RECEIPTS LIST -->
 <div class="sec" style="margin-top:20px">
   <div class="sec-lbl">All Receipts (${(receipts||[]).length})</div>
-  ${(receipts||[]).length === 0
-    ? '<div style="text-align:center;padding:28px 20px;color:var(--muted);font-size:14px;background:var(--dark);border:1px solid var(--border);border-radius:16px"><div style="font-size:32px;margin-bottom:10px">🧾</div><div style="font-weight:600;color:var(--muted2);margin-bottom:4px">No receipts yet</div><div>Be the first to add one!</div></div>'
-    : `<div class="card">${receiptRowsHtml}</div>`}
+  ${(receipts||[]).length===0
+    ? `<div style="text-align:center;padding:28px 20px;color:#6E6B80;font-size:14px;background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:16px"><div style="font-size:32px;margin-bottom:10px">🧾</div><div style="font-weight:600;color:#9896A8;margin-bottom:4px">No receipts yet</div><div>Be the first to add one!</div></div>`
+    : `<div class="card">${receiptRows}</div>`}
 </div>
 
-<!-- COMMENTS SECTION -->
 <div class="sec" style="margin-top:24px">
   <div class="sec-lbl">Comments (${(comments||[]).length})</div>
   <div class="card" id="comments-card">
-    ${(comments||[]).length === 0
-      ? '<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px">No comments yet — say something! 👋</div>'
-      : commentsHtml}
+    ${(comments||[]).length===0
+      ? '<div style="padding:24px;text-align:center;color:#6E6B80;font-size:13px">No comments yet — say something! 👋</div>'
+      : commentRows}
   </div>
-  <div style="margin-top:12px;background:var(--dark);border:1px solid var(--border2);border-radius:14px;overflow:hidden">
-    <input id="comment-author" type="text" placeholder="Your name" style="border-radius:0;border:none;border-bottom:1px solid var(--border);background:transparent;padding:12px 16px;font-size:14px;color:#F0EEF8;font-family:inherit;width:100%;outline:none">
-    <div id="trip-gif-preview-wrap" style="display:none;padding:10px 12px;border-bottom:1px solid var(--border)">
+  <div style="margin-top:12px;background:#0C0C12;border:1px solid var(--border2);border-radius:14px;overflow:hidden">
+    <input id="comment-author" type="text" placeholder="Your name" style="border-radius:0;border:none;border-bottom:1px solid var(--border);background:transparent">
+    <div id="gif-preview-wrap" style="display:none;padding:10px 12px;border-bottom:1px solid var(--border)">
       <div style="display:flex;align-items:center;gap:8px">
-        <img id="trip-gif-preview-img" style="height:80px;border-radius:8px;object-fit:cover">
-        <button onclick="clearTripGif()" style="padding:4px 10px;background:rgba(255,68,68,0.12);border:1px solid rgba(255,68,68,0.25);border-radius:6px;color:#FF6B6B;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">✕ Remove</button>
+        <img id="gif-preview-img" style="height:80px;border-radius:8px;object-fit:cover">
+        <button id="gif-clear-btn" style="padding:4px 10px;background:rgba(255,68,68,0.12);border:1px solid rgba(255,68,68,0.25);border-radius:6px;color:#FF6B6B;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">✕ Remove</button>
       </div>
     </div>
-    <textarea id="comment-body" placeholder="Add a comment..." rows="2" style="border-radius:0;border:none;border-bottom:1px solid var(--border);background:transparent;resize:none;padding:12px 16px;font-size:14px;line-height:1.5;width:100%;color:#F0EEF8;font-family:inherit;outline:none;display:block"></textarea>
-    <div id="trip-gif-panel" style="display:none;border-bottom:1px solid var(--border);background:var(--dark2)">
-      <div style="padding:8px 12px">
-        <input id="trip-gif-search" type="text" placeholder="Search GIFs..." style="padding:10px 14px;font-size:13px;background:var(--dark3);border:1px solid var(--border);border-radius:8px;color:#F0EEF8;font-family:inherit;outline:none;width:100%;border-radius:8px" oninput="searchTripGifs(this.value)">
-      </div>
-      <div id="trip-gif-results" style="display:flex;flex-wrap:wrap;gap:4px;padding:0 12px 10px;max-height:180px;overflow-y:auto">
-        <div style="color:var(--muted);font-size:12px;padding:8px 0">Type to search GIFs...</div>
-      </div>
+    <textarea id="comment-body" placeholder="Add a comment..." rows="2" style="border-radius:0;border:none;border-bottom:1px solid var(--border);background:transparent;resize:none;display:block"></textarea>
+    <div id="gif-panel" style="display:none;border-bottom:1px solid var(--border);background:#13131A">
+      <div style="padding:8px 12px"><input id="gif-search" type="text" placeholder="Search GIFs..." style="padding:10px 14px;font-size:13px;background:#1A1A24;border:1px solid var(--border);border-radius:8px"></div>
+      <div id="gif-results" style="display:flex;flex-wrap:wrap;gap:4px;padding:0 12px 10px;max-height:180px;overflow-y:auto"><div style="color:#6E6B80;font-size:12px;padding:8px 0">Type to search GIFs...</div></div>
     </div>
     <div style="display:flex">
-      <button id="trip-gif-toggle-btn" onclick="toggleTripGifPanel()" style="padding:13px 16px;background:transparent;border:none;border-right:1px solid var(--border);color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;flex-shrink:0">🎭 GIF</button>
-      <button onclick="postComment()" style="flex:1;padding:13px;background:rgba(48,209,88,0.12);border:none;color:var(--green);font-family:inherit;font-size:15px;font-weight:700;cursor:pointer">💬 Post</button>
+      <button id="gif-toggle-btn" style="padding:13px 16px;background:transparent;border:none;border-right:1px solid var(--border);color:#6E6B80;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;flex-shrink:0">🎭 GIF</button>
+      <button id="post-comment-btn" style="flex:1;padding:13px;background:rgba(48,209,88,0.12);border:none;color:#30D158;font-family:inherit;font-size:15px;font-weight:700;cursor:pointer">💬 Post</button>
     </div>
   </div>
 </div>
 
 <!-- SETTINGS MODAL -->
-<div class="modal-overlay" id="settings-modal">
-  <div class="modal-sheet" onclick="event.stopPropagation()">
-    <div class="modal-handle"></div>
-    <div class="modal-title">Trip Settings</div>
-    <div style="display:flex;flex-direction:column;gap:14px;margin-bottom:16px">
-      <div>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">Trip Name</div>
-        <input id="settings-name" type="text" value="${trip.name.replace(/"/g,'&quot;')}" placeholder="Trip name">
-      </div>
-      <div>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">Trip Date</div>
-        <input id="settings-date" type="date" value="${trip.trip_date || ''}">
-      </div>
-    </div>
-    <button onclick="saveSettings()" class="btn-green" style="margin-bottom:10px">💾 Save Changes</button>
-    <button onclick="closeSettingsModal()" class="btn-outline">Cancel</button>
+<div class="modal-bg" id="settings-modal">
+  <div class="modal-box">
+    <div class="handle"></div>
+    <div style="font-size:26px;font-weight:800;margin-bottom:16px">Trip Settings</div>
+    <div style="margin-bottom:14px"><div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">Trip Name</div><input id="settings-name" type="text" placeholder="Trip name"></div>
+    <div style="margin-bottom:16px"><div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">Trip Date</div><input id="settings-date" type="date"></div>
+    <button class="btn-g" id="save-settings-btn" style="margin-bottom:10px">💾 Save Changes</button>
+    <button class="btn-o" id="close-settings-btn">Cancel</button>
   </div>
 </div>
 
 <!-- ADD MEMBERS MODAL -->
-<div class="modal-overlay" id="add-members-modal">
-  <div class="modal-sheet" onclick="event.stopPropagation()">
-    <div class="modal-handle"></div>
-    <div class="modal-title">Add Members</div>
-    <div style="font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.6">Add more people to this trip. They'll appear in all receipt splits going forward.</div>
+<div class="modal-bg" id="add-members-modal">
+  <div class="modal-box">
+    <div class="handle"></div>
+    <div style="font-size:26px;font-weight:800;margin-bottom:8px">Add Members</div>
+    <div style="font-size:13px;color:#6E6B80;margin-bottom:16px;line-height:1.6">Add more people to this trip.</div>
     <div style="display:flex;gap:8px;margin-bottom:14px">
-      <input id="new-member-input" type="text" placeholder="Enter name" style="flex:1" onkeydown="if(event.key==='Enter')addNewMember()">
-      <button onclick="addNewMember()" style="padding:12px 18px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.25);border-radius:10px;color:var(--green);font-family:'Epilogue',sans-serif;font-size:14px;font-weight:700;cursor:pointer;flex-shrink:0">+ Add</button>
+      <input id="new-member-input" type="text" placeholder="Enter name" style="flex:1">
+      <button id="add-member-btn" style="padding:12px 18px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.25);border-radius:10px;color:#30D158;font-family:'Epilogue',sans-serif;font-size:14px;font-weight:700;cursor:pointer;flex-shrink:0">+ Add</button>
     </div>
-    <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);font-weight:600;margin-bottom:8px">Current Members</div>
-    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
-      ${people.map((p, i) => `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--dark2);border:1px solid var(--border);border-radius:10px"><div style="display:flex;align-items:center;gap:9px"><div style="width:28px;height:28px;border-radius:50%;background:${avatarColors[i % avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff">${p[0].toUpperCase()}</div><span style="font-size:13px;font-weight:600">${p}</span></div><span style="font-size:11px;color:var(--muted)">existing</span></div>`).join('')}
-    </div>
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:8px">Current Members</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">${existingMemberRows}</div>
     <div id="new-members-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px"></div>
-    <button class="btn-green" id="save-members-btn" onclick="saveMembersToTrip()" style="display:none;margin-bottom:10px">✓ Save New Members</button>
-    <button class="btn-outline" onclick="closeAddMembers()">Close</button>
+    <button class="btn-g" id="save-members-btn" style="display:none;margin-bottom:10px">✓ Save New Members</button>
+    <button class="btn-o" id="close-members-btn">Close</button>
   </div>
 </div>
 
 <!-- INVITE MODAL -->
-<div class="modal-overlay" id="invite-modal">
-  <div class="modal-sheet" onclick="event.stopPropagation()">
-    <div class="modal-handle"></div>
-    <div class="modal-title">Invite to Trip</div>
-
-    <div style="background:var(--dark2);border:1px solid var(--border2);border-radius:14px;padding:16px;margin-bottom:12px">
-      <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted2);margin-bottom:6px">📋 Trip Link</div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">For people already added to the trip</div>
-      <div id="trip-url-display" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted2);background:var(--dark3);border-radius:8px;padding:8px 12px;margin-bottom:10px;word-break:break-all">${tripUrl}</div>
+<div class="modal-bg" id="invite-modal">
+  <div class="modal-box">
+    <div class="handle"></div>
+    <div style="font-size:26px;font-weight:800;margin-bottom:16px">Invite to Trip</div>
+    <div style="background:#13131A;border:1px solid var(--border2);border-radius:14px;padding:16px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#9896A8;margin-bottom:6px">📋 Trip Link</div>
+      <div style="font-size:12px;color:#6E6B80;margin-bottom:10px">For people already added to the trip</div>
+      <div id="trip-url-text" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#9896A8;background:#1A1A24;border-radius:8px;padding:8px 12px;margin-bottom:10px;word-break:break-all"></div>
       <div style="display:flex;gap:8px">
-        <button onclick="copyTripLink()" style="flex:1;padding:11px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.25);border-radius:9px;color:var(--green);font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📋 Copy</button>
-        <button onclick="shareTripLink()" style="flex:1;padding:11px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.25);border-radius:9px;color:var(--green);font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📤 Share</button>
+        <button id="copy-trip-btn" style="flex:1;padding:11px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.25);border-radius:9px;color:#30D158;font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📋 Copy</button>
+        <button id="share-trip-btn" style="flex:1;padding:11px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.25);border-radius:9px;color:#30D158;font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📤 Share</button>
       </div>
     </div>
-
-    <div style="background:var(--dark2);border:1px solid rgba(124,58,237,0.25);border-radius:14px;padding:16px;margin-bottom:16px">
-      <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#C084FC;margin-bottom:6px">📨 Invite Link (New Members)</div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Requires creating a RAVEN account — send to group chat</div>
-      <div id="invite-url-display" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted2);background:var(--dark3);border-radius:8px;padding:8px 12px;margin-bottom:10px;word-break:break-all">${inviteUrl}</div>
+    <div style="background:#13131A;border:1px solid rgba(124,58,237,0.25);border-radius:14px;padding:16px;margin-bottom:16px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#C084FC;margin-bottom:6px">📨 Invite Link</div>
+      <div style="font-size:12px;color:#6E6B80;margin-bottom:10px">Requires creating a RAVEN account</div>
+      <div id="invite-url-text" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#9896A8;background:#1A1A24;border-radius:8px;padding:8px 12px;margin-bottom:10px;word-break:break-all"></div>
       <div style="display:flex;gap:8px">
-        <button onclick="copyInviteLink()" style="flex:1;padding:11px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.3);border-radius:9px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📋 Copy Invite</button>
-        <button onclick="shareInviteLink()" style="flex:1;padding:11px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.3);border-radius:9px;color:var(--purple2);font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📤 Share</button>
+        <button id="copy-invite-btn" style="flex:1;padding:11px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.3);border-radius:9px;color:#A855F7;font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📋 Copy Invite</button>
+        <button id="share-invite-btn" style="flex:1;padding:11px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.3);border-radius:9px;color:#A855F7;font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📤 Share</button>
       </div>
     </div>
-
-    <button class="btn-outline" onclick="closeInviteModal()">Done</button>
+    <button class="btn-o" id="close-invite-btn">Done</button>
   </div>
 </div>
 
-<!-- TOAST -->
-<div id="trip-toast" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--dark2);border:1px solid var(--border2);border-radius:12px;padding:12px 20px;font-size:13px;color:var(--white);z-index:9999;opacity:0;transition:all 0.3s;white-space:nowrap;box-shadow:0 20px 60px rgba(0,0,0,0.5)"></div>
+<div id="toast" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:#13131A;border:1px solid rgba(255,255,255,0.12);border-radius:12px;padding:12px 20px;font-size:13px;color:#F0EEF8;z-index:9999;opacity:0;transition:all 0.3s;white-space:nowrap;box-shadow:0 20px 60px rgba(0,0,0,0.5)"></div>
 
 <script>
-  const TRIP_ID = ${JSON.stringify(tripId)};
-  const TRIP_TOKEN = ${JSON.stringify(trip.share_token)};
-  const BACKEND = ${JSON.stringify(baseUrl)};
-  const TRIP_URL = ${JSON.stringify(tripUrl)};
-  const INVITE_URL = ${JSON.stringify(inviteUrl)};
-  const TRIP_NAME = ${JSON.stringify(trip.name)};
-  let PEOPLE = ${JSON.stringify(people)};
-  let splitType = 'even';
-  let tripItems = [];
-  let imgBase64 = null;
-  let newMembers = [];
-  let tripSelectedGif = null;
-  let tripGifTimer = null;
-  let tripGifPanelOpen = false;
+// ── Read all data from JSON — no user content ever touches JS source code ──
+const D = JSON.parse(document.getElementById('page-data').textContent);
+const TRIP_ID    = D.tripId;
+const TRIP_TOKEN = D.shareToken;
+const BACKEND    = D.backendUrl;
+const TRIP_URL   = D.tripUrl;
+const INVITE_URL = D.inviteUrl;
+const TRIP_NAME  = D.tripName;
+const TRIP_DATE  = D.tripDate;
+let   PEOPLE     = D.people;
 
-  function copyTripLink() {
-    navigator.clipboard.writeText(TRIP_URL).then(() => toast('Trip link copied!')).catch(() => { prompt('Copy:', TRIP_URL); });
-  }
-  function shareTripLink() {
-    if(navigator.share) navigator.share({title: TRIP_NAME, url: TRIP_URL}).catch(() => copyTripLink());
-    else copyTripLink();
-  }
-  function copyInviteLink() {
-    navigator.clipboard.writeText(INVITE_URL).then(() => toast('Invite link copied!')).catch(() => { prompt('Copy:', INVITE_URL); });
-  }
-  function shareInviteLink() {
-    if(navigator.share) navigator.share({title: 'Join ' + TRIP_NAME + ' on RAVEN', url: INVITE_URL}).catch(() => copyInviteLink());
-    else copyInviteLink();
-  }
+// Populate invite modal URLs (set via JS, never via template literal)
+document.getElementById('trip-url-text').textContent   = TRIP_URL;
+document.getElementById('invite-url-text').textContent = INVITE_URL;
+// Pre-fill settings inputs
+document.getElementById('settings-name').value = TRIP_NAME;
+if (TRIP_DATE) document.getElementById('settings-date').value = TRIP_DATE;
 
-  // ── TOAST ──
-  function toast(msg, ok) {
-    const t = document.getElementById('trip-toast');
-    t.textContent = msg;
-    t.style.borderColor = (ok === false) ? 'rgba(255,68,68,0.3)' : 'rgba(48,209,88,0.3)';
-    t.style.opacity = '1';
-    t.style.transform = 'translateX(-50%) translateY(0)';
-    clearTimeout(t._timer);
-    t._timer = setTimeout(() => {
-      t.style.opacity = '0';
-      t.style.transform = 'translateX(-50%) translateY(80px)';
-    }, 3000);
-  }
+let splitType = 'even', tripItems = [], imgBase64 = null, newMembers = [];
+let gifUrl = null, gifTimer = null, gifPanelOpen = false;
 
-  // ── AUTO-FILL NAME ──
-  (function(){
-    try {
-      const urlName = new URLSearchParams(window.location.search).get('name');
-      if(urlName) {
-        const el = document.getElementById('comment-author');
-        if(el){ el.value = decodeURIComponent(urlName); el.style.color = 'var(--muted2)'; }
-        sessionStorage.setItem('trip_commenter_name', decodeURIComponent(urlName));
-        return;
-      }
-      const sessName = sessionStorage.getItem('trip_commenter_name');
-      if(sessName) {
-        const el = document.getElementById('comment-author');
-        if(el){ el.value = sessName; el.style.color = 'var(--muted2)'; }
-        return;
-      }
-      const profile = JSON.parse(localStorage.getItem('raven_profile') || '{}');
-      if(profile.first_name) {
-        const el = document.getElementById('comment-author');
-        if(el){ el.value = profile.first_name; el.style.color = 'var(--muted2)'; }
-      }
-    } catch(e){}
-  })();
+// ── TOAST ──
+function toast(msg, ok) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.borderColor = ok===false ? 'rgba(255,68,68,0.3)' : 'rgba(48,209,88,0.3)';
+  t.style.opacity = '1';
+  t.style.transform = 'translateX(-50%) translateY(0)';
+  clearTimeout(t._t);
+  t._t = setTimeout(() => { t.style.opacity='0'; t.style.transform='translateX(-50%) translateY(80px)'; }, 3000);
+}
 
-  // ── AUTO-OPEN receipt form if ?action=receipt ──
-  (function(){
-    const params = new URLSearchParams(window.location.search);
-    if(params.get('action') === 'receipt') setTimeout(openReceiptForm, 300);
-  })();
+// ── AUTO-FILL NAME ──
+(function(){
+  try {
+    const url = new URLSearchParams(window.location.search).get('name');
+    if (url) { document.getElementById('comment-author').value = decodeURIComponent(url); sessionStorage.setItem('raven_trip_name', decodeURIComponent(url)); return; }
+    const sess = sessionStorage.getItem('raven_trip_name');
+    if (sess) { document.getElementById('comment-author').value = sess; return; }
+    const p = JSON.parse(localStorage.getItem('raven_profile')||'{}');
+    if (p.first_name) document.getElementById('comment-author').value = p.first_name;
+  } catch(e) {}
+})();
 
-  // ── MODALS ──
-  function openSettingsModal() {
-    document.getElementById('settings-modal').classList.add('open');
-  }
-  function closeSettingsModal() {
-    document.getElementById('settings-modal').classList.remove('open');
-  }
-  function openInviteModal() {
-    document.getElementById('invite-modal').classList.add('open');
-  }
-  function closeInviteModal() {
-    document.getElementById('invite-modal').classList.remove('open');
-  }
-  function openAddMembers() {
-    newMembers = [];
-    renderNewMembers();
-    document.getElementById('add-members-modal').classList.add('open');
-  }
-  function closeAddMembers() {
-    document.getElementById('add-members-modal').classList.remove('open');
-  }
+// ── AUTO-OPEN receipt form ──
+if (new URLSearchParams(window.location.search).get('action') === 'receipt') {
+  setTimeout(() => { document.getElementById('receipt-form-wrap').style.display='block'; document.getElementById('open-receipt-btn').style.display='none'; }, 300);
+}
 
-  // Close modals when clicking backdrop
-  document.getElementById('settings-modal').addEventListener('click', function(e) {
-    if(e.target === this) closeSettingsModal();
+// ── MODAL HELPERS ──
+function openModal(id)  { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+['settings-modal','add-members-modal','invite-modal'].forEach(id => {
+  document.getElementById(id).addEventListener('click', function(e) {
+    if (e.target === this) closeModal(id);
   });
-  document.getElementById('invite-modal').addEventListener('click', function(e) {
-    if(e.target === this) closeInviteModal();
-  });
-  document.getElementById('add-members-modal').addEventListener('click', function(e) {
-    if(e.target === this) closeAddMembers();
-  });
+});
 
-  // ── RECEIPT FORM ──
-  function openReceiptForm() {
-    document.getElementById('receipt-form').style.display = 'block';
-    document.getElementById('add-receipt-btn').style.display = 'none';
-    setTimeout(() => document.getElementById('receipt-form').scrollIntoView({behavior:'smooth',block:'start'}), 50);
-  }
-  function closeReceiptForm() {
-    document.getElementById('receipt-form').style.display = 'none';
-    document.getElementById('add-receipt-btn').style.display = 'block';
-  }
+document.getElementById('open-settings').addEventListener('click',    () => openModal('settings-modal'));
+document.getElementById('close-settings-btn').addEventListener('click', () => closeModal('settings-modal'));
+document.getElementById('open-share').addEventListener('click',        () => openModal('invite-modal'));
+document.getElementById('open-invite').addEventListener('click',       () => openModal('invite-modal'));
+document.getElementById('close-invite-btn').addEventListener('click',  () => closeModal('invite-modal'));
+document.getElementById('open-add-members').addEventListener('click',  () => { newMembers=[]; renderNewMembers(); openModal('add-members-modal'); });
+document.getElementById('close-members-btn').addEventListener('click', () => closeModal('add-members-modal'));
 
-  // ── SHARE/COPY ──
-  function copyAndToast(url, msg) {
-    navigator.clipboard.writeText(url)
-      .then(() => toast(msg))
-      .catch(() => { prompt('Copy this link:', url); toast(msg); });
-  }
-  function shareNative(url, title) {
-    if(navigator.share) navigator.share({ title, url }).catch(() => copyAndToast(url, '📋 Copied!'));
-    else copyAndToast(url, '📋 Copied!');
-  }
+document.getElementById('open-receipt-btn').addEventListener('click',  () => { document.getElementById('receipt-form-wrap').style.display='block'; document.getElementById('open-receipt-btn').style.display='none'; setTimeout(()=>document.getElementById('receipt-form-wrap').scrollIntoView({behavior:'smooth',block:'start'}),50); });
+document.getElementById('close-receipt-btn').addEventListener('click', () => { document.getElementById('receipt-form-wrap').style.display='none'; document.getElementById('open-receipt-btn').style.display='block'; });
 
-  // ── COVER PHOTO UPLOAD ──
-  function uploadCover(input) {
-    const file = input.files[0];
-    if(!file) return;
+// ── COVER PHOTO ──
+(function(){
+  const inp = document.getElementById('cover-upload');
+  const btn = document.getElementById('cover-change-btn');
+  const emp = document.getElementById('cover-empty');
+  if (btn) btn.addEventListener('click', () => inp.click());
+  if (emp) emp.addEventListener('click', () => inp.click());
+  inp.addEventListener('change', function() {
+    const file = this.files[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = function(e) {
-      const dataUrl = e.target.result;
       const img = new Image();
       img.onload = function() {
-        const tw = 800, th = 400;
-        let {width: w, height: h} = img;
+        const tw=800, th=400;
+        let {width:w, height:h} = img;
         const scale = Math.max(tw/w, th/h);
-        w = Math.round(w * scale);
-        h = Math.round(h * scale);
-        const c = document.createElement('canvas');
-        c.width = tw; c.height = th;
-        c.getContext('2d').drawImage(img, (tw-w)/2, (th-h)/2, w, h);
-        const resized = c.toDataURL('image/jpeg', 0.88);
+        w=Math.round(w*scale); h=Math.round(h*scale);
+        const c=document.createElement('canvas'); c.width=tw; c.height=th;
+        c.getContext('2d').drawImage(img,(tw-w)/2,(th-h)/2,w,h);
+        const resized = c.toDataURL('image/jpeg',0.88);
         const existing = document.getElementById('cover-img');
-        if(existing) { existing.src = resized; }
+        if (existing) existing.src = resized;
         toast('Saving cover...');
-        fetch(BACKEND + '/trip/' + TRIP_ID + '/cover', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({token: TRIP_TOKEN, image: resized.split(',')[1]})
-        })
-        .then(r => r.json())
-        .then(d => {
-          if(d.success) { toast('🖼 Cover saved!'); setTimeout(() => location.reload(), 1200); }
-          else toast(d.error || 'Error saving cover', false);
-        })
-        .catch(() => toast('Network error', false));
-      };
-      img.src = dataUrl;
-    };
-    reader.readAsDataURL(file);
-  }
-
-  // ── SETTINGS SAVE ──
-  async function saveSettings() {
-    const name = document.getElementById('settings-name').value.trim();
-    const date = document.getElementById('settings-date').value;
-    if(!name) { toast('Trip name cannot be empty', false); return; }
-    try {
-      const r = await fetch(BACKEND + '/trip/' + TRIP_ID + '/settings', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({token: TRIP_TOKEN, name, trip_date: date || null})
-      });
-      const d = await r.json();
-      if(d.success) { toast('✅ Trip updated!'); setTimeout(() => location.reload(), 1200); }
-      else toast(d.error || 'Error', false);
-    } catch(e) { toast('Network error', false); }
-  }
-
-  // ── ADD MEMBERS ──
-  function addNewMember() {
-    const inp = document.getElementById('new-member-input');
-    const name = inp.value.trim();
-    if(!name) return;
-    if(PEOPLE.map(p => p.toLowerCase()).includes(name.toLowerCase())) { toast('Already on this trip', false); return; }
-    if(newMembers.map(p => p.toLowerCase()).includes(name.toLowerCase())) { toast('Already added', false); return; }
-    newMembers.push(name);
-    inp.value = '';
-    renderNewMembers();
-  }
-  function removeNewMember(name) {
-    newMembers = newMembers.filter(p => p !== name);
-    renderNewMembers();
-  }
-  function renderNewMembers() {
-    const c = document.getElementById('new-members-list');
-    const btn = document.getElementById('save-members-btn');
-    c.innerHTML = newMembers.map(n =>
-      '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:rgba(48,209,88,0.05);border:1px solid rgba(48,209,88,0.2);border-radius:10px">'
-      + '<div style="display:flex;align-items:center;gap:9px">'
-      + '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#30D158,#0EA5E9);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff">' + n[0].toUpperCase() + '</div>'
-      + '<span style="font-size:13px;font-weight:600;color:#F0EEF8">' + n + '</span></div>'
-      + '<button onclick="removeNewMember(\'' + n.replace(/'/g, "\\'") + '\')" style="background:none;border:none;color:#6E6B80;cursor:pointer;font-size:18px;padding:0">×</button>'
-      + '</div>'
-    ).join('');
-    btn.style.display = newMembers.length > 0 ? 'block' : 'none';
-  }
-  async function saveMembersToTrip() {
-    const btn = document.getElementById('save-members-btn');
-    btn.textContent = 'Saving...'; btn.disabled = true;
-    try {
-      const r = await fetch(BACKEND + '/trip/' + TRIP_ID + '/add-members', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({token: TRIP_TOKEN, members: newMembers})
-      });
-      const d = await r.json();
-      if(d.success) { toast('✅ Members added!'); setTimeout(() => location.reload(), 1200); }
-      else { toast(d.error || 'Error', false); btn.textContent = '✓ Save'; btn.disabled = false; }
-    } catch(e) { toast('Network error', false); btn.textContent = '✓ Save'; btn.disabled = false; }
-  }
-
-  // ── TRIP GIF (separate from bill GIF, no naming conflicts) ──
-  function toggleTripGifPanel() {
-    tripGifPanelOpen = !tripGifPanelOpen;
-    const p = document.getElementById('trip-gif-panel');
-    p.style.display = tripGifPanelOpen ? 'block' : 'none';
-    const btn = document.getElementById('trip-gif-toggle-btn');
-    btn.style.color = tripGifPanelOpen ? 'var(--green)' : 'var(--muted)';
-    if(tripGifPanelOpen) document.getElementById('trip-gif-search').focus();
-  }
-  function clearTripGif() {
-    tripSelectedGif = null;
-    document.getElementById('trip-gif-preview-wrap').style.display = 'none';
-    document.getElementById('trip-gif-preview-img').src = '';
-  }
-  function selectTripGif(url) {
-    tripSelectedGif = url;
-    document.getElementById('trip-gif-preview-img').src = url;
-    document.getElementById('trip-gif-preview-wrap').style.display = 'block';
-    tripGifPanelOpen = false;
-    document.getElementById('trip-gif-panel').style.display = 'none';
-    document.getElementById('trip-gif-toggle-btn').style.color = 'var(--muted)';
-    document.getElementById('trip-gif-search').value = '';
-    document.getElementById('trip-gif-results').innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px 0">Type to search GIFs...</div>';
-    toast('GIF selected ✓');
-  }
-  function searchTripGifs(q) {
-    clearTimeout(tripGifTimer);
-    const container = document.getElementById('trip-gif-results');
-    if(!q.trim()) { container.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px 0">Type to search GIFs...</div>'; return; }
-    container.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px 0">Searching...</div>';
-    tripGifTimer = setTimeout(function() {
-      fetch(BACKEND + '/gif-search?q=' + encodeURIComponent(q))
-        .then(r => r.json())
-        .then(d => {
-          const gifs = d.gifs || [];
-          if(!gifs.length) { container.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px 0">No results</div>'; return; }
-          container.innerHTML = '';
-          gifs.forEach(function(g) {
-            const url = g.preview || g.full || '';
-            if(!url) return;
-            const img = document.createElement('img');
-            img.src = url;
-            img.style.cssText = 'height:80px;width:auto;border-radius:6px;cursor:pointer;object-fit:cover;border:2px solid transparent';
-            img.addEventListener('mouseover', function(){ this.style.borderColor='#30D158'; });
-            img.addEventListener('mouseout', function(){ this.style.borderColor='transparent'; });
-            img.addEventListener('click', function(){ selectTripGif(g.full || url); });
-            container.appendChild(img);
-          });
-        })
-        .catch(() => { container.innerHTML = '<div style="color:#FF6B6B;font-size:12px;padding:8px 0">Error loading GIFs</div>'; });
-    }, 500);
-  }
-
-  // ── COMMENTS ──
-  async function postComment() {
-    const author = document.getElementById('comment-author').value.trim();
-    const body = document.getElementById('comment-body').value.trim();
-    if(!author) { toast('Enter your name', false); return; }
-    if(!body && !tripSelectedGif) { toast('Add a message or GIF', false); return; }
-    try { sessionStorage.setItem('trip_commenter_name', author); } catch(e) {}
-    try {
-      const r = await fetch(BACKEND + '/trip/' + TRIP_ID + '/comment', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({token: TRIP_TOKEN, author_name: author, body, gif_url: tripSelectedGif || null})
-      });
-      const d = await r.json();
-      if(d.success) {
-        document.getElementById('comment-body').value = '';
-        clearTripGif();
-        toast('✅ Posted!');
-        setTimeout(() => location.reload(), 900);
-      } else toast(d.error || 'Error', false);
-    } catch(e) { toast('Network error', false); }
-  }
-
-  // ── SPLIT ──
-  function setSplit(t) {
-    splitType = t;
-    document.getElementById('r-even-sec').style.display = t === 'even' ? 'block' : 'none';
-    document.getElementById('r-item-sec').style.display = t === 'itemized' ? 'block' : 'none';
-    document.getElementById('r-btn-e').className = 'split-btn' + (t === 'even' ? ' ae' : '');
-    document.getElementById('r-btn-i').className = 'split-btn' + (t === 'itemized' ? ' ai' : '');
-  }
-  function updateEven() {
-    const v = parseFloat(document.getElementById('r-total').value) || 0;
-    const per = v / PEOPLE.length;
-    document.getElementById('r-even-prev').style.display = v > 0 ? 'block' : 'none';
-    PEOPLE.forEach(p => {
-      const el = document.getElementById('ep-' + p.toLowerCase().replace(/\\s+/g,'_'));
-      if(el) el.textContent = '$' + per.toFixed(2);
-    });
-  }
-  function addItem() {
-    const n = document.getElementById('r-iname').value.trim();
-    const p = parseFloat(document.getElementById('r-iprice').value);
-    if(!n || isNaN(p) || p <= 0) return;
-    tripItems.push({id: Date.now(), name: n, price: p, assignees: []});
-    document.getElementById('r-iname').value = '';
-    document.getElementById('r-iprice').value = '';
-    renderItems();
-  }
-  function renderItems() {
-    document.getElementById('r-items-list').innerHTML = tripItems.map(item =>
-      '<div style="background:var(--dark2);border:1px solid var(--border);border-radius:10px;padding:10px 12px">'
-      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
-      + '<span style="flex:1;font-size:13px;font-weight:500">' + item.name + '</span>'
-      + '<span style="font-family:monospace;font-size:13px;color:var(--muted2)">$' + item.price.toFixed(2) + '</span>'
-      + '<button onclick="tripItems=tripItems.filter(i=>i.id!==' + item.id + ');renderItems()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;flex-shrink:0">×</button>'
-      + '</div><div style="display:flex;gap:6px;flex-wrap:wrap">'
-      + PEOPLE.map(p => {
-          const on = item.assignees.includes(p);
-          return '<button onclick="toggleAssign(' + item.id + ',\'' + p.replace(/'/g,"\\'") + '\')" style="padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;background:' + (on?'rgba(48,209,88,0.15)':'rgba(255,255,255,0.05)') + ';border:1px solid ' + (on?'rgba(48,209,88,0.3)':'rgba(255,255,255,0.1)') + ';color:' + (on?'#30D158':'#9896A8') + '">' + (on?'✓ ':'') + p + '</button>';
-        }).join('')
-      + '</div></div>'
-    ).join('');
-  }
-  function toggleAssign(id, p) {
-    const item = tripItems.find(i => i.id === id);
-    if(!item) return;
-    if(item.assignees.includes(p)) item.assignees = item.assignees.filter(a => a !== p);
-    else item.assignees.push(p);
-    renderItems();
-  }
-
-  function tripPhoto(input) {
-    const file = input.files[0];
-    if(!file) return;
-    const reader = new FileReader();
-    reader.onload = function(e) {
-      document.getElementById('r-preview').src = e.target.result;
-      document.getElementById('r-preview').style.display = 'block';
-      document.getElementById('r-empty').style.display = 'none';
-      const img = new Image();
-      img.onload = function() {
-        let {width: w, height: h} = img;
-        if(w > 1600 || h > 1600) {
-          if(w > h) { h = Math.round(h*1600/w); w = 1600; }
-          else { w = Math.round(w*1600/h); h = 1600; }
-        }
-        const c = document.createElement('canvas');
-        c.width = w; c.height = h;
-        c.getContext('2d').drawImage(img, 0, 0, w, h);
-        imgBase64 = c.toDataURL('image/jpeg', 0.88).split(',')[1];
-        const st = document.getElementById('r-scan-status');
-        st.style.display = 'block';
-        st.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:8px"><div class="spinner"></div><span style="font-size:13px;color:#C084FC;font-weight:600">Scanning receipt with AI...</span></div>';
-        fetch(BACKEND + '/demo/scan-receipt', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({image: imgBase64, mediaType: file.type || 'image/jpeg'})
-        })
-        .then(r => r.json())
-        .then(d => {
-          if(d.success && d.items && d.items.length) {
-            if(!document.getElementById('r-name').value && d.bill_name) document.getElementById('r-name').value = d.bill_name;
-            const tot = d.total || d.items.reduce((s,i) => s+i.price, 0);
-            document.getElementById('r-total').value = tot.toFixed(2);
-            updateEven();
-            tripItems = d.items.map((item, idx) => ({id: Date.now()+idx, name: item.name, price: parseFloat(item.price)||0, assignees: []}));
-            setSplit('itemized');
-            renderItems();
-            st.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:8px"><span>✅</span><span style="font-size:13px;color:#30D158;font-weight:600">' + d.items.length + ' items found!</span></div>';
-          } else {
-            st.innerHTML = '<div style="padding:10px 14px;background:rgba(255,68,68,0.07);border:1px solid rgba(255,68,68,0.2);border-radius:8px;font-size:13px;color:#FF6B6B">Could not scan — enter manually</div>';
-          }
-        })
-        .catch(() => { document.getElementById('r-scan-status').style.display = 'none'; });
+        fetch(BACKEND+'/trip/'+TRIP_ID+'/cover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,image:resized.split(',')[1]})})
+          .then(r=>r.json()).then(d=>{ if(d.success){toast('🖼 Cover saved!');setTimeout(()=>location.reload(),1200);}else toast(d.error||'Error',false); })
+          .catch(()=>toast('Network error',false));
       };
       img.src = e.target.result;
     };
     reader.readAsDataURL(file);
-  }
+  });
+})();
 
-  async function saveReceipt() {
-    const name = document.getElementById('r-name').value.trim() || 'Receipt';
-    const btn = document.getElementById('r-save');
-    btn.textContent = 'Saving...'; btn.disabled = true;
-    let total = 0, splits = {};
-    if(splitType === 'even') {
-      total = parseFloat(document.getElementById('r-total').value) || 0;
-      if(total <= 0) { btn.textContent = 'Save Receipt'; btn.disabled = false; toast('Enter a total amount', false); return; }
-      const per = total / PEOPLE.length;
-      PEOPLE.forEach(p => { splits[p] = per; });
-    } else {
-      PEOPLE.forEach(p => { splits[p] = 0; });
-      tripItems.forEach(item => {
-        const as = item.assignees.length > 0 ? item.assignees : PEOPLE;
-        const sh = item.price / as.length;
-        as.forEach(p => { splits[p] = (splits[p] || 0) + sh; });
-        total += item.price;
+// ── SETTINGS ──
+document.getElementById('save-settings-btn').addEventListener('click', async function() {
+  const name = document.getElementById('settings-name').value.trim();
+  const date = document.getElementById('settings-date').value;
+  if (!name) { toast('Trip name cannot be empty', false); return; }
+  this.textContent = 'Saving...'; this.disabled = true;
+  try {
+    const r = await fetch(BACKEND+'/trip/'+TRIP_ID+'/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,name,trip_date:date||null})});
+    const d = await r.json();
+    if (d.success) { toast('✅ Trip updated!'); setTimeout(()=>location.reload(),1200); }
+    else toast(d.error||'Error',false);
+  } catch(e) { toast('Network error',false); }
+  this.textContent='💾 Save Changes'; this.disabled=false;
+});
+
+// ── COPY / SHARE ──
+document.getElementById('copy-trip-btn').addEventListener('click',    () => navigator.clipboard.writeText(TRIP_URL).then(()=>toast('Trip link copied!')).catch(()=>prompt('Copy:',TRIP_URL)));
+document.getElementById('share-trip-btn').addEventListener('click',   () => { if(navigator.share)navigator.share({title:TRIP_NAME,url:TRIP_URL}).catch(()=>navigator.clipboard.writeText(TRIP_URL));else navigator.clipboard.writeText(TRIP_URL).then(()=>toast('Copied!')); });
+document.getElementById('copy-invite-btn').addEventListener('click',  () => navigator.clipboard.writeText(INVITE_URL).then(()=>toast('Invite link copied!')).catch(()=>prompt('Copy:',INVITE_URL)));
+document.getElementById('share-invite-btn').addEventListener('click', () => { if(navigator.share)navigator.share({title:'Join '+TRIP_NAME+' on RAVEN',url:INVITE_URL}).catch(()=>navigator.clipboard.writeText(INVITE_URL));else navigator.clipboard.writeText(INVITE_URL).then(()=>toast('Copied!')); });
+
+// ── ADD MEMBERS ──
+document.getElementById('add-member-btn').addEventListener('click', addNewMember);
+document.getElementById('new-member-input').addEventListener('keydown', e => { if(e.key==='Enter') addNewMember(); });
+
+function addNewMember() {
+  const inp  = document.getElementById('new-member-input');
+  const name = inp.value.trim();
+  if (!name) return;
+  if (PEOPLE.some(p=>p.toLowerCase()===name.toLowerCase())) { toast('Already on this trip',false); return; }
+  if (newMembers.some(p=>p.toLowerCase()===name.toLowerCase())) { toast('Already added',false); return; }
+  newMembers.push(name); inp.value=''; renderNewMembers();
+}
+function renderNewMembers() {
+  const c   = document.getElementById('new-members-list');
+  const btn = document.getElementById('save-members-btn');
+  c.innerHTML = '';
+  newMembers.forEach(n => {
+    const d = document.createElement('div');
+    d.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:rgba(48,209,88,0.05);border:1px solid rgba(48,209,88,0.2);border-radius:10px';
+    d.innerHTML = '<div style="display:flex;align-items:center;gap:9px"><div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#30D158,#0EA5E9);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff">' + n[0].toUpperCase() + '</div><span style="font-size:13px;font-weight:600;color:#F0EEF8">' + n.replace(/</g,'&lt;') + '</span></div>';
+    const x = document.createElement('button');
+    x.textContent = '×'; x.style.cssText = 'background:none;border:none;color:#6E6B80;cursor:pointer;font-size:18px;padding:0';
+    x.addEventListener('click', () => { newMembers=newMembers.filter(p=>p!==n); renderNewMembers(); });
+    d.appendChild(x); c.appendChild(d);
+  });
+  btn.style.display = newMembers.length>0 ? 'block' : 'none';
+}
+document.getElementById('save-members-btn').addEventListener('click', async function() {
+  this.textContent='Saving...'; this.disabled=true;
+  try {
+    const r = await fetch(BACKEND+'/trip/'+TRIP_ID+'/add-members',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,members:newMembers})});
+    const d = await r.json();
+    if (d.success) { toast('✅ Members added!'); setTimeout(()=>location.reload(),1200); }
+    else { toast(d.error||'Error',false); this.textContent='✓ Save'; this.disabled=false; }
+  } catch(e) { toast('Network error',false); this.textContent='✓ Save'; this.disabled=false; }
+});
+
+// ── GIF ──
+document.getElementById('gif-toggle-btn').addEventListener('click', () => {
+  gifPanelOpen = !gifPanelOpen;
+  document.getElementById('gif-panel').style.display = gifPanelOpen ? 'block' : 'none';
+  document.getElementById('gif-toggle-btn').style.color = gifPanelOpen ? '#30D158' : '#6E6B80';
+  if (gifPanelOpen) document.getElementById('gif-search').focus();
+});
+document.getElementById('gif-clear-btn').addEventListener('click', clearGif);
+function clearGif() {
+  gifUrl = null;
+  document.getElementById('gif-preview-wrap').style.display = 'none';
+  document.getElementById('gif-preview-img').src = '';
+}
+document.getElementById('gif-search').addEventListener('input', function() { searchGifs(this.value); });
+function searchGifs(q) {
+  clearTimeout(gifTimer);
+  const container = document.getElementById('gif-results');
+  if (!q.trim()) { container.innerHTML='<div style="color:#6E6B80;font-size:12px;padding:8px 0">Type to search...</div>'; return; }
+  container.innerHTML='<div style="color:#6E6B80;font-size:12px;padding:8px 0">Searching...</div>';
+  gifTimer = setTimeout(() => {
+    fetch(BACKEND+'/gif-search?q='+encodeURIComponent(q))
+      .then(r=>r.json()).then(d=>{
+        const gifs = d.gifs||[];
+        if (!gifs.length) { container.innerHTML='<div style="color:#6E6B80;font-size:12px;padding:8px 0">No results</div>'; return; }
+        container.innerHTML='';
+        gifs.forEach(g => {
+          const url = g.preview||g.full||''; if (!url) return;
+          const img = document.createElement('img');
+          img.src = url; img.style.cssText='height:80px;width:auto;border-radius:6px;cursor:pointer;object-fit:cover;border:2px solid transparent';
+          img.addEventListener('mouseover',function(){this.style.borderColor='#30D158';});
+          img.addEventListener('mouseout', function(){this.style.borderColor='transparent';});
+          img.addEventListener('click', () => {
+            gifUrl = g.full||url;
+            document.getElementById('gif-preview-img').src = gifUrl;
+            document.getElementById('gif-preview-wrap').style.display = 'block';
+            gifPanelOpen=false;
+            document.getElementById('gif-panel').style.display='none';
+            document.getElementById('gif-toggle-btn').style.color='#6E6B80';
+            document.getElementById('gif-search').value='';
+            container.innerHTML='';
+            toast('GIF selected ✓');
+          });
+          container.appendChild(img);
+        });
+      }).catch(()=>{ container.innerHTML='<div style="color:#FF6B6B;font-size:12px;padding:8px 0">Error loading GIFs</div>'; });
+  }, 500);
+}
+
+// ── POST COMMENT ──
+document.getElementById('post-comment-btn').addEventListener('click', async function() {
+  const author = document.getElementById('comment-author').value.trim();
+  const body   = document.getElementById('comment-body').value.trim();
+  if (!author) { toast('Enter your name',false); return; }
+  if (!body && !gifUrl) { toast('Add a message or GIF',false); return; }
+  try { sessionStorage.setItem('raven_trip_name', author); } catch(e) {}
+  this.textContent='Posting...'; this.disabled=true;
+  try {
+    const r = await fetch(BACKEND+'/trip/'+TRIP_ID+'/comment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,author_name:author,body,gif_url:gifUrl||null})});
+    const d = await r.json();
+    if (d.success) { document.getElementById('comment-body').value=''; clearGif(); toast('✅ Posted!'); setTimeout(()=>location.reload(),900); }
+    else toast(d.error||'Error',false);
+  } catch(e) { toast('Network error',false); }
+  this.textContent='💬 Post'; this.disabled=false;
+});
+
+// ── RECEIPT SPLIT ──
+document.getElementById('r-btn-e').addEventListener('click', () => setSplit('even'));
+document.getElementById('r-btn-i').addEventListener('click', () => setSplit('itemized'));
+document.getElementById('r-total').addEventListener('input', updateEven);
+document.getElementById('r-add-item').addEventListener('click', addItem);
+document.getElementById('r-drop').addEventListener('click', () => document.getElementById('r-file').click());
+document.getElementById('r-file').addEventListener('change', function() { if(this.files[0]) tripPhoto(this.files[0]); });
+document.getElementById('r-save').addEventListener('click', saveReceipt);
+
+function setSplit(t) {
+  splitType=t;
+  document.getElementById('r-even-sec').style.display = t==='even'?'block':'none';
+  document.getElementById('r-item-sec').style.display = t==='itemized'?'block':'none';
+  document.getElementById('r-btn-e').className = 'spl'+(t==='even'?' ae':'');
+  document.getElementById('r-btn-i').className = 'spl'+(t==='itemized'?' ai':'');
+}
+function updateEven() {
+  const v=parseFloat(document.getElementById('r-total').value)||0, per=v/PEOPLE.length;
+  document.getElementById('r-even-prev').style.display = v>0?'block':'none';
+  PEOPLE.forEach(p => {
+    const id = 'ep-'+p.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');
+    const el = document.getElementById(id);
+    if (el) el.textContent = '$'+per.toFixed(2);
+  });
+}
+function addItem() {
+  const n=document.getElementById('r-iname').value.trim(), p=parseFloat(document.getElementById('r-iprice').value);
+  if (!n||isNaN(p)||p<=0) return;
+  tripItems.push({id:Date.now(),name:n,price:p,assignees:[]});
+  document.getElementById('r-iname').value=''; document.getElementById('r-iprice').value='';
+  renderItems();
+}
+function renderItems() {
+  const container = document.getElementById('r-items-list');
+  container.innerHTML='';
+  tripItems.forEach(item => {
+    const d = document.createElement('div');
+    d.style.cssText='background:#13131A;border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:10px 12px';
+    const row = document.createElement('div');
+    row.style.cssText='display:flex;align-items:center;gap:8px;margin-bottom:8px';
+    const nameSpan=document.createElement('span'); nameSpan.style.cssText='flex:1;font-size:13px;font-weight:500'; nameSpan.textContent=item.name;
+    const priceSpan=document.createElement('span'); priceSpan.style.cssText='font-family:monospace;font-size:13px;color:#9896A8'; priceSpan.textContent='$'+item.price.toFixed(2);
+    const del=document.createElement('button'); del.textContent='×'; del.style.cssText='background:none;border:none;color:#6E6B80;cursor:pointer;font-size:16px;flex-shrink:0';
+    del.addEventListener('click',()=>{ tripItems=tripItems.filter(i=>i.id!==item.id); renderItems(); });
+    row.appendChild(nameSpan); row.appendChild(priceSpan); row.appendChild(del);
+    const btns=document.createElement('div'); btns.style.cssText='display:flex;gap:6px;flex-wrap:wrap';
+    PEOPLE.forEach(p => {
+      const on=item.assignees.includes(p);
+      const b=document.createElement('button');
+      b.textContent=(on?'✓ ':'')+p;
+      b.style.cssText='padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;background:'+(on?'rgba(48,209,88,0.15)':'rgba(255,255,255,0.05)')+';border:1px solid '+(on?'rgba(48,209,88,0.3)':'rgba(255,255,255,0.1)')+';color:'+(on?'#30D158':'#9896A8');
+      b.addEventListener('click',()=>{
+        if(item.assignees.includes(p)) item.assignees=item.assignees.filter(a=>a!==p); else item.assignees.push(p);
+        renderItems();
       });
-      if(total <= 0) { btn.textContent = 'Save Receipt'; btn.disabled = false; toast('Add at least one item', false); return; }
-    }
-    try {
-      const r = await fetch(BACKEND + '/trip/' + TRIP_ID + '/receipt', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({name, total, splits, token: TRIP_TOKEN, items: splitType === 'itemized' ? tripItems : []})
-      });
-      const d = await r.json();
-      if(d.success) { toast('✅ Receipt saved!'); setTimeout(() => location.reload(), 1200); }
-      else { btn.textContent = 'Save Receipt'; btn.disabled = false; toast(d.error || 'Error', false); }
-    } catch(e) { btn.textContent = 'Save Receipt'; btn.disabled = false; toast('Network error', false); }
+      btns.appendChild(b);
+    });
+    d.appendChild(row); d.appendChild(btns); container.appendChild(d);
+  });
+}
+
+function tripPhoto(file) {
+  const reader=new FileReader();
+  reader.onload=function(e){
+    document.getElementById('r-preview').src=e.target.result;
+    document.getElementById('r-preview').style.display='block';
+    document.getElementById('r-empty').style.display='none';
+    const img=new Image();
+    img.onload=function(){
+      let{width:w,height:h}=img;
+      if(w>1600||h>1600){if(w>h){h=Math.round(h*1600/w);w=1600;}else{w=Math.round(w*1600/h);h=1600;}}
+      const c=document.createElement('canvas');c.width=w;c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      imgBase64=c.toDataURL('image/jpeg',0.88).split(',')[1];
+      const st=document.getElementById('r-scan-status');
+      st.style.display='block';
+      st.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:8px"><div class="spinner"></div><span style="font-size:13px;color:#C084FC;font-weight:600">Scanning receipt with AI...</span></div>';
+      fetch(BACKEND+'/demo/scan-receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:imgBase64,mediaType:file.type||'image/jpeg'})})
+        .then(r=>r.json()).then(d=>{
+          if(d.success&&d.items&&d.items.length){
+            if(!document.getElementById('r-name').value&&d.bill_name) document.getElementById('r-name').value=d.bill_name;
+            const tot=d.total||d.items.reduce((s,i)=>s+i.price,0);
+            document.getElementById('r-total').value=tot.toFixed(2); updateEven();
+            tripItems=d.items.map((item,idx)=>({id:Date.now()+idx,name:item.name,price:parseFloat(item.price)||0,assignees:[]}));
+            setSplit('itemized'); renderItems();
+            st.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:8px"><span>✅</span><span style="font-size:13px;color:#30D158;font-weight:600">'+d.items.length+' items found!</span></div>';
+          } else {
+            st.innerHTML='<div style="padding:10px 14px;background:rgba(255,68,68,0.07);border:1px solid rgba(255,68,68,0.2);border-radius:8px;font-size:13px;color:#FF6B6B">Could not scan — enter manually</div>';
+          }
+        }).catch(()=>{ document.getElementById('r-scan-status').style.display='none'; });
+    };
+    img.src=e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function saveReceipt() {
+  const name=document.getElementById('r-name').value.trim()||'Receipt';
+  const btn=document.getElementById('r-save');
+  btn.textContent='Saving...'; btn.disabled=true;
+  let total=0, splits={};
+  if(splitType==='even'){
+    total=parseFloat(document.getElementById('r-total').value)||0;
+    if(total<=0){btn.textContent='Save Receipt';btn.disabled=false;toast('Enter a total amount',false);return;}
+    const per=total/PEOPLE.length; PEOPLE.forEach(p=>{splits[p]=per;});
+  } else {
+    PEOPLE.forEach(p=>{splits[p]=0;});
+    tripItems.forEach(item=>{const as=item.assignees.length>0?item.assignees:PEOPLE;const sh=item.price/as.length;as.forEach(p=>{splits[p]=(splits[p]||0)+sh;});total+=item.price;});
+    if(total<=0){btn.textContent='Save Receipt';btn.disabled=false;toast('Add at least one item',false);return;}
   }
+  try{
+    const r=await fetch(BACKEND+'/trip/'+TRIP_ID+'/receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,total,splits,token:TRIP_TOKEN,items:splitType==='itemized'?tripItems:[]})});
+    const d=await r.json();
+    if(d.success){toast('✅ Receipt saved!');setTimeout(()=>location.reload(),1200);}
+    else{btn.textContent='Save Receipt';btn.disabled=false;toast(d.error||'Error',false);}
+  }catch(e){btn.textContent='Save Receipt';btn.disabled=false;toast('Network error',false);}
+}
 </script>
 </body>
-</html>`;
-
-  res.send(html);
+</html>`);
 });
+
 
 // ── TRIP COMMENT ──────────────────────────────────────────────────────────────
 app.post('/trip/:tripId/comment', async (req, res) => {
