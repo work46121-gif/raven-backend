@@ -2682,32 +2682,44 @@ app.post('/demo/scan-receipt', async (req, res) => {
           role: 'user',
           content: [
             { type: 'image', source: { type: 'base64', media_type: mt, data: image } },
-            { type: 'text', text: `You are an expert receipt parser. Your job is to extract every line item from this receipt image with maximum accuracy.
+            { type: 'text', text: `You are an expert receipt and order parser. You can read receipts from ANY source: physical receipts, restaurant bills, app screenshots (Uber Eats, DoorDash, Instacart, Grubhub, etc.), digital invoices, and order summaries.
 
-INSTRUCTIONS:
-1. Look at EVERY line on the receipt
-2. Extract ALL purchasable line items (food, drinks, products, services)
-3. For each item, get the name and price
-4. Also extract subtotal, tax, tip if present, and final total
-5. For the bill_name, use the restaurant/store name at the top
-6. IGNORE: item codes/SKUs, member numbers, transaction IDs, payment method lines, barcode numbers, "APPROVED", "CHIP Read", "CHANGE", "AMOUNT", "VISA" lines
-7. For Costco/warehouse receipts: item numbers before the name are codes — include only the item name
-8. If an item has a quantity (e.g. "2x Coffee $8.00"), keep it as one line item with total price
+YOUR JOB: Extract every purchasable line item with its price.
 
-You MUST return ONLY a valid JSON object. No markdown, no explanation, no extra text. Just the JSON:
+WHAT TO INCLUDE:
+- Food items, drinks, products (include quantities if shown, e.g. "2x Burrito Bowl")
+- Add-ons or modifications that have a price (e.g. "Grilled Chicken +$3.49")
+- Delivery fees, service fees if listed as separate line items
+
+WHAT TO IGNORE:
+- Discount lines (negative amounts like "Uber One savings")
+- Payment method lines (VISA, CHIP Read, APPROVED)
+- Item codes/SKUs (numbers before item names on warehouse receipts)  
+- Barcode numbers, transaction IDs, member numbers
+- "CHANGE", "AMOUNT", "APPROVED" lines
+
+FOR APP SCREENSHOTS (Uber Eats, DoorDash etc):
+- The items are listed with a quantity number on the left and price on the right
+- Include the full item name
+- If an item has a quantity of 2, list it as one item with the total price
+
+CRITICAL RULES:
+- You MUST return valid JSON only — no markdown, no explanation
+- You MUST include every item you can see, even if the image is a screenshot
+- Do NOT return empty items array if there are any prices visible
+- If quantities are shown (e.g. "2 Burrito Bowl $33.96"), include as one entry
+
+Return ONLY this JSON:
 {
-  "bill_name": "Store or Restaurant Name",
+  "bill_name": "Restaurant or app name",
   "items": [
-    {"name": "Item Name", "price": 12.99},
-    {"name": "Another Item", "price": 5.50}
+    {"name": "Item Name", "price": 12.99}
   ],
-  "subtotal": 18.49,
-  "tax": 1.85,
+  "subtotal": 0.00,
+  "tax": 0.00,
   "tip": 0.00,
-  "total": 20.34
-}
-
-CRITICAL: You MUST include at least the items you can read. Even if the image is slightly blurry, give your best attempt. Do NOT return an empty items array if there are any visible prices on the receipt.` }
+  "total": 0.00
+}` }
           ]
         }
       ]
