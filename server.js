@@ -1027,7 +1027,8 @@ app.get('/trip/:tripId', async (req, res) => {
     const days = Math.round((tripUTC - todayUTC) / 86400000);
     const tripDateLabel = new Date(tripUTC).toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric', timeZone:'UTC' });
     if (days > 0) {
-      countdownHTML = `<div style="background:linear-gradient(135deg,rgba(124,58,237,0.12),rgba(48,209,88,0.08));border:1px solid rgba(124,58,237,0.22);border-radius:16px;padding:20px;text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#C084FC;font-weight:700;margin-bottom:8px">✈️ Countdown to Trip</div><div style="font-size:72px;font-weight:900;line-height:1;color:#F0EEF8;margin-bottom:4px">${days}</div><div style="font-size:13px;color:#9896A8">day${days!==1?'s':''} to go · ${tripDateLabel}</div></div>`;
+      const dueDateRow = trip.due_date ? `<div style="margin-top:10px;display:flex;align-items:center;justify-content:center;gap:6px;padding:6px 14px;background:rgba(255,107,53,0.07);border:1px solid rgba(255,107,53,0.2);border-radius:8px;display:inline-flex"><span style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#FF6B35">💰 Bill Due</span><span style="font-size:11px;color:#9896A8">${new Date(trip.due_date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span><span id="edit-due-date-btn" style="font-size:10px;color:#FF6B35;cursor:pointer;margin-left:4px;opacity:0.7">edit</span></div>` : `<div style="margin-top:10px;display:inline-flex;align-items:center;gap:6px;padding:5px 12px;background:rgba(255,255,255,0.03);border:1px dashed rgba(255,255,255,0.1);border-radius:8px;cursor:pointer" id="add-due-date-btn"><span style="font-size:10px;color:#6E6B80">+ Set bill due date</span></div>`;
+    countdownHTML = `<div style="background:linear-gradient(135deg,rgba(124,58,237,0.12),rgba(48,209,88,0.08));border:1px solid rgba(124,58,237,0.22);border-radius:16px;padding:20px;text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#C084FC;font-weight:700;margin-bottom:8px">✈️ Countdown to Trip</div><div style="font-size:72px;font-weight:900;line-height:1;color:#F0EEF8;margin-bottom:4px">${days}</div><div style="font-size:13px;color:#9896A8">day${days!==1?'s':''} to go · ${tripDateLabel}</div>${dueDateRow}</div>`;
     } else if (days === 0) {
       countdownHTML = `<div style="background:linear-gradient(135deg,rgba(48,209,88,0.12),rgba(124,58,237,0.08));border:1px solid rgba(48,209,88,0.3);border-radius:16px;padding:20px;text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#30D158;font-weight:700;margin-bottom:8px">✈️ Today's the Day!</div><div style="font-size:48px;font-weight:900;line-height:1;color:#30D158;margin-bottom:4px">🛫</div><div style="font-size:13px;color:#9896A8">${tripDateLabel}</div></div>`;
     } else {
@@ -1261,6 +1262,7 @@ app.get('/trip/:tripId', async (req, res) => {
     inviteUrl,
     tripName: trip.name,
     tripDate: trip.trip_date || '',
+    dueDate: trip.due_date || '',
     creatorEmail: trip.creator_email || '',
     people,
     hasCoverImage: !!trip.cover_image,
@@ -1531,6 +1533,7 @@ ${coverHTML}
     <div style="font-size:26px;font-weight:800;margin-bottom:16px">Trip Settings</div>
     <div style="margin-bottom:14px"><div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">Trip Name</div><input id="settings-name" type="text" placeholder="Trip name"></div>
     <div style="margin-bottom:16px"><div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">Trip Date</div><input id="settings-date" type="date"></div>
+    <div style="margin-bottom:16px"><div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">💰 Bill Due Date <span style="font-weight:400;text-transform:none;font-size:11px;letter-spacing:0">(RAVEN sends reminders after this)</span></div><input id="settings-due-date" type="date"></div>
     <button class="btn-g" id="save-settings-btn" style="margin-bottom:10px">💾 Save Changes</button>
     <button class="btn-o" id="close-settings-btn">Cancel</button>
   </div>
@@ -1642,6 +1645,15 @@ document.getElementById('invite-url-text').textContent = INVITE_URL;
 // Pre-fill settings inputs
 document.getElementById('settings-name').value = TRIP_NAME;
 if (TRIP_DATE) document.getElementById('settings-date').value = TRIP_DATE;
+const DUE_DATE = D.dueDate || '';
+if (DUE_DATE) { const dd = document.getElementById('settings-due-date'); if (dd) dd.value = DUE_DATE; }
+// Wire up inline due date edit/add buttons
+document.addEventListener('DOMContentLoaded', () => {
+  const editBtn = document.getElementById('edit-due-date-btn');
+  const addBtn  = document.getElementById('add-due-date-btn');
+  if (editBtn) editBtn.addEventListener('click', () => openModal('settings-modal'));
+  if (addBtn)  addBtn.addEventListener('click',  () => openModal('settings-modal'));
+});
 
 let splitType = 'even', tripItems = [], imgBase64 = null, newMembers = [];
 let gifUrl = null, gifTimer = null, gifPanelOpen = false;
@@ -2148,7 +2160,8 @@ document.getElementById('save-settings-btn').addEventListener('click', async fun
   if (!name) { toast('Trip name cannot be empty', false); return; }
   this.textContent = 'Saving...'; this.disabled = true;
   try {
-    const r = await fetch(BACKEND+'/trip/'+TRIP_ID+'/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,name,trip_date:date||null})});
+    const dueDate = document.getElementById('settings-due-date')?.value || null;
+    const r = await fetch(BACKEND+'/trip/'+TRIP_ID+'/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,name,trip_date:date||null,due_date:dueDate||null})});
     const d = await r.json();
     if (d.success) { toast('✅ Trip updated!'); setTimeout(()=>location.reload(),1200); }
     else toast(d.error||'Error',false);
@@ -2508,13 +2521,13 @@ app.post('/trip/:tripId/comment', async (req, res) => {
 app.post('/trip/:tripId/settings', async (req, res) => {
   try {
     const { tripId } = req.params;
-    const { token, name, trip_date } = req.body;
+    const { token, name, trip_date, due_date } = req.body;
     const { data: trip } = await supabase.from('trips').select('share_token').eq('id', tripId).single();
     if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
     if (!name?.trim()) return res.json({ success: false, error: 'Name required' });
     const update = { name: name.trim() };
-    if (trip_date) update.trip_date = trip_date;
-    else update.trip_date = null;
+    if (trip_date) update.trip_date = trip_date; else update.trip_date = null;
+    if (due_date)  update.due_date  = due_date;  else update.due_date  = null;
     await supabase.from('trips').update(update).eq('id', tripId);
     res.json({ success: true });
   } catch(err) { res.json({ success: false, error: err.message }); }
