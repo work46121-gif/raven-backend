@@ -1234,12 +1234,17 @@ app.get('/trip/:tripId', async (req, res) => {
     people,
     hasCoverImage: !!trip.cover_image,
     memberPayProfiles,
-    receiptsData: (receipts||[]).map(r => ({
-      id: r.id,
-      name: r.name || 'Receipt',
-      paid_by: r.paid_by || '',
-      total: parseFloat(r.total||0)
-    }))
+    receiptsData: (receipts||[]).map(r => {
+      let splitsData = {};
+      try { splitsData = typeof r.splits==='string' ? JSON.parse(r.splits) : (r.splits||{}); } catch(e) {}
+      return {
+        id: r.id,
+        name: r.name || 'Receipt',
+        paid_by: r.paid_by || '',
+        total: parseFloat(r.total||0),
+        splits: splitsData
+      };
+    })
   });
 
   res.send(`<!DOCTYPE html>
@@ -1432,13 +1437,13 @@ ${coverHTML}
 
 <!-- EDIT RECEIPT MODAL -->
 <div class="modal-bg" id="edit-receipt-modal" onclick="if(event.target.id==='edit-receipt-modal')closeEditReceipt()">
-  <div style="background:#13131A;border:1px solid rgba(255,255,255,0.1);border-radius:24px 24px 0 0;padding:28px 24px 48px;width:100%;max-width:480px;max-height:85vh;overflow-y:auto">
+  <div style="background:#13131A;border:1px solid rgba(255,255,255,0.1);border-radius:24px 24px 0 0;padding:28px 24px 48px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto">
     <div style="width:36px;height:4px;background:rgba(255,255,255,0.15);border-radius:2px;margin:0 auto 20px"></div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
       <div style="font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:0.05em">✏️ Edit Receipt</div>
       <button onclick="closeEditReceipt()" style="background:rgba(255,255,255,0.07);border:none;color:#9896A8;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:16px">✕</button>
     </div>
-    <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;flex-direction:column;gap:16px">
       <div>
         <div style="font-size:12px;color:#6E6B80;font-weight:600;margin-bottom:6px">Receipt Name</div>
         <input id="edit-r-name" type="text" style="width:100%;padding:12px 14px;background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#F0EEF8;font-family:'Epilogue',sans-serif;font-size:14px">
@@ -1452,7 +1457,16 @@ ${coverHTML}
       </div>
       <div>
         <div style="font-size:12px;color:#6E6B80;font-weight:600;margin-bottom:6px">Total Amount</div>
-        <div style="position:relative"><span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#6E6B80">$</span><input id="edit-r-total" type="number" step="0.01" style="width:100%;padding:12px 14px 12px 28px;background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#F0EEF8;font-family:'Epilogue',sans-serif;font-size:14px"></div>
+        <div style="position:relative"><span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#6E6B80">$</span><input id="edit-r-total" type="number" step="0.01" oninput="updateEditSplitPreview()" style="width:100%;padding:12px 14px 12px 28px;background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#F0EEF8;font-family:'Epilogue',sans-serif;font-size:14px"></div>
+      </div>
+      <div>
+        <div style="font-size:12px;color:#6E6B80;font-weight:600;margin-bottom:10px">Who's on this receipt?</div>
+        <div id="edit-r-people" style="display:flex;flex-direction:column;gap:8px"></div>
+        <div style="font-size:11px;color:#6E6B80;margin-top:8px">Unchecked people are removed from the split. Amounts are recalculated evenly among checked people.</div>
+      </div>
+      <div id="edit-r-split-preview" style="display:none;background:#0C0C12;border:1px solid rgba(48,209,88,0.15);border-radius:10px;padding:12px 14px">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:8px">Split Preview</div>
+        <div id="edit-r-split-rows" style="display:flex;flex-direction:column;gap:4px"></div>
       </div>
       <button id="edit-r-save" onclick="saveEditReceipt()" style="width:100%;padding:15px;background:#30D158;border:none;border-radius:12px;font-family:'Epilogue',sans-serif;font-size:15px;font-weight:700;color:#000;cursor:pointer;margin-top:4px">Save Changes</button>
     </div>
@@ -1881,24 +1895,78 @@ function openEditReceipt(id) {
   document.getElementById('edit-r-total').value = r.total;
   const sel = document.getElementById('edit-r-paidby');
   sel.value = r.paid_by || '';
+
+  // Build people checkboxes
+  const peopleContainer = document.getElementById('edit-r-people');
+  peopleContainer.innerHTML = '';
+  const currentSplitNames = Object.keys(r.splits || {}).map(k => k.toLowerCase());
+  const avatarColors = ['#7C3AED','#E8633A','#0EA5E9','#30D158','#F59E0B','#EC4899','#14B8A6','#84CC16'];
+
+  PEOPLE.forEach((person, i) => {
+    const isOnReceipt = currentSplitNames.includes(person.toLowerCase());
+    const currentAmt  = Object.entries(r.splits || {}).find(([k]) => k.toLowerCase() === person.toLowerCase());
+    const amt = currentAmt ? parseFloat(currentAmt[1]).toFixed(2) : '0.00';
+
+    const row = document.createElement('label');
+    row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:12px 14px;background:#0C0C12;border:1px solid rgba(255,255,255,0.08);border-radius:10px;cursor:pointer;transition:border-color 0.15s';
+    row.innerHTML =
+      '<input type="checkbox" name="edit-person" value="' + person + '" ' + (isOnReceipt ? 'checked' : '') + ' style="width:18px;height:18px;accent-color:#30D158;cursor:pointer;flex-shrink:0">' +
+      '<div style="width:30px;height:30px;border-radius:50%;background:' + avatarColors[i % avatarColors.length] + ';display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">' + person[0].toUpperCase() + '</div>' +
+      '<span style="font-size:14px;font-weight:600;flex:1">' + person + '</span>' +
+      '<span style="font-size:12px;color:#6E6B80">' + (isOnReceipt ? '$' + amt : 'not included') + '</span>';
+
+    const cb = row.querySelector('input');
+    cb.addEventListener('change', () => {
+      row.style.borderColor = cb.checked ? 'rgba(48,209,88,0.3)' : 'rgba(255,255,255,0.08)';
+      updateEditSplitPreview();
+    });
+    if (isOnReceipt) row.style.borderColor = 'rgba(48,209,88,0.3)';
+    peopleContainer.appendChild(row);
+  });
+
+  updateEditSplitPreview();
   document.getElementById('edit-receipt-modal').classList.add('open');
 }
+
+function updateEditSplitPreview() {
+  const total = parseFloat(document.getElementById('edit-r-total').value) || 0;
+  const checked = [...document.querySelectorAll('input[name="edit-person"]:checked')].map(cb => cb.value);
+  const preview = document.getElementById('edit-r-split-preview');
+  const rows    = document.getElementById('edit-r-split-rows');
+  if (!preview || !rows) return;
+  if (checked.length === 0 || total === 0) { preview.style.display = 'none'; return; }
+  const per = total / checked.length;
+  preview.style.display = 'block';
+  rows.innerHTML = checked.map(p =>
+    '<div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:#9896A8">' + p + '</span><span style="color:#30D158;font-weight:600">$' + per.toFixed(2) + '</span></div>'
+  ).join('');
+}
+
 function closeEditReceipt() {
   document.getElementById('edit-receipt-modal').classList.remove('open');
   _editReceiptId = null;
 }
+
 async function saveEditReceipt() {
   if (!_editReceiptId) return;
   const name   = document.getElementById('edit-r-name').value.trim() || 'Receipt';
   const paidBy = document.getElementById('edit-r-paidby').value;
   const total  = parseFloat(document.getElementById('edit-r-total').value) || 0;
   const btn    = document.getElementById('edit-r-save');
+
+  // Build new splits from checked people
+  const checked = [...document.querySelectorAll('input[name="edit-person"]:checked')].map(cb => cb.value);
+  if (checked.length === 0) { toast('Select at least one person', false); return; }
+  const per = total / checked.length;
+  const splits = {};
+  checked.forEach(p => { splits[p] = per; });
+
   btn.textContent = 'Saving...'; btn.disabled = true;
   try {
     const r = await fetch(BACKEND + '/trip/' + TRIP_ID + '/receipt/' + _editReceiptId + '/edit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: TRIP_TOKEN, name, paid_by: paidBy || null, total })
+      body: JSON.stringify({ token: TRIP_TOKEN, name, paid_by: paidBy || null, total, splits })
     });
     const d = await r.json();
     if (d.success) { closeEditReceipt(); toast('✅ Receipt updated!'); setTimeout(() => location.reload(), 900); }
@@ -2404,14 +2472,14 @@ app.post('/trip/:tripId/receipt', async (req, res) => {
 app.post('/trip/:tripId/receipt/:receiptId/edit', async (req, res) => {
   try {
     const { tripId, receiptId } = req.params;
-    const { token, name, paid_by, total } = req.body;
+    const { token, name, paid_by, total, splits } = req.body;
     const { data: trip } = await supabase.from('trips').select('share_token').eq('id', tripId).single();
     if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
-    // Update the receipt
     const updates = {};
-    if (name !== undefined)    updates.name    = name || 'Receipt';
+    if (name    !== undefined) updates.name    = name || 'Receipt';
     if (paid_by !== undefined) updates.paid_by = paid_by || null;
-    if (total !== undefined)   updates.total   = parseFloat(total) || 0;
+    if (total   !== undefined) updates.total   = parseFloat(total) || 0;
+    if (splits  !== undefined) updates.splits  = JSON.stringify(splits);
     await supabase.from('trip_receipts').update(updates).eq('id', receiptId).eq('trip_id', tripId);
     // Recalculate trip total
     const { data: all } = await supabase.from('trip_receipts').select('total').eq('trip_id', tripId);
