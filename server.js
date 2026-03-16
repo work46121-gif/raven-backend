@@ -980,20 +980,118 @@ app.get('/trip/:tripId', async (req, res) => {
     </div>`
   ).join('');
 
-  const receiptRows = (receipts||[]).map(r => {
-    let splitsHtml = '';
-    try {
-      const sp = typeof r.splits==='string' ? JSON.parse(r.splits) : (r.splits||{});
-      splitsHtml = Object.entries(sp).filter(([,a])=>parseFloat(a)>0).map(([p,a])=>
-        `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(255,255,255,0.05);border-radius:6px;font-size:11px;color:#9896A8">${esc(p)} <b style="color:#F0EEF8">$${parseFloat(a).toFixed(2)}</b></span>`
-      ).join('');
-    } catch(e) {}
-    return `<div style="padding:16px;border-bottom:1px solid rgba(255,255,255,0.05)">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
-        <div><div style="font-weight:700;font-size:14px;margin-bottom:2px">${esc(r.name||'Receipt')}</div><div style="font-size:11px;color:#6E6B80">${new Date(r.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div></div>
-        <span style="font-size:17px;font-weight:800;color:#30D158;font-family:monospace;flex-shrink:0;margin-left:12px">$${parseFloat(r.total||0).toFixed(2)}</span>
+  const avatarColorMap = ['#7C3AED','#E8633A','#0EA5E9','#30D158','#F59E0B','#EC4899','#14B8A6','#84CC16'];
+
+  const receiptRows = (receipts||[]).map((r, rIdx) => {
+    // Parse splits and items safely
+    let splits = {};
+    let items = [];
+    try { splits = typeof r.splits==='string' ? JSON.parse(r.splits) : (r.splits||{}); } catch(e) {}
+    try { items = typeof r.items==='string' ? JSON.parse(r.items) : (r.items||[]); } catch(e) {}
+
+    const splitEntries = Object.entries(splits).filter(([,a]) => parseFloat(a) > 0);
+    const total = parseFloat(r.total||0);
+    const dateStr = new Date(r.created_at).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+    const receiptId = 'receipt-' + rIdx;
+
+    // Per-person split pills for collapsed view
+    const splitPillsHtml = splitEntries.map(([p,a]) =>
+      `<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:rgba(255,255,255,0.05);border-radius:20px;font-size:12px;color:#9896A8">
+        <span style="width:18px;height:18px;border-radius:50%;background:${avatarColorMap[people.indexOf(p) % avatarColorMap.length] || '#6E6B80'};display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0">${esc(p[0].toUpperCase())}</span>
+        ${esc(p)} <b style="color:#F0EEF8;font-family:monospace">$${parseFloat(a).toFixed(2)}</b>
+      </span>`
+    ).join('');
+
+    // ── EXPANDED DETAIL SECTION ──
+    // Items breakdown
+    let itemsHtml = '';
+    if (items.length > 0) {
+      itemsHtml = `
+        <div style="margin-bottom:16px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:#6E6B80;font-weight:700;margin-bottom:8px">Items</div>
+          <div style="background:rgba(255,255,255,0.02);border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,0.06)">
+            ${items.map((item,i) => `
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:${i < items.length-1 ? '1px solid rgba(255,255,255,0.05)' : 'none'}">
+                <span style="font-size:13px;color:#E0DEF0">${esc(item.name||'Item')}</span>
+                <div style="display:flex;align-items:center;gap:8px">
+                  ${item.assignees && item.assignees.length > 0 ? `<span style="font-size:11px;color:#6E6B80">${item.assignees.map(a=>esc(a)).join(', ')}</span>` : ''}
+                  <span style="font-family:monospace;font-size:13px;color:#9896A8">$${parseFloat(item.price||0).toFixed(2)}</span>
+                </div>
+              </div>`).join('')}
+          </div>
+        </div>`;
+    }
+
+    // Per-person breakdown — visual bars
+    const personBreakdownHtml = splitEntries.length > 0 ? `
+      <div style="margin-bottom:16px">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:#6E6B80;font-weight:700;margin-bottom:10px">Who Owes What</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${splitEntries.map(([person, amount]) => {
+            const pct = total > 0 ? Math.round((parseFloat(amount) / total) * 100) : 0;
+            const color = avatarColorMap[people.indexOf(person) % avatarColorMap.length] || '#6E6B80';
+            return `<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:12px 14px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <div style="width:28px;height:28px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff">${esc(person[0].toUpperCase())}</div>
+                  <span style="font-size:14px;font-weight:600">${esc(person)}</span>
+                </div>
+                <div style="text-align:right">
+                  <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:#30D158;letter-spacing:0.03em;line-height:1">$${parseFloat(amount).toFixed(2)}</div>
+                  <div style="font-size:10px;color:#6E6B80">${pct}% of total</div>
+                </div>
+              </div>
+              <div style="height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden">
+                <div style="height:100%;width:${pct}%;background:${color};border-radius:2px;transition:width 0.4s ease"></div>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>` : '';
+
+    // Totals summary
+    const totalsHtml = `
+      <div style="background:rgba(48,209,88,0.04);border:1px solid rgba(48,209,88,0.12);border-radius:10px;padding:14px 16px">
+        <div style="display:flex;flex-direction:column;gap:6px">
+          ${items.length > 0 ? `<div style="display:flex;justify-content:space-between;font-size:13px;color:#6E6B80"><span>Subtotal</span><span style="font-family:monospace">$${items.reduce((s,i)=>s+parseFloat(i.price||0),0).toFixed(2)}</span></div>` : ''}
+          <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:700;color:#F0EEF8;padding-top:${items.length > 0 ? '6px;border-top:1px solid rgba(255,255,255,0.08)' : '0'}">
+            <span>Total</span>
+            <span style="font-family:'Bebas Neue',sans-serif;font-size:24px;color:#30D158;letter-spacing:0.03em">$${total.toFixed(2)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:#6E6B80"><span>${splitEntries.length} ${splitEntries.length === 1 ? 'person' : 'people'} splitting</span><span>${dateStr}</span></div>
+        </div>
+      </div>`;
+
+    return `
+    <div style="border-bottom:1px solid rgba(255,255,255,0.05)" id="${receiptId}-wrap">
+      <!-- COLLAPSED ROW — click to expand -->
+      <div onclick="toggleReceipt('${receiptId}')" style="display:flex;align-items:center;justify-content:space-between;padding:16px;cursor:pointer;gap:12px;transition:background 0.15s" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:5px">
+            <div style="width:36px;height:36px;border-radius:10px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.2);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">🧾</div>
+            <div>
+              <div style="font-weight:700;font-size:15px;color:#F0EEF8">${esc(r.name||'Receipt')}</div>
+              <div style="font-size:11px;color:#6E6B80;margin-top:1px">${dateStr} · ${splitEntries.length} ${splitEntries.length===1?'person':'people'}</div>
+            </div>
+          </div>
+          ${splitEntries.length > 0 ? `<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;padding-left:46px">${splitPillsHtml}</div>` : ''}
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+          <div style="text-align:right">
+            <div style="font-family:'Bebas Neue',sans-serif;font-size:26px;color:#30D158;letter-spacing:0.03em;line-height:1">$${total.toFixed(2)}</div>
+          </div>
+          <div id="${receiptId}-chevron" style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center;font-size:12px;color:#6E6B80;transition:transform 0.2s;flex-shrink:0">▾</div>
+        </div>
       </div>
-      ${splitsHtml?`<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px">${splitsHtml}</div>`:''}
+
+      <!-- EXPANDED DETAIL PANEL -->
+      <div id="${receiptId}" style="display:none;padding:0 16px 20px;margin-top:-4px">
+        <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:0">
+          ${itemsHtml}
+          ${personBreakdownHtml}
+          ${totalsHtml}
+        </div>
+      </div>
     </div>`;
   }).join('');
 
@@ -1382,6 +1480,20 @@ function toggleReceipts() {
   const open = body.style.display !== 'none';
   body.style.display = open ? 'none' : 'block';
   if (btn) btn.textContent = open ? '▾ Show' : '▴ Hide';
+}
+
+function toggleReceipt(id) {
+  const panel   = document.getElementById(id);
+  const chevron = document.getElementById(id + '-chevron');
+  if (!panel) return;
+  const isOpen = panel.style.display !== 'none';
+  panel.style.display = isOpen ? 'none' : 'block';
+  if (chevron) {
+    chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+    chevron.style.background = isOpen ? 'rgba(255,255,255,0.05)' : 'rgba(48,209,88,0.12)';
+    chevron.style.color = isOpen ? '#6E6B80' : '#30D158';
+    chevron.textContent = '▾';
+  }
 }
 
 // ── MODAL HELPERS ──
