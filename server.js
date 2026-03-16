@@ -544,7 +544,7 @@ app.get('/bill/:billId', async (req, res) => {
   }
 
   const participantsHTML = participants.length > 0 ? `
-    <div style="max-width:500px;margin:20px auto 0;padding:0 20px">
+    <div style="max-width:800px;margin:20px auto 0;padding:0 20px">
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:10px">Who owes what</div>
       <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:16px;overflow:hidden">
         ${participants.map(p => {
@@ -566,7 +566,7 @@ app.get('/bill/:billId', async (req, res) => {
     </div>` : '';
 
   const itemsListHTML = items.length > 0 ? `
-    <div style="max-width:500px;margin:20px auto 0;padding:0 20px">
+    <div style="max-width:800px;margin:20px auto 0;padding:0 20px">
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:10px">Items</div>
       <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:16px;overflow:hidden">
         ${items.map(i => `<div style="display:flex;justify-content:space-between;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.05)"><span style="font-size:14px;color:#F0EEF8">${i.name}</span><span style="font-size:14px;color:#9896A8">$${parseFloat(i.price).toFixed(2)}</span></div>`).join('')}
@@ -575,7 +575,7 @@ app.get('/bill/:billId', async (req, res) => {
         <div style="display:flex;justify-content:space-between;padding:14px 16px"><span style="font-size:15px;font-weight:700;color:#F0EEF8">Total</span><span style="font-size:15px;font-weight:700;color:#30D158">$${parseFloat(bill.total || 0).toFixed(2)}</span></div>
       </div>
     </div>` : (bill.tax || bill.tip ? `
-    <div style="max-width:500px;margin:20px auto 0;padding:0 20px">
+    <div style="max-width:800px;margin:20px auto 0;padding:0 20px">
       <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:16px;overflow:hidden">
         ${bill.tax ? `<div style="display:flex;justify-content:space-between;padding:11px 16px;border-bottom:1px solid rgba(255,255,255,0.05)"><span style="font-size:13px;color:#6E6B80">Tax</span><span style="font-size:13px;color:#6E6B80">$${parseFloat(bill.tax).toFixed(2)}</span></div>` : ''}
         ${bill.tip ? `<div style="display:flex;justify-content:space-between;padding:11px 16px;border-bottom:1px solid rgba(255,255,255,0.05)"><span style="font-size:13px;color:#6E6B80">Tip</span><span style="font-size:13px;color:#6E6B80">$${parseFloat(bill.tip).toFixed(2)}</span></div>` : ''}
@@ -603,7 +603,7 @@ app.get('/bill/:billId', async (req, res) => {
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;padding-bottom:120px}
     .hdr{position:sticky;top:0;background:rgba(6,6,10,0.95);backdrop-filter:blur(20px);border-bottom:1px solid rgba(255,255,255,0.07);padding:0 20px;z-index:100}
-    .hdr-i{max-width:500px;margin:0 auto;height:56px;display:flex;align-items:center;justify-content:space-between}
+    .hdr-i{max-width:800px;margin:0 auto;height:56px;display:flex;align-items:center;justify-content:space-between}
     .pm-row{display:flex;align-items:center;gap:14px;padding:14px 16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:12px;text-decoration:none;margin-bottom:8px;-webkit-tap-highlight-color:transparent;width:100%;cursor:pointer}
     .pm-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:700;font-size:14px;color:#fff}
     .pm-info{flex:1;display:flex;flex-direction:column;gap:2px;text-align:left}
@@ -617,7 +617,7 @@ app.get('/bill/:billId', async (req, res) => {
     <div style="font-size:11px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:20px;font-weight:600">${billId}</div>
   </div></div>
 
-  <div style="max-width:500px;margin:20px auto 0;padding:0 20px">
+  <div style="max-width:800px;margin:20px auto 0;padding:0 20px">
     <div style="font-size:28px;font-weight:800;margin-bottom:6px">${bill.name}</div>
     <div style="display:flex;gap:12px">
       <span style="font-size:12px;color:#6E6B80">Total <strong style="color:#F0EEF8">$${parseFloat(bill.total||0).toFixed(2)}</strong></span>
@@ -629,7 +629,7 @@ app.get('/bill/:billId', async (req, res) => {
   ${participantsHTML}
   ${itemsListHTML}
 
-  <div style="max-width:500px;margin:24px auto 0;padding:0 20px 40px">
+  <div style="max-width:800px;margin:24px auto 0;padding:0 20px 40px">
     <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:10px">Comments</div>
     <div id="clist" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
       <div id="no-c" style="color:#6E6B80;font-size:13px;text-align:center;padding:12px 0">No comments yet</div>
@@ -662,7 +662,7 @@ app.get('/bill/:billId', async (req, res) => {
   <div id="pmod" style="display:none;position:fixed;inset:0;z-index:999">
     <div onclick="closePay()" style="position:absolute;inset:0;background:rgba(0,0,0,0.8);backdrop-filter:blur(8px)"></div>
     <div style="position:absolute;bottom:0;left:0;right:0;display:flex;justify-content:center">
-      <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:24px 24px 0 0;padding:24px 20px 52px;width:100%;max-width:500px">
+      <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:24px 24px 0 0;padding:24px 20px 52px;width:100%;max-width:600px">
         <div style="width:36px;height:4px;background:rgba(255,255,255,0.12);border-radius:2px;margin:0 auto 20px"></div>
         <div style="font-size:18px;font-weight:700;margin-bottom:4px">Pay <span id="pname"></span></div>
         <div style="font-size:40px;font-weight:800;color:#30D158;margin-bottom:20px" id="pamt">$0.00</div>
@@ -1003,8 +1003,8 @@ app.get('/trip/:tripId', async (req, res) => {
   function esc(str) { return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
   const coverHTML = trip.cover_image
-    ? `<div style="max-width:560px;margin:0 auto;padding:16px 20px 0"><div style="position:relative;width:100%;height:190px;border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,0.07)"><img src="data:image/jpeg;base64,${trip.cover_image}" id="cover-img" style="width:100%;height:100%;object-fit:cover"><button id="cover-change-btn" style="position:absolute;bottom:10px;right:10px;padding:7px 14px;background:rgba(0,0,0,0.7);border:1px solid rgba(255,255,255,0.2);border-radius:8px;color:#fff;font-family:'Epilogue',sans-serif;font-size:12px;font-weight:600;cursor:pointer">📷 Change</button><input id="cover-upload" type="file" accept="image/*" style="display:none"></div></div>`
-    : `<div style="max-width:560px;margin:16px auto 0;padding:0 20px"><div id="cover-empty" style="width:100%;height:100px;border:2px dashed rgba(124,58,237,0.3);border-radius:16px;display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;background:rgba(124,58,237,0.03)"><span style="font-size:20px">🖼</span><span style="font-size:13px;color:#6E6B80;font-weight:500">Add a cover photo for this trip</span></div><input id="cover-upload" type="file" accept="image/*" style="display:none"></div>`;
+    ? `<div style="max-width:800px;margin:0 auto;padding:16px 20px 0"><div style="position:relative;width:100%;height:190px;border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,0.07)"><img src="data:image/jpeg;base64,${trip.cover_image}" id="cover-img" style="width:100%;height:100%;object-fit:cover"><button id="cover-change-btn" style="position:absolute;bottom:10px;right:10px;padding:7px 14px;background:rgba(0,0,0,0.7);border:1px solid rgba(255,255,255,0.2);border-radius:8px;color:#fff;font-family:'Epilogue',sans-serif;font-size:12px;font-weight:600;cursor:pointer">📷 Change</button><input id="cover-upload" type="file" accept="image/*" style="display:none"></div></div>`
+    : `<div style="max-width:800px;margin:16px auto 0;padding:0 20px"><div id="cover-empty" style="width:100%;height:100px;border:2px dashed rgba(124,58,237,0.3);border-radius:16px;display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;background:rgba(124,58,237,0.03)"><span style="font-size:20px">🖼</span><span style="font-size:13px;color:#6E6B80;font-weight:500">Add a cover photo for this trip</span></div><input id="cover-upload" type="file" accept="image/*" style="display:none"></div>`;
 
   const avatarRow = people.map((p, i) =>
     `<div data-person-avatar="${esc(p)}" onclick="openMemberProfile('${esc(p)}')" title="${esc(p)}" style="width:32px;height:32px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};border:2px solid #06060A;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0;margin-left:${i===0?'0':'-8px'};overflow:hidden;cursor:pointer">${esc(p[0].toUpperCase())}</div>`
@@ -1301,7 +1301,7 @@ app.get('/trip/:tripId', async (req, res) => {
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--black:#06060A;--dark:#0C0C12;--dark2:#13131A;--border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);--white:#F0EEF8;--muted:#6E6B80;--muted2:#9896A8;--green:#30D158;--purple:#7C3AED;--purple2:#A855F7;--orange:#FF6B35}
-body{font-family:'Epilogue',sans-serif;background:var(--black);color:var(--white);min-height:100vh;padding-bottom:60px}
+body{font-family:'Epilogue',sans-serif;background:var(--black);color:var(--white);min-height:100vh;padding-bottom:60px}@media(min-width:860px){.sec{max-width:820px;margin:0 auto}.hdr-i{max-width:820px!important}}
 .hdr{position:sticky;top:0;background:rgba(6,6,10,0.95);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);z-index:100}
 .hdr-inner{max-width:560px;margin:0 auto;height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 20px}
 .sec{max-width:560px;margin:20px auto 0;padding:0 20px}
