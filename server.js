@@ -1216,6 +1216,7 @@ app.get('/trip/:tripId', async (req, res) => {
         <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
           <div style="font-family:'Bebas Neue',sans-serif;font-size:26px;color:#30D158;letter-spacing:0.03em;line-height:1">$${total.toFixed(2)}</div>
           <button onclick="event.stopPropagation();openEditReceipt('${esc(r.id)}')" style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.06);border:none;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0" title="Edit receipt">✏️</button>
+          <button class="admin-delete-receipt-btn" data-receipt-id="${r.id}" data-receipt-name="${esc(r.name||'Receipt')}" onclick="event.stopPropagation();adminDeleteReceipt(this)" style="display:none;width:28px;height:28px;border-radius:50%;background:rgba(255,68,68,0.1);border:1px solid rgba(255,68,68,0.25);cursor:pointer;font-size:13px;align-items:center;justify-content:center;flex-shrink:0;color:#FF6B6B" title="Delete receipt">🗑</button>
           <div id="${receiptId}-chevron" style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center;font-size:12px;color:#6E6B80;transition:transform 0.2s;flex-shrink:0">▾</div>
         </div>
       </div>
@@ -1260,6 +1261,7 @@ app.get('/trip/:tripId', async (req, res) => {
     inviteUrl,
     tripName: trip.name,
     tripDate: trip.trip_date || '',
+    creatorEmail: trip.creator_email || '',
     people,
     hasCoverImage: !!trip.cover_image,
     memberPayProfiles,
@@ -1591,10 +1593,20 @@ const TRIP_URL   = D.tripUrl;
 const INVITE_URL = D.inviteUrl;
 const TRIP_NAME  = D.tripName;
 const TRIP_DATE  = D.tripDate;
+const CREATOR_EMAIL = D.creatorEmail || '';
 let   PEOPLE     = D.people;
 const PAY_PROFILES = D.memberPayProfiles || {};
 const receiptsDataMap = {}; // keyed by receipt id — safe lookup, no user data in onclick
 (D.receiptsData || []).forEach(r => { receiptsDataMap[r.id] = r; });
+
+// Determine if current viewer is admin (creator)
+function checkIsAdmin() {
+  try {
+    const local = JSON.parse(localStorage.getItem('raven_profile') || '{}');
+    return local.email === CREATOR_EMAIL || local.user_id === CREATOR_EMAIL;
+  } catch(e) { return false; }
+}
+let IS_ADMIN = checkIsAdmin();
 
 // Enrich PAY_PROFILES with the current user's payment methods from localStorage
 // (catches cases where server-side lookup didn't find them)
@@ -1805,7 +1817,57 @@ function viewSavedReceipt(id) {
   } catch(e) {}
 }
 
-async function retryPendingScans() {
+// ── ADMIN: show delete buttons on receipt cards if viewer is admin ──
+(function applyAdminButtons() {
+  if (!IS_ADMIN) return;
+  document.querySelectorAll('.admin-delete-receipt-btn').forEach(btn => {
+    btn.style.display = 'flex';
+  });
+})();
+
+async function adminDeleteReceipt(btn) {
+  const receiptId = btn.dataset.receiptId;
+  const name = btn.dataset.receiptName || 'this receipt';
+  // Inline confirm — no browser confirm() (broken on iOS)
+  const existing = document.getElementById('delete-receipt-confirm-' + receiptId);
+  if (existing) { existing.remove(); return; }
+  const wrap = document.createElement('div');
+  wrap.id = 'delete-receipt-confirm-' + receiptId;
+  wrap.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:9998;background:#13131A;border:1px solid rgba(255,68,68,0.3);border-radius:14px;padding:16px 20px;max-width:340px;width:calc(100% - 32px);box-shadow:0 20px 60px rgba(0,0,0,0.6)';
+  wrap.innerHTML =
+    '<div style="font-size:14px;font-weight:700;color:#FF6B6B;margin-bottom:6px">🗑 Delete "' + name + '"?</div>' +
+    '<div style="font-size:12px;color:#6E6B80;margin-bottom:14px">This will permanently remove the receipt and recalculate the trip total.</div>' +
+    '<div style="display:flex;gap:8px">' +
+    '<button id="drc-cancel-' + receiptId + '" style="flex:1;padding:10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#9896A8;font-family:\'Epilogue\',sans-serif;font-size:13px;font-weight:600;cursor:pointer">Cancel</button>' +
+    '<button id="drc-confirm-' + receiptId + '" style="flex:1;padding:10px;background:rgba(255,68,68,0.15);border:1px solid rgba(255,68,68,0.3);border-radius:8px;color:#FF6B6B;font-family:\'Epilogue\',sans-serif;font-size:13px;font-weight:700;cursor:pointer">Delete</button>' +
+    '</div>';
+  document.body.appendChild(wrap);
+  document.getElementById('drc-cancel-' + receiptId).addEventListener('click', () => wrap.remove());
+  document.getElementById('drc-confirm-' + receiptId).addEventListener('click', async () => {
+    wrap.innerHTML = '<div style="text-align:center;padding:8px;color:#9896A8;font-size:13px">Deleting...</div>';
+    try {
+      const r = await fetch(BACKEND + '/trip/' + TRIP_ID + '/receipt/' + receiptId + '/delete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: TRIP_TOKEN })
+      });
+      const d = await r.json();
+      if (d.success) {
+        wrap.remove();
+        // Remove receipt card from DOM
+        const card = document.getElementById('receipt-' + receiptId + '-wrap') ||
+                     btn.closest('[id$="-wrap"]');
+        if (card) card.remove();
+        toast('Receipt deleted ✓', true);
+      } else {
+        wrap.innerHTML = '<div style="color:#FF6B6B;font-size:13px;text-align:center;padding:8px">' + (d.error || 'Delete failed') + '</div>';
+        setTimeout(() => wrap.remove(), 2500);
+      }
+    } catch(e) {
+      wrap.innerHTML = '<div style="color:#FF6B6B;font-size:13px;text-align:center;padding:8px">Network error</div>';
+      setTimeout(() => wrap.remove(), 2500);
+    }
+  });
+}
   try {
     const pending = JSON.parse(localStorage.getItem('raven_pending_receipts') || '[]');
     const unscanned = pending.filter(p => !p.scanned && p.tripId === TRIP_ID);
@@ -2661,6 +2723,22 @@ app.post('/trip/:tripId/receipt/:receiptId/edit', async (req, res) => {
     await supabase.from('trips').update({ total: newTotal }).eq('id', tripId);
     res.json({ success: true });
   } catch(err) { console.error('Edit receipt error:', err); res.json({ success: false, error: err.message }); }
+});
+
+// ─── DELETE RECEIPT (admin only — verified by share token) ───────────────────
+app.post('/trip/:tripId/receipt/:receiptId/delete', async (req, res) => {
+  try {
+    const { tripId, receiptId } = req.params;
+    const { token } = req.body;
+    const { data: trip } = await supabase.from('trips').select('share_token,creator_email').eq('id', tripId).single();
+    if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
+    await supabase.from('trip_receipts').delete().eq('id', receiptId).eq('trip_id', tripId);
+    // Recalculate trip total and receipt count
+    const { data: remaining } = await supabase.from('trip_receipts').select('total').eq('trip_id', tripId);
+    const newTotal = (remaining||[]).reduce((s,r) => s + parseFloat(r.total||0), 0);
+    await supabase.from('trips').update({ total: newTotal, receipt_count: (remaining||[]).length }).eq('id', tripId);
+    res.json({ success: true });
+  } catch(err) { console.error('Delete receipt error:', err); res.json({ success: false, error: err.message }); }
 });
 
 // ─── TRIP INFO (public — used by invite join banner) ─────────────────────────
