@@ -1074,7 +1074,8 @@ app.get('/trip/:tripId', async (req, res) => {
       </div>`
     ).join('');
 
-    return `<div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)">
+    const personId = 'person-' + p.replace(/[^a-z0-9]/gi,'_');
+    return `<div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)" id="row-${personId}">
       <div style="display:flex;align-items:center;justify-content:space-between;${payerEntries.length>0?'margin-bottom:12px':''}">
         <div style="display:flex;align-items:center;gap:10px;cursor:pointer" onclick="openMemberProfile('${esc(p)}')" title="View ${esc(p)}'s profile">
           <div data-person-avatar="${esc(p)}" style="width:34px;height:34px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;overflow:hidden">${esc(p[0].toUpperCase())}</div>
@@ -1091,7 +1092,12 @@ app.get('/trip/:tripId', async (req, res) => {
           </div>
         </div>
       </div>
-      ${payerEntries.length>0 ? `<div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px 12px">${payBtnsHtml}</div>` : ''}
+      ${payerEntries.length>0 ? `<div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px 12px">
+        ${payBtnsHtml}
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)">
+          <button onclick="markTripPersonPaid('${esc(p)}','${personId}')" id="markpaid-${personId}" style="display:inline-flex;align-items:center;gap:7px;padding:8px 16px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:9px;color:#30D158;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer">✓ Mark as Settled</button>
+        </div>
+      </div>` : ''}
     </div>`;
   }).join('');
 
@@ -1185,12 +1191,18 @@ app.get('/trip/:tripId', async (req, res) => {
         <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:#A855F7">$${total.toFixed(2)}</div>
       </div>` : '';
 
+    const rTax = parseFloat(r.tax||0);
+    const rTip = parseFloat(r.tip||0);
+    const rSvc = parseFloat(r.service_fee||0);
     const totalsHtml = `
       ${payerBadgeHtml}
       <div style="background:rgba(48,209,88,0.04);border:1px solid rgba(48,209,88,0.12);border-radius:10px;padding:14px 16px">
         <div style="display:flex;flex-direction:column;gap:6px">
           ${items.length > 0 ? `<div style="display:flex;justify-content:space-between;font-size:13px;color:#6E6B80"><span>Subtotal</span><span style="font-family:monospace">$${items.reduce((s,i)=>s+parseFloat(i.price||0),0).toFixed(2)}</span></div>` : ''}
-          <div style="display:flex;justify-content:space-between;align-items:center;${items.length>0?'padding-top:6px;border-top:1px solid rgba(255,255,255,0.08)':''}">
+          ${rTax > 0 ? `<div style="display:flex;justify-content:space-between;font-size:13px;color:#6E6B80"><span>Tax</span><span style="font-family:monospace">$${rTax.toFixed(2)}</span></div>` : ''}
+          ${rTip > 0 ? `<div style="display:flex;justify-content:space-between;font-size:13px;color:#6E6B80"><span>Tip</span><span style="font-family:monospace">$${rTip.toFixed(2)}</span></div>` : ''}
+          ${rSvc > 0 ? `<div style="display:flex;justify-content:space-between;font-size:13px;color:#6E6B80"><span>Service Fee</span><span style="font-family:monospace">$${rSvc.toFixed(2)}</span></div>` : ''}
+          <div style="display:flex;justify-content:space-between;align-items:center;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08)">
             <span style="font-size:15px;font-weight:700">Total</span>
             <span style="font-family:'Bebas Neue',sans-serif;font-size:24px;color:#30D158;letter-spacing:0.03em">$${total.toFixed(2)}</span>
           </div>
@@ -1653,6 +1665,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const addBtn  = document.getElementById('add-due-date-btn');
   if (editBtn) editBtn.addEventListener('click', () => openModal('settings-modal'));
   if (addBtn)  addBtn.addEventListener('click',  () => openModal('settings-modal'));
+
+  // Show admin delete buttons if admin
+  IS_ADMIN = checkIsAdmin();
+  if (IS_ADMIN) {
+    document.querySelectorAll('.admin-delete-receipt-btn').forEach(btn => {
+      btn.style.display = 'flex';
+    });
+  }
+
+  // Build saved receipts photo gallery — runs after DOM ready so it works on mobile too
+  try { buildSavedReceiptsGallery(); } catch(e) { console.error('Gallery error:', e); }
 });
 
 let splitType = 'even', tripItems = [], imgBase64 = null, newMembers = [];
@@ -1753,7 +1776,7 @@ if (new URLSearchParams(window.location.search).get('action') === 'receipt') {
 }
 
 // ── SAVED RECEIPTS — build gallery from localStorage photos ──
-(function buildSavedReceiptsGallery() {
+function buildSavedReceiptsGallery() {
   try {
     const pending = JSON.parse(localStorage.getItem('raven_pending_receipts') || '[]');
     const mine = pending.filter(p => p.tripId === TRIP_ID);
@@ -1824,7 +1847,7 @@ if (new URLSearchParams(window.location.search).get('action') === 'receipt') {
     const receiptsSec = document.getElementById('receipts-body');
     if (receiptsSec) receiptsSec.closest('.sec').parentNode.insertBefore(section, receiptsSec.closest('.sec'));
   } catch(e) { console.error('Saved receipts gallery error:', e); }
-})();
+}
 
 function viewSavedReceipt(id) {
   try {
@@ -1958,6 +1981,72 @@ function renderPaySlots() {
 
 // Run after page loads and PAY_PROFILES is enriched from localStorage
 setTimeout(renderPaySlots, 300);
+
+// Mark a person as settled in the trip hub
+function markTripPersonPaid(personName, personId) {
+  const btn = document.getElementById('markpaid-' + personId);
+  if (!btn) return;
+  if (btn.dataset.confirming === '1') {
+    // Second tap — mark as settled
+    btn.textContent = '✅ Settled';
+    btn.style.background = 'rgba(48,209,88,0.15)';
+    btn.style.borderColor = 'rgba(48,209,88,0.4)';
+    btn.disabled = true;
+    btn.dataset.confirming = '';
+    // Update the status row text
+    const row = document.getElementById('row-' + personId);
+    if (row) {
+      const statusEl = row.querySelector('[style*="owes $"]');
+      if (statusEl) { statusEl.textContent = 'all settled ✓'; statusEl.style.color = '#30D158'; }
+      const amountEl = row.querySelector('[style*="font-family:\'JetBrains Mono"]');
+      if (amountEl) { amountEl.textContent = '$0.00'; amountEl.style.color = '#9896A8'; }
+      // Hide pay slots
+      row.querySelectorAll('.pay-slot').forEach(s => s.style.display = 'none');
+    }
+    // Store in localStorage so it persists across page refresh for this session
+    try {
+      const key = 'raven_settled_' + TRIP_ID;
+      const settled = JSON.parse(localStorage.getItem(key) || '[]');
+      if (!settled.includes(personName)) settled.push(personName);
+      localStorage.setItem(key, JSON.stringify(settled));
+    } catch(e) {}
+    toast(personName + ' marked as settled ✓', true);
+    return;
+  }
+  // First tap — confirm state
+  btn.dataset.confirming = '1';
+  btn.textContent = '⚠️ Tap again to confirm';
+  btn.style.background = 'rgba(48,209,88,0.15)';
+  btn.style.borderColor = 'rgba(48,209,88,0.5)';
+  setTimeout(() => {
+    if (btn.dataset.confirming === '1') {
+      btn.dataset.confirming = '';
+      btn.textContent = '✓ Mark as Settled';
+      btn.style.background = 'rgba(48,209,88,0.08)';
+      btn.style.borderColor = 'rgba(48,209,88,0.2)';
+    }
+  }, 3000);
+}
+
+// Restore settled states from localStorage on page load
+document.addEventListener('DOMContentLoaded', function() {
+  try {
+    const key = 'raven_settled_' + TRIP_ID;
+    const settled = JSON.parse(localStorage.getItem(key) || '[]');
+    settled.forEach(personName => {
+      const personId = personName.replace(/[^a-z0-9]/gi,'_');
+      const btn = document.getElementById('markpaid-' + personId);
+      if (btn) {
+        btn.textContent = '✅ Settled';
+        btn.style.background = 'rgba(48,209,88,0.15)';
+        btn.style.borderColor = 'rgba(48,209,88,0.4)';
+        btn.disabled = true;
+        const row = document.getElementById('row-' + personId);
+        if (row) row.querySelectorAll('.pay-slot').forEach(s => s.style.display = 'none');
+      }
+    });
+  } catch(e) {}
+});
 // Also re-run when a receipt is expanded
 // pay slots re-rendered on receipt expand — see toggleReceipt below
 
@@ -2617,11 +2706,15 @@ app.post('/trip/:tripId/join', async (req, res) => {
 app.post('/trip/:tripId/receipt', async (req, res) => {
   try {
     const { tripId } = req.params;
-    const { name, total, splits, token, items, paid_by } = req.body;
+    const { name, total, splits, token, items, paid_by, tax, tip, service_fee } = req.body;
     const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
     if (!trip) return res.json({ success: false, error: 'Trip not found' });
     if (trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
-    await supabase.from('trip_receipts').insert({ trip_id: tripId, name: name||'Receipt', total: parseFloat(total)||0, splits: JSON.stringify(splits||{}), items: JSON.stringify(items||[]), paid_by: paid_by||null, created_at: new Date().toISOString() });
+    const tripReceiptRow = { trip_id: tripId, name: name||'Receipt', total: parseFloat(total)||0, splits: JSON.stringify(splits||{}), items: JSON.stringify(items||[]), paid_by: paid_by||null, created_at: new Date().toISOString() };
+    if (parseFloat(tax) > 0) tripReceiptRow.tax = parseFloat(tax);
+    if (parseFloat(tip) > 0) tripReceiptRow.tip = parseFloat(tip);
+    if (parseFloat(service_fee) > 0) tripReceiptRow.service_fee = parseFloat(service_fee);
+    await supabase.from('trip_receipts').insert(tripReceiptRow);
     const { data: all } = await supabase.from('trip_receipts').select('total').eq('trip_id', tripId);
     const newTotal = (all||[]).reduce((s,r) => s+parseFloat(r.total||0), 0);
     await supabase.from('trips').update({ total: newTotal, receipt_count: (all||[]).length }).eq('id', tripId);
