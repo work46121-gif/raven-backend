@@ -634,7 +634,7 @@ app.get('/bill/:billId', async (req, res) => {
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
   <title>🪶 ${bill.name} — RAVEN</title>
   <meta property="og:title" content="🪶 ${bill.name} — Split bills free with RAVEN" />
-  <meta property="og:description" content="Tap to see what you owe and pay your share. Total: $${parseFloat(bill.total||0).toFixed(2)}" />
+  <meta property="og:description" content="Tap to see what you owe · Bill ID: ${billId} · Split bills free at ravensplit.com" />
   <meta property="og:image" content="https://ravensplit.com/raven-hero.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
