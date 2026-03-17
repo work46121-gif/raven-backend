@@ -479,7 +479,6 @@ app.get('/bill/:billId', async (req, res) => {
   const selections = selectionsRes.data || [];
   const participants = participantsRes.data || [];
 
-  // Always fetch the creator's profile (used as fallback)
   let creatorProfile = null;
   const emailTry = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle,applepay').eq('email', bill.creator_phone).maybeSingle();
   creatorProfile = emailTry.data;
@@ -488,39 +487,15 @@ app.get('/bill/:billId', async (req, res) => {
     creatorProfile = phoneTry.data;
   }
 
-  // If bill.paid_by is set, that's the person who actually fronted the money.
-  // Look up their profile so the payment modal shows THEIR payment methods.
-  // paid_by is stored as a display name (e.g. "daddy"), so we match by first_name in profiles.
+  // If bill.paid_by is set, look up that person's profile — they're who everyone needs to pay
   let payerProfile = null;
   const paidByName = bill.paid_by || null;
   if (paidByName) {
-    // Try matching by first_name in profiles (case-insensitive)
-    const payerByName = await supabase
-      .from('profiles')
-      .select('first_name,venmo,cashapp,zelle,applepay')
-      .ilike('first_name', paidByName)
-      .maybeSingle();
-    payerProfile = payerByName.data;
-
-    // Fallback: try matching by display_name column if it exists
-    if (!payerProfile) {
-      const payerByDisplay = await supabase
-        .from('profiles')
-        .select('first_name,venmo,cashapp,zelle,applepay')
-        .ilike('display_name', paidByName)
-        .maybeSingle();
-      payerProfile = payerByDisplay.data;
-    }
+    const r = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle,applepay').ilike('first_name', paidByName).maybeSingle();
+    payerProfile = r.data;
   }
-
-  // Use payer's profile if found; otherwise fall back to creator's profile.
-  // Inject the paidByName so the modal title shows the correct name.
   const billPayerProfile = payerProfile || creatorProfile;
-  if (billPayerProfile && paidByName) {
-    // Override first_name with the paid_by value so the modal always says
-    // "Pay daddy" (or whoever actually paid), not "Pay [profile first_name]"
-    billPayerProfile.first_name = paidByName;
-  }
+  if (billPayerProfile && paidByName) billPayerProfile.first_name = paidByName;
 
   const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
     ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
@@ -578,22 +553,36 @@ app.get('/bill/:billId', async (req, res) => {
     return `<div style="margin-top:8px;background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px">${rows}${divider}<div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:4px;padding-top:5px;display:flex;justify-content:space-between"><span style="font-size:11px;font-weight:700;color:#F0EEF8">Total</span><span style="font-size:12px;font-weight:700;color:#30D158;font-family:monospace">$${amount.toFixed(2)}</span></div></div>`;
   }
 
+  const paidByLower = (bill.paid_by || '').toLowerCase();
   const participantsHTML = participants.length > 0 ? `
     <div style="max-width:800px;margin:20px auto 0;padding:0 20px">
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:10px">Who owes what</div>
+      ${paidByLower ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:10px;margin-bottom:10px"><span style="font-size:18px">💳</span><div><div style="font-size:13px;font-weight:700;color:#C084FC">${bill.paid_by} paid the bill</div><div style="font-size:11px;color:#6E6B80">Everyone else owes them their share</div></div></div>` : ''}
       <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:16px;overflow:hidden">
         ${participants.map(p => {
           const myItems = participantItems[p.name.toLowerCase()] || [];
           const safeName = p.name.replace(/"/g, '&quot;');
           const breakdownHTML = buildBreakdown(p, myItems, bill, participants.length);
+          const isBillPayer = paidByLower && p.name.toLowerCase() === paidByLower;
+          let statusEl, actionEl;
+          if (isBillPayer) {
+            statusEl = `<div id="pstatus-${p.id}" style="font-size:12px;color:#C084FC;margin-top:2px">💳 Paid the bill</div>`;
+            actionEl = `<span style="font-size:20px">💳</span>`;
+          } else if (p.paid) {
+            statusEl = `<div id="pstatus-${p.id}" style="font-size:12px;color:#30D158;margin-top:2px">✅ Paid</div>`;
+            actionEl = `<span style="font-size:18px">✅</span>`;
+          } else {
+            statusEl = `<div id="pstatus-${p.id}" style="font-size:12px;color:#6E6B80;margin-top:2px">Owes $${parseFloat(p.amount).toFixed(2)}</div>`;
+            actionEl = `<button onclick="showPay(this)" data-pid="${p.id}" data-name="${safeName}" data-amount="${parseFloat(p.amount).toFixed(2)}" id="paybtn-${p.id}" style="padding:9px 18px;background:#30D158;border:none;border-radius:10px;color:#000;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;flex-shrink:0;margin-top:2px">💳 Pay</button>`;
+          }
           return `<div id="prow-${p.id}" style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)">
             <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
               <div style="min-width:0;flex:1">
                 <div style="font-size:15px;font-weight:600;color:#F0EEF8">${p.name}</div>
-                <div id="pstatus-${p.id}" style="font-size:12px;color:${p.paid ? '#30D158' : '#6E6B80'};margin-top:2px">${p.paid ? '✅ Paid' : 'Owes $' + parseFloat(p.amount).toFixed(2)}</div>
+                ${statusEl}
                 ${breakdownHTML}
               </div>
-              ${!p.paid ? `<button onclick="showPay(this)" data-pid="${p.id}" data-name="${safeName}" data-amount="${parseFloat(p.amount).toFixed(2)}" id="paybtn-${p.id}" style="padding:9px 18px;background:#30D158;border:none;border-radius:10px;color:#000;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;flex-shrink:0;margin-top:2px">💳 Pay</button>` : '<span style="font-size:18px">✅</span>'}
+              ${actionEl}
             </div>
           </div>`;
         }).join('')}
@@ -619,6 +608,7 @@ app.get('/bill/:billId', async (req, res) => {
     </div>` : '');
 
   const profileB64 = Buffer.from(JSON.stringify(billPayerProfile || {})).toString('base64');
+  const paidByNameSafe = JSON.stringify(bill.paid_by || '');
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -648,7 +638,10 @@ app.get('/bill/:billId', async (req, res) => {
 </head>
 <body>
   <div class="hdr"><div class="hdr-i">
-    <div style="font-size:18px;font-weight:900;letter-spacing:0.12em"><a href="https://ravensplit.com/" style="text-decoration:none;color:inherit">🪶 RAVEN</a></div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <button onclick="history.back()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#9896A8;padding:6px 12px;font-size:13px;cursor:pointer;font-family:inherit">← Back</button>
+      <div style="font-size:18px;font-weight:900;letter-spacing:0.12em"><a href="https://ravensplit.com/" style="text-decoration:none;color:inherit">🪶 RAVEN</a></div>
+    </div>
     <div style="font-size:11px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:20px;font-weight:600">${billId}</div>
   </div></div>
 
@@ -693,6 +686,7 @@ app.get('/bill/:billId', async (req, res) => {
   </div>
 
   <input type="hidden" id="pd" value="${profileB64}">
+  <input type="hidden" id="paid-by-name" value="${bill.paid_by ? bill.paid_by.replace(/"/g,'&quot;') : ''}">
 
   <div id="pmod" style="display:none;position:fixed;inset:0;z-index:999">
     <div onclick="closePay()" style="position:absolute;inset:0;background:rgba(0,0,0,0.8);backdrop-filter:blur(8px)"></div>
@@ -729,9 +723,10 @@ app.get('/bill/:billId', async (req, res) => {
       const pid = btn.dataset.pid, name = btn.dataset.name, amount = btn.dataset.amount;
       let p = {};
       try { p = JSON.parse(atob(document.getElementById('pd').value||'')); } catch(e){}
-      // "Pay [creator name]" not "Pay [participant name]"
-      const creatorName = p.first_name || 'Bill Creator';
-      document.getElementById('pname').textContent = creatorName;
+      // Use the paid_by name — that's who people are paying back
+      const paidByName = document.getElementById('paid-by-name')?.value || '';
+      const payeeName = paidByName || p.first_name || 'Bill Creator';
+      document.getElementById('pname').textContent = payeeName;
       document.getElementById('pamt').textContent = '$' + parseFloat(amount).toFixed(2);
       const amt = parseFloat(amount).toFixed(2);
       const mc = document.getElementById('pmethods');
