@@ -593,7 +593,7 @@ app.get('/bill/:billId', async (req, res) => {
   <title>🪶 ${bill.name} — RAVEN</title>
   <meta property="og:title" content="🪶 ${bill.name} — You've been spotted by RAVEN" />
   <meta property="og:description" content="Tap to see what you owe. Total: $${parseFloat(bill.total||0).toFixed(2)}" />
-  <meta property="og:image" content="https://work46121-gif.github.io/raven-site/raven-hero.png" />
+  <meta property="og:image" content="https://ravensplit.com/raven-hero.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:url" content="${baseUrl}/bill/${billId}" />
@@ -613,7 +613,7 @@ app.get('/bill/:billId', async (req, res) => {
 </head>
 <body>
   <div class="hdr"><div class="hdr-i">
-    <div style="font-size:18px;font-weight:900;letter-spacing:0.12em"><a href="https://work46121-gif.github.io/raven-site/" style="text-decoration:none;color:inherit">🪶 RAVEN</a></div>
+    <div style="font-size:18px;font-weight:900;letter-spacing:0.12em"><a href="https://ravensplit.com/" style="text-decoration:none;color:inherit">🪶 RAVEN</a></div>
     <div style="font-size:11px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:20px;font-weight:600">${billId}</div>
   </div></div>
 
@@ -895,7 +895,7 @@ app.get('/trip/:tripId', async (req, res) => {
     const invBaseUrl = process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : `https://raven-backend-production-fb1f.up.railway.app`;
     const ogImage = trip.cover_image
       ? `${invBaseUrl}/trip/${tripId}/cover-image`
-      : 'https://work46121-gif.github.io/raven-site/raven-hero.png';
+      : 'https://ravensplit.com/raven-hero.png';
     const coverImgHTML = trip.cover_image
       ? `<div style="width:100%;height:160px;border-radius:20px;overflow:hidden;margin-bottom:24px;border:1px solid rgba(255,255,255,0.1)"><img src="${ogImage}" style="width:100%;height:100%;object-fit:cover"></div>`
       : '<div style="font-size:52px;margin-bottom:16px">✈️</div>';
@@ -927,8 +927,8 @@ app.get('/trip/:tripId', async (req, res) => {
   <div style="font-size:14px;color:#6E6B80;margin-bottom:8px">${peopleArr.length} people already on this trip</div>
   <div style="font-size:14px;color:#6E6B80;margin-bottom:32px">You've been invited to join this trip hub on RAVEN</div>
   <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:24px">
-    <a href="https://work46121-gif.github.io/raven-site/dashboard.html?join_trip=${tripId}&join_token=${trip.invite_token}" style="display:block;width:100%;padding:15px;background:#30D158;color:#000;border-radius:12px;font-size:15px;font-weight:800;text-decoration:none;margin-bottom:10px">🪶 Create Account &amp; Join Trip</a>
-    <a href="https://work46121-gif.github.io/raven-site/dashboard.html?join_trip=${tripId}&join_token=${trip.invite_token}&signin=1" style="display:block;width:100%;padding:13px;background:transparent;border:1px solid rgba(255,255,255,0.12);color:#9896A8;border-radius:12px;font-size:14px;font-weight:600;text-decoration:none">Already have an account? Sign In</a>
+    <a href="https://ravensplit.com/dashboard.html?join_trip=${tripId}&join_token=${trip.invite_token}" style="display:block;width:100%;padding:15px;background:#30D158;color:#000;border-radius:12px;font-size:15px;font-weight:800;text-decoration:none;margin-bottom:10px">🪶 Create Account &amp; Join Trip</a>
+    <a href="https://ravensplit.com/dashboard.html?join_trip=${tripId}&join_token=${trip.invite_token}&signin=1" style="display:block;width:100%;padding:13px;background:transparent;border:1px solid rgba(255,255,255,0.12);color:#9896A8;border-radius:12px;font-size:14px;font-weight:600;text-decoration:none">Already have an account? Sign In</a>
   </div>
   <div style="margin-top:20px;font-size:11px;color:#6E6B80">Powered by <b style="color:#C084FC">RAVEN</b> — Scan. Share. Settle.</div>
 </div>
@@ -1301,7 +1301,7 @@ app.get('/trip/:tripId', async (req, res) => {
 <title>✈️ ${esc(trip.name)} — RAVEN</title>
 <meta property="og:title" content="✈️ ${esc(trip.name)} — Trip Hub on RAVEN">
 <meta property="og:description" content="${people.length} people · ${(receipts||[]).length} receipts · $${grandTotal.toFixed(2)} total">
-<meta property="og:image" content="${trip.cover_image ? baseUrl+'/trip/'+tripId+'/cover-image' : 'https://work46121-gif.github.io/raven-site/raven-hero.png'}">
+<meta property="og:image" content="${trip.cover_image ? baseUrl+'/trip/'+tripId+'/cover-image' : 'https://ravensplit.com/raven-hero.png'}">
 <meta property="og:image:width" content="800">
 <meta property="og:image:height" content="400">
 <meta property="og:url" content="${tripUrl}">
@@ -1309,7 +1309,7 @@ app.get('/trip/:tripId', async (req, res) => {
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="✈️ ${esc(trip.name)} — Trip Hub on RAVEN">
 <meta name="twitter:description" content="${people.length} people · ${(receipts||[]).length} receipts · $${grandTotal.toFixed(2)} total">
-<meta name="twitter:image" content="${trip.cover_image ? baseUrl+'/trip/'+tripId+'/cover-image' : 'https://work46121-gif.github.io/raven-site/raven-hero.png'}">
+<meta name="twitter:image" content="${trip.cover_image ? baseUrl+'/trip/'+tripId+'/cover-image' : 'https://ravensplit.com/raven-hero.png'}">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Epilogue:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -1343,8 +1343,8 @@ input:focus,textarea:focus{border-color:var(--purple)}
 <script id="page-data" type="application/json">${pageData}</script>
 
 <div class="hdr"><div class="hdr-inner">
-  <a href="https://work46121-gif.github.io/raven-site/dashboard.html" style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;text-decoration:none;color:#9896A8;font-size:13px;font-weight:600;transition:all 0.15s" onmouseover="this.style.color='#F0EEF8';this.style.borderColor='rgba(255,255,255,0.25)'" onmouseout="this.style.color='#9896A8';this.style.borderColor='rgba(255,255,255,0.1)'">← Dashboard</a>
-  <a href="https://work46121-gif.github.io/raven-site/" style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:0.15em;text-decoration:none;color:#F0EEF8">🪶 RAVEN</a>
+  <a href="https://ravensplit.com/dashboard.html" style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;text-decoration:none;color:#9896A8;font-size:13px;font-weight:600;transition:all 0.15s" onmouseover="this.style.color='#F0EEF8';this.style.borderColor='rgba(255,255,255,0.25)'" onmouseout="this.style.color='#9896A8';this.style.borderColor='rgba(255,255,255,0.1)'">← Dashboard</a>
+  <a href="https://ravensplit.com/" style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:0.15em;text-decoration:none;color:#F0EEF8">🪶 RAVEN</a>
   <div style="font-size:10px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:12px;font-weight:600">${esc(tripId)}</div>
 </div></div>
 
@@ -2112,7 +2112,7 @@ function openMemberProfile(name) {
   const ridEl=document.getElementById("mp-raven-id"); if(ridEl) ridEl.textContent=prof?.raven_id?"@"+prof.raven_id:"";
   const sinceEl=document.getElementById("mp-member-since"); if(sinceEl) { if(prof?.created_at){const d=new Date(prof.created_at);sinceEl.textContent="🪶 RAVEN member since "+d.toLocaleDateString("en-US",{month:"long",year:"numeric"});}else{sinceEl.textContent="🪶 RAVEN member";}}
   const chipsEl=document.getElementById("mp-payment-chips"); if(chipsEl){const chips=[];if(prof?.venmo)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#0084FF;border-radius:8px;font-size:12px;font-weight:700;color:#fff">V Venmo</span>');if(prof?.cashapp)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#00D632;border-radius:8px;font-size:12px;font-weight:700;color:#000">$ Cash App</span>');if(prof?.zelle)chips.push('<span style="padding:5px 11px;background:#6D1ED4;border-radius:8px;font-size:12px;font-weight:700;color:#fff">Z Zelle</span>');if(prof?.applepay)chips.push('<span style="padding:5px 11px;background:#1a1a1a;border:1px solid #555;border-radius:8px;font-size:12px;font-weight:700;color:#fff">✦ Apple Pay</span>');chipsEl.innerHTML=chips.length?chips.join(""):'<span style="font-size:12px;color:#6E6B80">No payment methods set up</span>';}
-  const actEl=document.getElementById("mp-actions"); if(actEl){actEl.innerHTML="";if(prof?.raven_id){const addBtn=document.createElement("button");addBtn.style.cssText="width:100%;padding:13px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.3);border-radius:12px;font-family:inherit;font-size:14px;font-weight:700;color:#A855F7;cursor:pointer";addBtn.textContent="👥 Add Friend on RAVEN";addBtn.onclick=()=>{window.open("https://work46121-gif.github.io/raven-site/dashboard.html","_blank");toast("Search for @"+prof.raven_id+" in Friends");closeMemberProfile();};actEl.appendChild(addBtn);}const closeBtn=document.createElement("button");closeBtn.style.cssText="width:100%;padding:13px;background:transparent;border:1px solid rgba(255,255,255,0.1);border-radius:12px;font-family:inherit;font-size:14px;color:#6E6B80;cursor:pointer";closeBtn.textContent="Close";closeBtn.onclick=closeMemberProfile;actEl.appendChild(closeBtn);}
+  const actEl=document.getElementById("mp-actions"); if(actEl){actEl.innerHTML="";if(prof?.raven_id){const addBtn=document.createElement("button");addBtn.style.cssText="width:100%;padding:13px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.3);border-radius:12px;font-family:inherit;font-size:14px;font-weight:700;color:#A855F7;cursor:pointer";addBtn.textContent="👥 Add Friend on RAVEN";addBtn.onclick=()=>{window.open("https://ravensplit.com/dashboard.html","_blank");toast("Search for @"+prof.raven_id+" in Friends");closeMemberProfile();};actEl.appendChild(addBtn);}const closeBtn=document.createElement("button");closeBtn.style.cssText="width:100%;padding:13px;background:transparent;border:1px solid rgba(255,255,255,0.1);border-radius:12px;font-family:inherit;font-size:14px;color:#6E6B80;cursor:pointer";closeBtn.textContent="Close";closeBtn.onclick=closeMemberProfile;actEl.appendChild(closeBtn);}
   if(modal) modal.classList.add("open");
 }
 function closeMemberProfile(){const m=document.getElementById("member-profile-modal");if(m)m.classList.remove("open");}
@@ -2829,7 +2829,7 @@ app.get('/friend-invite/:ravenId', async (req, res) => {
       .maybeSingle();
 
     const name = profile ? [profile.first_name, profile.last_name].filter(Boolean).join(' ') || ('@' + ravenId) : ('@' + ravenId);
-    const dashboardUrl = 'https://work46121-gif.github.io/raven-site/dashboard.html?add=' + encodeURIComponent(ravenId);
+    const dashboardUrl = 'https://ravensplit.com/dashboard.html?add=' + encodeURIComponent(ravenId);
     const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
       ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
       : `https://raven-backend-production-fb1f.up.railway.app`;
@@ -2882,7 +2882,7 @@ body{font-family:-apple-system,'Helvetica Neue',sans-serif;background:#06060A;co
   <div class="invite-text">${esc(name)} wants to be your RAVEN friend</div>
   <div class="raven-id">@${esc(ravenId)}</div>
   <a href="${dashboardUrl}" class="btn-accept">🪶 Accept &amp; Add Friend →</a>
-  <a href="https://work46121-gif.github.io/raven-site/dashboard.html" class="btn-secondary">Sign in to existing account</a>
+  <a href="https://ravensplit.com/dashboard.html" class="btn-secondary">Sign in to existing account</a>
   <div class="divider"></div>
   <div class="footer">
     RAVEN splits bills with AI, tracks group trips, and settles up instantly.<br>
@@ -2892,7 +2892,7 @@ body{font-family:-apple-system,'Helvetica Neue',sans-serif;background:#06060A;co
 </body>
 </html>`);
   } catch(err) {
-    res.redirect('https://work46121-gif.github.io/raven-site/dashboard.html');
+    res.redirect('https://ravensplit.com/dashboard.html');
   }
 });
 
@@ -3115,7 +3115,7 @@ app.post('/remind-dashboard', async (req, res) => {
             const r = await fetch('https://api.resend.com/emails', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.RESEND_API_KEY}` },
-              body: JSON.stringify({ from: 'RAVEN <reminders@getraven.app>', to: [p.phone], subject: `🪶 Reminder: You owe $${parseFloat(p.amount).toFixed(2)} for ${bill.name}`, html })
+              body: JSON.stringify({ from: 'RAVEN <reminders@ravensplit.com>', to: [p.phone], subject: `🪶 Reminder: You owe $${parseFloat(p.amount).toFixed(2)} for ${bill.name}`, html })
             });
             const rd = await r.json();
             if (rd.id) { sent++; continue; }
