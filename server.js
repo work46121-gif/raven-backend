@@ -952,7 +952,8 @@ app.get('/trip/:tripId', async (req, res) => {
       const { data: profilesByEmail } = await supabase.from('profiles').select('first_name,last_name,email,venmo,cashapp,zelle,applepay,raven_id,avatar_url,created_at').in('email', memberEmails);
       (profilesByEmail || []).forEach(p => {
         const name = p.first_name || '';
-        if (name) memberPayProfiles[name] = { venmo: p.venmo||'', cashapp: p.cashapp||'', zelle: p.zelle||'', applepay: p.applepay||'', email: p.email||'', raven_id: p.raven_id||'', avatar_url: p.avatar_url||'', created_at: p.created_at||'' };
+        // NOTE: avatar_url intentionally excluded — it's base64 and would bloat the inline JSON blob
+        if (name) memberPayProfiles[name] = { venmo: p.venmo||'', cashapp: p.cashapp||'', zelle: p.zelle||'', applepay: p.applepay||'', email: p.email||'', raven_id: p.raven_id||'' };
       });
     }
 
@@ -962,7 +963,7 @@ app.get('/trip/:tripId', async (req, res) => {
       const { data: profilesByName } = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle,applepay,raven_id,avatar_url,created_at').in('first_name', people);
       (profilesByName || []).forEach(p => {
         if (p.first_name && !memberPayProfiles[p.first_name]) {
-          memberPayProfiles[p.first_name] = { venmo: p.venmo||'', cashapp: p.cashapp||'', zelle: p.zelle||'', applepay: p.applepay||'', raven_id: p.raven_id||'', avatar_url: p.avatar_url||'', created_at: p.created_at||'' };
+          memberPayProfiles[p.first_name] = { venmo: p.venmo||'', cashapp: p.cashapp||'', zelle: p.zelle||'', applepay: p.applepay||'', raven_id: p.raven_id||'' };
         }
       });
     }
@@ -2015,7 +2016,7 @@ function markTripPersonPaid(personName, personId, btn) {
     if (row) {
       const statusEl = row.querySelector('[style*="owes $"]');
       if (statusEl) { statusEl.textContent = 'all settled ✓'; statusEl.style.color = '#30D158'; }
-      const amountEl = row.querySelector('[style*="font-family:\'JetBrains Mono"]');
+      const amountEl = row.querySelector("[style*='font-family:']") || row.querySelector(".person-amount");
       if (amountEl) { amountEl.textContent = '$0.00'; amountEl.style.color = '#9896A8'; }
       // Hide pay slots
       row.querySelectorAll('.pay-slot').forEach(s => s.style.display = 'none');
