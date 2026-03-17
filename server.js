@@ -479,12 +479,47 @@ app.get('/bill/:billId', async (req, res) => {
   const selections = selectionsRes.data || [];
   const participants = participantsRes.data || [];
 
+  // Always fetch the creator's profile (used as fallback)
   let creatorProfile = null;
   const emailTry = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle,applepay').eq('email', bill.creator_phone).maybeSingle();
   creatorProfile = emailTry.data;
   if (!creatorProfile) {
     const phoneTry = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle,applepay').eq('phone', bill.creator_phone).maybeSingle();
     creatorProfile = phoneTry.data;
+  }
+
+  // If bill.paid_by is set, that's the person who actually fronted the money.
+  // Look up their profile so the payment modal shows THEIR payment methods.
+  // paid_by is stored as a display name (e.g. "daddy"), so we match by first_name in profiles.
+  let payerProfile = null;
+  const paidByName = bill.paid_by || null;
+  if (paidByName) {
+    // Try matching by first_name in profiles (case-insensitive)
+    const payerByName = await supabase
+      .from('profiles')
+      .select('first_name,venmo,cashapp,zelle,applepay')
+      .ilike('first_name', paidByName)
+      .maybeSingle();
+    payerProfile = payerByName.data;
+
+    // Fallback: try matching by display_name column if it exists
+    if (!payerProfile) {
+      const payerByDisplay = await supabase
+        .from('profiles')
+        .select('first_name,venmo,cashapp,zelle,applepay')
+        .ilike('display_name', paidByName)
+        .maybeSingle();
+      payerProfile = payerByDisplay.data;
+    }
+  }
+
+  // Use payer's profile if found; otherwise fall back to creator's profile.
+  // Inject the paidByName so the modal title shows the correct name.
+  const billPayerProfile = payerProfile || creatorProfile;
+  if (billPayerProfile && paidByName) {
+    // Override first_name with the paid_by value so the modal always says
+    // "Pay daddy" (or whoever actually paid), not "Pay [profile first_name]"
+    billPayerProfile.first_name = paidByName;
   }
 
   const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
@@ -583,7 +618,7 @@ app.get('/bill/:billId', async (req, res) => {
       </div>
     </div>` : '');
 
-  const profileB64 = Buffer.from(JSON.stringify(creatorProfile || {})).toString('base64');
+  const profileB64 = Buffer.from(JSON.stringify(billPayerProfile || {})).toString('base64');
 
   const html = `<!DOCTYPE html>
 <html lang="en">
