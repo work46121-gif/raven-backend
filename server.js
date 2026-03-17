@@ -2694,6 +2694,140 @@ app.get('/trip/:tripId/cover-image', async (req, res) => {
 
 // ─── GIF SEARCH PROXY ────────────────────────────────────────────────────────
 
+// ── RAVEN OG IMAGE — generates branded social preview card ───────────────────
+app.get('/raven-og-image', (req, res) => {
+  const name = String(req.query.name || 'RAVEN').slice(0, 30).replace(/[<>"'&]/g, '');
+  const id   = String(req.query.id   || '').slice(0, 20).replace(/[<>"'&]/g, '');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#06060A"/>
+      <stop offset="50%" style="stop-color:#0C0820"/>
+      <stop offset="100%" style="stop-color:#06060A"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#30D158;stop-opacity:0.15"/>
+      <stop offset="100%" style="stop-color:#7C3AED;stop-opacity:0.1"/>
+    </linearGradient>
+    <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#30D158"/>
+      <stop offset="100%" style="stop-color:#A855F7"/>
+    </linearGradient>
+    <filter id="blur"><feGaussianBlur stdDeviation="40"/></filter>
+  </defs>
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <!-- Glow orbs -->
+  <circle cx="300" cy="315" r="300" fill="#30D158" opacity="0.05" filter="url(#blur)"/>
+  <circle cx="900" cy="315" r="300" fill="#7C3AED" opacity="0.07" filter="url(#blur)"/>
+  <!-- Grid lines -->
+  <g stroke="rgba(255,255,255,0.03)" stroke-width="1">
+    ${Array.from({length:8},(_,i)=>`<line x1="${i*150}" y1="0" x2="${i*150}" y2="630"/>`).join('')}
+    ${Array.from({length:5},(_,i)=>`<line x1="0" y1="${i*158}" x2="1200" y2="${i*158}"/>`).join('')}
+  </g>
+  <!-- Raven feather icon large -->
+  <text x="600" y="200" font-family="Arial" font-size="160" text-anchor="middle" opacity="0.12">🪶</text>
+  <!-- RAVEN brand -->
+  <text x="600" y="270" font-family="Arial Black,Arial" font-size="28" font-weight="900" fill="#6E6B80" text-anchor="middle" letter-spacing="16">RAVEN</text>
+  <!-- Main message -->
+  <text x="600" y="350" font-family="Arial Black,Arial" font-size="52" font-weight="900" fill="#F0EEF8" text-anchor="middle">${name} wants to</text>
+  <text x="600" y="420" font-family="Arial Black,Arial" font-size="52" font-weight="900" text-anchor="middle">
+    <tspan fill="#30D158">connect</tspan>
+    <tspan fill="#F0EEF8"> with you</tspan>
+  </text>
+  <!-- Raven ID pill -->
+  <rect x="${600 - (id.length*8+40)/2}" y="450" width="${id.length*8+40}" height="44" rx="22" fill="rgba(124,58,237,0.2)" stroke="rgba(124,58,237,0.4)" stroke-width="1"/>
+  <text x="600" y="479" font-family="Arial" font-size="20" font-weight="700" fill="#A855F7" text-anchor="middle">@${id}</text>
+  <!-- CTA -->
+  <rect x="450" y="530" width="300" height="52" rx="14" fill="#30D158"/>
+  <text x="600" y="563" font-family="Arial Black,Arial" font-size="22" font-weight="900" fill="#000" text-anchor="middle">Accept Friend Request</text>
+</svg>`;
+
+  res.setHeader('Content-Type', 'image/svg+xml');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.send(svg);
+});
+
+// ── FRIEND INVITE PAGE — rich iMessage/OG preview ────────────────────────────
+app.get('/friend-invite/:ravenId', async (req, res) => {
+  try {
+    const { ravenId } = req.params;
+    const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+    // Look up the person's profile
+    const { data: profile } = await supabase.from('profiles')
+      .select('first_name,last_name,avatar_url,raven_id')
+      .eq('raven_id', ravenId.toLowerCase())
+      .maybeSingle();
+
+    const name = profile ? [profile.first_name, profile.last_name].filter(Boolean).join(' ') || ('@' + ravenId) : ('@' + ravenId);
+    const dashboardUrl = 'https://work46121-gif.github.io/raven-site/dashboard.html?add=' + encodeURIComponent(ravenId);
+    const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+      : `https://raven-backend-production-fb1f.up.railway.app`;
+
+    // OG image: use Railway-served raven card (works immediately without file upload)
+    const ogImage = `${baseUrl}/raven-og-image?name=${encodeURIComponent(name)}&id=${encodeURIComponent(ravenId)}`;
+
+    // Avatar HTML for the invite page
+    const avatarHtml = profile?.avatar_url
+      ? `<img src="${esc(profile.avatar_url)}" style="width:90px;height:90px;border-radius:50%;object-fit:cover;border:3px solid #30D158;display:block;margin:0 auto 16px">`
+      : `<div style="width:90px;height:90px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#30D158);display:flex;align-items:center;justify-content:center;font-size:36px;font-weight:800;color:#fff;margin:0 auto 16px">${esc(name[0]?.toUpperCase()||'R')}</div>`;
+
+    res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(name)} wants to be your RAVEN friend 🪶</title>
+<meta property="og:title" content="🪶 ${esc(name)} wants to connect on RAVEN">
+<meta property="og:description" content="@${esc(ravenId)} invited you to be RAVEN friends. Split bills, track trips & settle up instantly.">
+<meta property="og:image" content="${ogImage}">
+<meta property="og:image:width" content="1024">
+<meta property="og:image:height" content="1024">
+<meta property="og:url" content="${baseUrl}/friend-invite/${esc(ravenId)}">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="🪶 ${esc(name)} wants to connect on RAVEN">
+<meta name="twitter:description" content="Tap to add @${esc(ravenId)} as a RAVEN friend">
+<meta name="twitter:image" content="${ogImage}">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,'Helvetica Neue',sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.card{background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:24px;padding:40px 32px;max-width:380px;width:100%;text-align:center;box-shadow:0 40px 80px rgba(0,0,0,0.6)}
+.raven-logo{font-size:44px;margin-bottom:8px}
+.brand{font-size:13px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:#6E6B80;margin-bottom:32px}
+.invite-text{font-size:17px;font-weight:600;color:#F0EEF8;margin-bottom:6px}
+.raven-id{font-size:14px;color:#A855F7;font-weight:600;margin-bottom:28px}
+.btn-accept{display:block;width:100%;padding:16px;background:#30D158;color:#000;border:none;border-radius:14px;font-size:16px;font-weight:800;text-decoration:none;letter-spacing:0.02em;margin-bottom:12px;transition:opacity 0.15s}
+.btn-accept:hover{opacity:0.9}
+.btn-secondary{display:block;width:100%;padding:14px;background:transparent;color:#6E6B80;border:1px solid rgba(255,255,255,0.1);border-radius:14px;font-size:14px;font-weight:600;text-decoration:none}
+.divider{height:1px;background:rgba(255,255,255,0.07);margin:24px 0}
+.footer{font-size:12px;color:#4A4760;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="raven-logo">🪶</div>
+  <div class="brand">RAVEN</div>
+  ${avatarHtml}
+  <div class="invite-text">${esc(name)} wants to be your RAVEN friend</div>
+  <div class="raven-id">@${esc(ravenId)}</div>
+  <a href="${dashboardUrl}" class="btn-accept">🪶 Accept &amp; Add Friend →</a>
+  <a href="https://work46121-gif.github.io/raven-site/dashboard.html" class="btn-secondary">Sign in to existing account</a>
+  <div class="divider"></div>
+  <div class="footer">
+    RAVEN splits bills with AI, tracks group trips, and settles up instantly.<br>
+    No app download required.
+  </div>
+</div>
+</body>
+</html>`);
+  } catch(err) {
+    res.redirect('https://work46121-gif.github.io/raven-site/dashboard.html');
+  }
+});
+
 app.get('/gif-search', async (req, res) => {
   const q = req.query.q || 'reaction';
   const giphyKey = process.env.GIPHY_API_KEY;
