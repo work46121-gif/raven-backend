@@ -7,6 +7,23 @@ const fetch = require('node-fetch');
 const path = require('path');
 const fs = require('fs');
 
+// Sentry — backend error monitoring
+// Run: npm install @sentry/node
+// Replace YOUR_SENTRY_DSN with your DSN from sentry.io → Settings → Projects → Client Keys
+let Sentry = null;
+try {
+  Sentry = require('@sentry/node');
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN || 'YOUR_SENTRY_DSN',
+    environment: process.env.NODE_ENV || 'production',
+    release: 'raven@2.0.0',
+    tracesSampleRate: 0.1,
+  });
+  console.log('✅ Sentry initialized');
+} catch(e) {
+  console.log('⚠️  Sentry not installed — run: npm install @sentry/node');
+}
+
 const app = express();
 
 app.use((req, res, next) => {
@@ -634,6 +651,9 @@ app.get('/bill/:billId', async (req, res) => {
     .pm-info{flex:1;display:flex;flex-direction:column;gap:2px;text-align:left}
     .pm-info b{font-size:14px;font-weight:600;color:#F0EEF8}
     .pm-info span{font-size:11px;color:#6E6B80}
+    .raven-footer{max-width:800px;margin:32px auto 0;padding:0 20px 60px;text-align:center}
+    .raven-footer-inner{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:20px;text-decoration:none;transition:all 0.2s}
+    .raven-footer-inner:hover{background:rgba(124,58,237,0.08);border-color:rgba(124,58,237,0.25)}
   </style>
 </head>
 <body>
@@ -688,6 +708,15 @@ app.get('/bill/:billId', async (req, res) => {
   <input type="hidden" id="pd" value="${profileB64}">
   <input type="hidden" id="paid-by-name" value="${bill.paid_by ? bill.paid_by.replace(/"/g,'&quot;') : ''}">
 
+  <!-- Acquisition footer — every bill shared is a free ad -->
+  <div class="raven-footer">
+    <a href="https://ravensplit.com" class="raven-footer-inner">
+      <span style="font-size:16px">🪶</span>
+      <span style="font-size:12px;color:#6E6B80">Split bills instantly with <strong style="color:#C084FC">RAVEN</strong> — free to use</span>
+      <span style="font-size:11px;color:#6E6B80">→</span>
+    </a>
+  </div>
+
   <div id="pmod" style="display:none;position:fixed;inset:0;z-index:999">
     <div onclick="closePay()" style="position:absolute;inset:0;background:rgba(0,0,0,0.8);backdrop-filter:blur(8px)"></div>
     <div style="position:absolute;bottom:0;left:0;right:0;display:flex;justify-content:center">
@@ -706,6 +735,11 @@ app.get('/bill/:billId', async (req, res) => {
     const BID = ${JSON.stringify(billId)};
     let selectedGif = null;
     let gifTimer = null;
+
+    // PostHog — track bill page views (acquisition metric)
+    !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]);t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+" (stub)"},o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagPayload isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+    posthog.init('YOUR_POSTHOG_KEY',{api_host:'https://us.i.posthog.com',person_profiles:'identified_only'});
+    posthog.capture('bill_page_viewed', { bill_id: BID });
 
     // ── AUTO-FILL NAME from URL param or localStorage ──
     (function(){
@@ -3189,6 +3223,17 @@ app.post('/waitlist', async (req, res) => {
     console.error('Waitlist error:', err);
     res.json({ success: true });
   }
+});
+
+// Sentry error handler — must be after all routes, before app.listen
+if (Sentry) {
+  Sentry.setupExpressErrorHandler(app);
+}
+
+// Generic error handler
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({ success: false, error: 'Internal server error' });
 });
 
 const PORT = process.env.PORT || 3000;
