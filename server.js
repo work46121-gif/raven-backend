@@ -1007,7 +1007,7 @@ app.get('/trip/:tripId', async (req, res) => {
     : `<div style="max-width:800px;margin:16px auto 0;padding:0 20px"><div id="cover-empty" style="width:100%;height:100px;border:2px dashed rgba(124,58,237,0.3);border-radius:16px;display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;background:rgba(124,58,237,0.03)"><span style="font-size:20px">🖼</span><span style="font-size:13px;color:#6E6B80;font-weight:500">Add a cover photo for this trip</span></div><input id="cover-upload" type="file" accept="image/*" style="display:none"></div>`;
 
   const avatarRow = people.map((p, i) =>
-    `<div data-person-avatar="${esc(p)}" onclick="openMemberProfile('${esc(p)}')" title="${esc(p)}" style="width:32px;height:32px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};border:2px solid #06060A;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0;margin-left:${i===0?'0':'-8px'};overflow:hidden;cursor:pointer">${esc(p[0].toUpperCase())}</div>`
+    `<div data-person-avatar="${esc(p)}" data-open-profile="${esc(p)}" title="${esc(p)}" style="width:32px;height:32px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};border:2px solid #06060A;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0;margin-left:${i===0?'0':'-8px'};overflow:hidden;cursor:pointer">${esc(p[0].toUpperCase())}</div>`
   ).join('');
 
   let countdownHTML = '';
@@ -1077,7 +1077,7 @@ app.get('/trip/:tripId', async (req, res) => {
     const personId = 'person-' + p.replace(/[^a-z0-9]/gi,'_');
     return `<div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)" id="row-${personId}">
       <div style="display:flex;align-items:center;justify-content:space-between;${payerEntries.length>0?'margin-bottom:12px':''}">
-        <div style="display:flex;align-items:center;gap:10px;cursor:pointer" onclick="openMemberProfile('${esc(p)}')" title="View ${esc(p)}'s profile">
+        <div style="display:flex;align-items:center;gap:10px;cursor:pointer" data-open-profile="${esc(p)}" title="View ${esc(p)}'s profile">
           <div data-person-avatar="${esc(p)}" style="width:34px;height:34px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;overflow:hidden">${esc(p[0].toUpperCase())}</div>
           <div>
             <div style="font-weight:600;font-size:14px;display:flex;align-items:center;gap:6px">${esc(p)} <span style="font-size:11px;color:#6E6B80;font-weight:400">›</span></div>
@@ -1095,7 +1095,7 @@ app.get('/trip/:tripId', async (req, res) => {
       ${payerEntries.length>0 ? `<div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px 12px">
         ${payBtnsHtml}
         <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)">
-          <button onclick="markTripPersonPaid('${esc(p)}','${personId}')" id="markpaid-${personId}" style="display:inline-flex;align-items:center;gap:7px;padding:8px 16px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:9px;color:#30D158;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer">✓ Mark as Settled</button>
+          <button class="mark-settled-btn" data-person="${personId}" data-name="${esc(p)}" id="markpaid-${personId}" style="display:inline-flex;align-items:center;gap:7px;padding:8px 16px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:9px;color:#30D158;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer">✓ Mark as Settled</button>
         </div>
       </div>` : ''}
     </div>`;
@@ -1676,6 +1676,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Build saved receipts photo gallery — runs after DOM ready so it works on mobile too
   try { buildSavedReceiptsGallery(); } catch(e) { console.error('Gallery error:', e); }
+
+  // Wire up "Mark as Settled" buttons via event delegation — safe for any name
+  document.addEventListener('click', function(e) {
+    const btn = e.target.closest('.mark-settled-btn');
+    if (btn) {
+      const personId = btn.getAttribute('data-person');
+      const personName = btn.getAttribute('data-name');
+      if (personId && personName) markTripPersonPaid(personName, personId, btn);
+      return;
+    }
+    // Open member profile on avatar/name click
+    const profileEl = e.target.closest('[data-open-profile]');
+    if (profileEl) {
+      const name = profileEl.getAttribute('data-open-profile');
+      if (name) openMemberProfile(name);
+    }
+  });
 });
 
 let splitType = 'even', tripItems = [], imgBase64 = null, newMembers = [];
@@ -1983,8 +2000,8 @@ function renderPaySlots() {
 setTimeout(renderPaySlots, 300);
 
 // Mark a person as settled in the trip hub
-function markTripPersonPaid(personName, personId) {
-  const btn = document.getElementById('markpaid-' + personId);
+function markTripPersonPaid(personName, personId, btn) {
+  if (!btn) btn = document.getElementById('markpaid-' + personId);
   if (!btn) return;
   if (btn.dataset.confirming === '1') {
     // Second tap — mark as settled
