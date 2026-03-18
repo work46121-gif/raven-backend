@@ -2345,23 +2345,14 @@ document.getElementById('copy-trip-btn').addEventListener('click',    () => navi
 document.getElementById('share-trip-btn').addEventListener('click',   () => { if(navigator.share)navigator.share({title:TRIP_NAME,url:TRIP_URL}).catch(()=>navigator.clipboard.writeText(TRIP_URL));else navigator.clipboard.writeText(TRIP_URL).then(()=>toast('Copied!')); });
 document.getElementById('copy-invite-btn').addEventListener('click',  () => navigator.clipboard.writeText(INVITE_URL).then(()=>toast('Invite link copied!')).catch(()=>prompt('Copy:',INVITE_URL)));
 document.getElementById('share-invite-btn').addEventListener('click', function() {
-  var msg = 'Join "' + TRIP_NAME + '" on RAVEN \u{1F426}\nSplit bills free with RAVEN | ravensplit.com';
-  var url = INVITE_URL;
-  function doShare() {
-    if (navigator.share) {
-      navigator.share({ title: msg, url: url }).catch(function(e){ if(e.name!=='AbortError') navigator.clipboard.writeText(url).then(function(){toast('Invite link copied!');}); });
-    } else {
-      navigator.clipboard.writeText(url).then(function(){toast('Invite link copied!');}).catch(function(){prompt('Copy:',url);});
-    }
+  var tripMsg = 'Join ' + TRIP_NAME + ' on RAVEN - Split bills free with RAVEN | ravensplit.com';
+  if (navigator.share) {
+    navigator.share({ title: tripMsg, url: INVITE_URL }).catch(function() {
+      navigator.clipboard.writeText(INVITE_URL).then(function(){toast('Invite link copied!');});
+    });
+  } else {
+    navigator.clipboard.writeText(INVITE_URL).then(function(){toast('Invite link copied!');}).catch(function(){prompt('Copy:',INVITE_URL);});
   }
-  if (D.hasCoverImage && navigator.share && navigator.canShare) {
-    fetch(BACKEND + '/trip/' + TRIP_ID + '/cover-image').then(function(r){return r.blob();}).then(function(blob){
-      var file = new File([blob], 'trip-cover.jpg', { type: 'image/jpeg' });
-      if (navigator.canShare({ files: [file] })) {
-        navigator.share({ files: [file], text: msg + '\n\n' + url }).catch(function(){ doShare(); });
-      } else { doShare(); }
-    }).catch(function(){ doShare(); });
-  } else { doShare(); }
 });
 
 // ── ADD MEMBERS ──
