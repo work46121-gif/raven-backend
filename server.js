@@ -1059,8 +1059,9 @@ app.get('/trip/:tripId', async (req, res) => {
   const grandTotal = Object.values(totals).reduce((s, v) => s + v, 0);
 
   const baseUrl   = process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : `https://raven-backend-production-fb1f.up.railway.app`;
-  const tripUrl   = `${baseUrl}/trip/${tripId}?t=${trip.share_token}`;
-  const inviteUrl = `${baseUrl}/trip/${tripId}?t=${trip.invite_token}&invite=1`;
+  const frontendUrl = 'https://ravensplit.com';
+  const tripUrl   = `${frontendUrl}/trip/${tripId}?t=${trip.share_token}`;
+  const inviteUrl = `${frontendUrl}/trip/${tripId}?t=${trip.invite_token}&invite=1`;
 
   // Build server-side HTML snippets safely (no user content in JS template literals)
   const avatarColors = ['linear-gradient(135deg,#7C3AED,#A855F7)','linear-gradient(135deg,#E8633A,#FF6B35)','linear-gradient(135deg,#0EA5E9,#7C3AED)','linear-gradient(135deg,#30D158,#0EA5E9)','linear-gradient(135deg,#F59E0B,#EF4444)','linear-gradient(135deg,#EC4899,#8B5CF6)','linear-gradient(135deg,#14B8A6,#3B82F6)','linear-gradient(135deg,#84CC16,#10B981)'];
