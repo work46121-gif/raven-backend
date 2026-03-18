@@ -2345,7 +2345,7 @@ document.getElementById('copy-trip-btn').addEventListener('click',    () => navi
 document.getElementById('share-trip-btn').addEventListener('click',   () => { if(navigator.share)navigator.share({title:TRIP_NAME,url:TRIP_URL}).catch(()=>navigator.clipboard.writeText(TRIP_URL));else navigator.clipboard.writeText(TRIP_URL).then(()=>toast('Copied!')); });
 document.getElementById('copy-invite-btn').addEventListener('click',  () => navigator.clipboard.writeText(INVITE_URL).then(()=>toast('Invite link copied!')).catch(()=>prompt('Copy:',INVITE_URL)));
 document.getElementById('share-invite-btn').addEventListener('click', async function() {
-  var msg = 'Join "' + TRIP_NAME + '" on RAVEN \u{1FAB6}\nSplit bills free with RAVEN | ravensplit.com';
+  var msg = 'Join "' + TRIP_NAME + '" on RAVEN 🪶\nSplit bills free with RAVEN | ravensplit.com';
   if (D.hasCoverImage && navigator.share && navigator.canShare) {
     try {
       var coverUrl = BACKEND + '/trip/' + TRIP_ID + '/cover-image';
