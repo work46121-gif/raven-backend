@@ -2344,25 +2344,23 @@ document.getElementById('save-settings-btn').addEventListener('click', async fun
 document.getElementById('copy-trip-btn').addEventListener('click',    () => navigator.clipboard.writeText(TRIP_URL).then(()=>toast('Trip link copied!')).catch(()=>prompt('Copy:',TRIP_URL)));
 document.getElementById('share-trip-btn').addEventListener('click',   () => { if(navigator.share)navigator.share({title:TRIP_NAME,url:TRIP_URL}).catch(()=>navigator.clipboard.writeText(TRIP_URL));else navigator.clipboard.writeText(TRIP_URL).then(()=>toast('Copied!')); });
 document.getElementById('copy-invite-btn').addEventListener('click',  () => navigator.clipboard.writeText(INVITE_URL).then(()=>toast('Invite link copied!')).catch(()=>prompt('Copy:',INVITE_URL)));
-document.getElementById('share-invite-btn').addEventListener('click', async () => {
-  const msg = 'Join "' + TRIP_NAME + '" on RAVEN 🪶\nSplit bills free with RAVEN | ravensplit.com';
-  // Try sharing cover image as file with URL
+document.getElementById('share-invite-btn').addEventListener('click', async function() {
+  var msg = 'Join "' + TRIP_NAME + '" on RAVEN \u{1FAB6}\nSplit bills free with RAVEN | ravensplit.com';
   if (D.hasCoverImage && navigator.share && navigator.canShare) {
     try {
-      const coverUrl = BACKEND + '/trip/' + TRIP_ID + '/cover-image';
-      const blob = await fetch(coverUrl).then(r => r.blob());
-      const file = new File([blob], 'trip-cover.jpg', { type: 'image/jpeg' });
+      var coverUrl = BACKEND + '/trip/' + TRIP_ID + '/cover-image';
+      var blob = await fetch(coverUrl).then(function(r){return r.blob();});
+      var file = new File([blob], 'trip-cover.jpg', { type: 'image/jpeg' });
       if (navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], text: msg + '\n\n' + INVITE_URL });
         return;
       }
     } catch(e) {}
   }
-  // Fallback — rich link card
   if (navigator.share) {
     try { await navigator.share({ title: msg, url: INVITE_URL }); return; } catch(e) { if(e.name==='AbortError') return; }
   }
-  navigator.clipboard.writeText(INVITE_URL).then(()=>toast('Invite link copied!')).catch(()=>prompt('Copy:',INVITE_URL));
+  navigator.clipboard.writeText(INVITE_URL).then(function(){toast('Invite link copied!');}).catch(function(){prompt('Copy:',INVITE_URL);});
 });
 
 // ── ADD MEMBERS ──
