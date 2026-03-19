@@ -933,6 +933,41 @@ app.get('/bill/:billId', async (req, res) => {
 
 // ─── TRIP HUB ─────────────────────────────────────────────────────────────────
 
+app.post('/trip/create', async (req, res) => {
+  try {
+    const { name, people, trip_date, cover_image, creator_email } = req.body;
+    if (!name || !creator_email) return res.status(400).json({ error: 'name and creator_email required' });
+
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const tripId = Array.from({length: 5}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    const shareToken = Array.from({length:16}, () => 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'[Math.floor(Math.random()*62)]).join('');
+    const inviteToken = Array.from({length:12}, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random()*36)]).join('');
+
+    const insertData = {
+      id: tripId,
+      creator_email,
+      name,
+      people: JSON.stringify(Array.isArray(people) ? people : []),
+      share_token: shareToken,
+      invite_token: inviteToken,
+      total: 0,
+      receipt_count: 0,
+      status: 'active',
+      created_at: new Date().toISOString()
+    };
+    if (trip_date) insertData.trip_date = trip_date;
+    if (cover_image) insertData.cover_image = cover_image;
+
+    const { error } = await supabase.from('trips').insert(insertData);
+    if (error) return res.status(500).json({ error: error.message });
+
+    res.json({ tripId, shareToken, inviteToken });
+  } catch (err) {
+    console.error('createTrip error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/trip/:tripId', async (req, res) => {
   const { tripId } = req.params;
   const token = req.query.t;
