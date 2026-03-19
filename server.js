@@ -909,7 +909,7 @@ app.get('/bill/:billId', async (req, res) => {
       try{
         const r=await fetch('/bill/'+BID+'/comments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name||'Anonymous',body:body||'',gif_url:selectedGif||null})});
         const d=await r.json();
-        if(d.success){document.getElementById('cbody').value='';clearGif();await loadC();toast('✅ Posted!');}
+        if(d.success){document.getElementById('cbody').value='';clearGif();toast('✅ Posted!');setTimeout(()=>loadC(),500);}
         else toast('Error: '+(d.error||'try again'));
       }catch(e){toast('Network error');}
       finally{btn.textContent='💬 Post Comment';btn.disabled=false;}
@@ -3057,43 +3057,82 @@ app.post('/demo/scan-receipt', async (req, res) => {
 
     console.log('Scan request: mediaType=' + mt + ' imageSize=' + Math.round(image.length * 0.75 / 1024) + 'KB');
 
-    // Try models in order — fall back if one fails
-    const modelsToTry = ['claude-opus-4-5-20251101', 'claude-sonnet-4-5-20251022', 'claude-sonnet-4-6', 'claude-opus-4-6'];
+    // MAX POWER: claude-opus-4-5 with extended thinking for best accuracy
+    // Falls back to sonnet if opus unavailable
+    const modelsToTry = ['claude-opus-4-5', 'claude-sonnet-4-6'];
     let lastError = null;
     let raw = '';
 
+    const receiptPrompt = `You are an expert receipt OCR system. Examine this receipt image with extreme care.
+
+Your job: Extract EVERY purchased item and return ONLY a valid JSON object. No markdown fences, no explanation, no surrounding text — just the raw JSON.
+
+EXTRACTION RULES:
+- Include ALL food, drink, and product line items with their exact prices
+- For combo meals: list as one item with the combo price
+- For quantity items (e.g. "2x Burger $10.00"): list once with total price OR split into separate items — your choice
+- For Costco/warehouse: item# then name then price — use the name only, drop the item#
+- EXCLUDE: subtotals, tax lines (unless no line items found), tip lines, payment lines (VISA/CHIP/CASH), "APPROVED", "CHANGE DUE", "AMOUNT TENDERED", barcodes, member numbers, store addresses, cashier names, transaction IDs, category codes (E/A/S)
+
+TOTALS: Extract subtotal (items before tax), tax amount, tip if shown, and grand total separately.
+
+IMPORTANT: If the image is blurry or partially obscured, do your best — extract what you can see clearly.
+
+Return EXACTLY this JSON structure (no other text):
+{"bill_name":"Exact Restaurant/Store Name from top of receipt","items":[{"name":"Item Name","price":0.00}],"subtotal":0.00,"tax":0.00,"tip":0.00,"total":0.00}`;
+
     for (const model of modelsToTry) {
       try {
-        console.log('Trying model:', model);
-        const message = await getAnthropic().messages.create({
+        console.log('Trying model:', model, 'imageSize:', Math.round(image.length * 0.75 / 1024) + 'KB');
+
+        const msgParams = {
           model,
-          max_tokens: 4096,
+          max_tokens: 8000,
           messages: [{
             role: 'user',
             content: [
               { type: 'image', source: { type: 'base64', media_type: mt, data: image } },
-              { type: 'text', text: `You are a receipt parser. Look at this receipt image carefully.
-
-Extract ALL line items and return ONLY valid JSON. No markdown, no explanation.
-
-INCLUDE: food items, products, any purchased items with prices
-IGNORE: barcodes, transaction IDs, payment method lines (VISA/CHIP), member numbers, store addresses, "APPROVED", "CHANGE", "AMOUNT" lines, tax category codes (E/A/S letters)
-FOR COSTCO/WAREHOUSE: lines start with item number then item name then price — use the item name only
-
-Return this exact JSON structure:
-{"bill_name":"Store Name","items":[{"name":"Item Name","price":9.99}],"subtotal":0.00,"tax":0.00,"tip":0.00,"total":0.00}` }
+              { type: 'text', text: receiptPrompt }
             ]
           }]
-        });
-        raw = message.content[0]?.text || '';
+        };
+
+        // Use extended thinking on opus for max accuracy
+        if (model.includes('opus')) {
+          msgParams.thinking = { type: 'enabled', budget_tokens: 4000 };
+          msgParams.max_tokens = 12000;
+        }
+
+        const message = await getAnthropic().messages.create(msgParams);
+
+        // Extract text content (skip thinking blocks)
+        const textBlock = message.content.find(b => b.type === 'text');
+        raw = textBlock?.text || '';
         console.log('Model', model, 'responded, length:', raw.length);
-        console.log('First 200 chars:', raw.slice(0, 200));
+        console.log('First 300 chars:', raw.slice(0, 300));
         lastError = null;
-        break; // success — exit loop
+        break;
       } catch(modelErr) {
-        console.error('Model', model, 'failed:', modelErr.status, modelErr.message?.slice(0,100));
+        console.error('Model', model, 'failed:', modelErr.status, modelErr.message?.slice(0,150));
         lastError = modelErr;
-        if (modelErr.status === 401) break; // bad API key — don't retry
+        if (modelErr.status === 401) break;
+        // If thinking not supported, retry same model without it
+        if (modelErr.message?.includes('thinking') || modelErr.message?.includes('extended')) {
+          try {
+            console.log('Retrying', model, 'without extended thinking...');
+            const message2 = await getAnthropic().messages.create({
+              model, max_tokens: 8000,
+              messages: [{ role: 'user', content: [
+                { type: 'image', source: { type: 'base64', media_type: mt, data: image } },
+                { type: 'text', text: receiptPrompt }
+              ]}]
+            });
+            const tb2 = message2.content.find(b => b.type === 'text');
+            raw = tb2?.text || '';
+            lastError = null;
+            break;
+          } catch(e2) { lastError = e2; }
+        }
       }
     }
 
