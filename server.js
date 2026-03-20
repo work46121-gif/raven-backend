@@ -1466,7 +1466,7 @@ ${coverHTML}
     ${avatarRow}
     <button id="open-add-members" style="width:32px;height:32px;border-radius:50%;background:#13131A;border:2px dashed rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;cursor:pointer;margin-left:4px;flex-shrink:0;font-size:14px;color:#6E6B80">+</button>
     <button id="open-invite" style="padding:5px 14px;margin-left:10px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.25);border-radius:20px;color:#A855F7;font-family:'Epilogue',sans-serif;font-size:11px;font-weight:700;cursor:pointer">📨 Invite</button>
-    <button onclick="initChatDb().then(openChat)" style="padding:5px 14px;margin-left:8px;background:rgba(0,140,255,0.1);border:1px solid rgba(0,140,255,0.25);border-radius:20px;color:#4DB8FF;font-family:'Epilogue',sans-serif;font-size:11px;font-weight:700;cursor:pointer">💬 Chat</button>
+    <button onclick="initChatDb().then(openChat)" style="padding:5px 14px;margin-left:8px;background:rgba(0,140,255,0.1);border:1px solid rgba(0,140,255,0.25);border-radius:20px;color:#4DB8FF;font-family:'Epilogue',sans-serif;font-size:11px;font-weight:700;cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation">💬 Chat</button>
   </div>
 </div>
 
@@ -2806,7 +2806,7 @@ async function sendChat() {
 }
 
 // Wire chat button
-// chat wired via inline onclick above
+// chat wired via inline onclick
 
 // Init chat db on load
 initChatDb();
