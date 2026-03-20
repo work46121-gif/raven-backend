@@ -1466,7 +1466,7 @@ ${coverHTML}
     ${avatarRow}
     <button id="open-add-members" style="width:32px;height:32px;border-radius:50%;background:#13131A;border:2px dashed rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;cursor:pointer;margin-left:4px;flex-shrink:0;font-size:14px;color:#6E6B80">+</button>
     <button id="open-invite" style="padding:5px 14px;margin-left:10px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.25);border-radius:20px;color:#A855F7;font-family:'Epilogue',sans-serif;font-size:11px;font-weight:700;cursor:pointer">📨 Invite</button>
-    <button onclick="initChatDb().then(openChat)" style="padding:5px 14px;margin-left:8px;background:rgba(0,140,255,0.1);border:1px solid rgba(0,140,255,0.25);border-radius:20px;color:#4DB8FF;font-family:'Epilogue',sans-serif;font-size:11px;font-weight:700;cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation">💬 Chat</button>
+    <button id="chat-open-btn" onclick="initChatDb().then(openChat)" style="padding:5px 14px;margin-left:8px;background:rgba(0,140,255,0.1);border:1px solid rgba(0,140,255,0.25);border-radius:20px;color:#4DB8FF;font-family:'Epilogue',sans-serif;font-size:11px;font-weight:700;cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation;position:relative">💬 Chat</button>
   </div>
 </div>
 
@@ -2742,11 +2742,11 @@ function openChat() {
   const modal = document.getElementById('chat-modal');
   if (!modal) { console.warn('chat-modal not found in DOM'); return; }
   modal.style.display = 'flex';
-  // Set trip name as chat header
   const titleEl = document.getElementById('chat-trip-title');
   if (titleEl) titleEl.textContent = '✈️ ' + TRIP_NAME;
   const memberCount = document.getElementById('chat-member-count');
   if (memberCount) memberCount.textContent = D.people.length + ' members';
+  clearUnreadBadge();
   loadChatMsgs();
   setTimeout(function() { const inp = document.getElementById('chat-input'); if (inp) inp.focus(); }, 100);
 }
@@ -2755,6 +2755,38 @@ function closeChat() {
   document.getElementById('chat-modal').style.display = 'none';
   if (chatChannel && chatDb) { chatDb.removeChannel(chatChannel); chatChannel = null; }
   if (chatReadChannel && chatDb) { chatDb.removeChannel(chatReadChannel); chatReadChannel = null; }
+}
+
+function showUnreadBadge() {
+  const btn = document.getElementById('chat-open-btn');
+  if (!btn || btn.querySelector('.chat-unread-dot')) return;
+  const dot = document.createElement('span');
+  dot.className = 'chat-unread-dot';
+  dot.style.cssText = 'position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:50%;background:#FF4444;border:2px solid #06060A;pointer-events:none';
+  btn.appendChild(dot);
+}
+
+function clearUnreadBadge() {
+  const btn = document.getElementById('chat-open-btn');
+  if (!btn) return;
+  const badge = btn.querySelector('.chat-unread-dot');
+  if (badge) badge.remove();
+  try { localStorage.setItem('raven_chat_seen_' + TRIP_ID, Date.now().toString()); } catch(e) {}
+}
+
+async function checkUnreadChatMessages() {
+  if (!chatDb) return;
+  try {
+    const lastSeen = parseInt(localStorage.getItem('raven_chat_seen_' + TRIP_ID) || '0');
+    const lastSeenIso = new Date(lastSeen || 0).toISOString();
+    const { data } = await chatDb.from('trip_messages')
+      .select('id, user_id')
+      .eq('trip_id', TRIP_ID)
+      .gt('created_at', lastSeenIso)
+      .limit(5);
+    const hasUnread = (data || []).some(function(m) { return m.user_id !== (window._ravenUserId || '__none__'); });
+    if (hasUnread) showUnreadBadge();
+  } catch(e) {}
 }
 
 async function loadChatMsgs() {
@@ -2777,8 +2809,17 @@ async function loadChatMsgs() {
   if (chatChannel) { chatDb.removeChannel(chatChannel); }
   chatChannel = chatDb.channel('trip-chat-' + TRIP_ID)
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'trip_messages', filter: 'trip_id=eq.' + TRIP_ID }, function(payload) {
-      appendMsg(payload.new, true);
-      markRead(payload.new.id);
+      const modal = document.getElementById('chat-modal');
+      const chatOpen = modal && modal.style.display === 'flex';
+      if (chatOpen) {
+        appendMsg(payload.new, true);
+        markRead(payload.new.id);
+      } else {
+        // Chat is closed — show unread dot if message is from someone else
+        if (payload.new.user_id !== (window._ravenUserId || '__none__')) {
+          showUnreadBadge();
+        }
+      }
     })
     .subscribe();
 
@@ -2987,7 +3028,15 @@ async function sendChat() {
   const { data: { session } } = await chatDb.auth.getSession();
   if (!session) { toast('Please sign in to chat'); return; }
   window._ravenUserId = session.user.id;
-  const firstName = session.user.user_metadata?.full_name?.split(' ')[0] || session.user.email?.split('@')[0] || 'Member';
+
+  // Always prefer localStorage profile for name + avatar
+  try {
+    const lp = JSON.parse(localStorage.getItem('raven_profile') || '{}');
+    if (lp.first_name) window._ravenFirstName = lp.first_name;
+    if (lp.avatar_url) window._ravenAvatarUrl = lp.avatar_url;
+  } catch(e) {}
+  const firstName = window._ravenFirstName || session.user.user_metadata?.full_name?.split(' ')[0] || session.user.email?.split('@')[0] || 'Member';
+  const avatarUrl = window._ravenAvatarUrl || '';
   window._ravenFirstName = firstName;
 
   const input = document.getElementById('chat-input');
@@ -3005,6 +3054,7 @@ async function sendChat() {
     trip_id: TRIP_ID,
     user_id: session.user.id,
     sender_name: firstName,
+    avatar_url: avatarUrl || null,
     message: message || '',
     gif_url: gifUrl || null,
     photo_url: photoData || null,
@@ -3012,15 +3062,27 @@ async function sendChat() {
   });
 }
 
-// Init chat db on load
+// Init chat db on load + seed user identity from localStorage profile
 initChatDb().then(async function() {
   if (!chatDb) return;
   try {
+    // Pull from localStorage first (fastest, always available)
+    try {
+      const lp = JSON.parse(localStorage.getItem('raven_profile') || '{}');
+      if (lp.first_name) window._ravenFirstName = lp.first_name;
+      if (lp.avatar_url) window._ravenAvatarUrl = lp.avatar_url;
+    } catch(e) {}
+    // Then confirm user_id from session
     const { data: { session } } = await chatDb.auth.getSession();
     if (session?.user) {
       window._ravenUserId = session.user.id;
-      window._ravenFirstName = session.user.user_metadata?.full_name?.split(' ')[0] || session.user.email?.split('@')[0] || 'Member';
+      // Only fall back to session metadata if localStorage didn't have a name
+      if (!window._ravenFirstName) {
+        window._ravenFirstName = session.user.user_metadata?.full_name?.split(' ')[0] || session.user.email?.split('@')[0] || 'Member';
+      }
     }
+    // Check for unread messages
+    checkUnreadChatMessages();
   } catch(e) {}
 });
 
