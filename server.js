@@ -2842,15 +2842,17 @@ function makePfp(name, avatarUrl) {
   const colors = ['#7C3AED','#E8633A','#0EA5E9','#30D158','#F59E0B','#EC4899','#14B8A6'];
   const bg = colors[(name||'').charCodeAt(0) % colors.length];
   const initial = (name||'?')[0].toUpperCase();
-  const fallback = '<div style="width:28px;height:28px;border-radius:50%;background:' + bg + ';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">' + initial + '</div>';
+  const wrapper = document.createElement('div');
+  wrapper.style.cssText = 'width:28px;height:28px;border-radius:50%;background:' + bg + ';flex-shrink:0;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff';
+  wrapper.textContent = initial;
   if (avatarUrl) {
-    // Use a wrapper div — set bg+initial as fallback, overlay img on top
-    return '<div style="width:28px;height:28px;border-radius:50%;background:' + bg + ';flex-shrink:0;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff">'
-      + initial
-      + '<img src="' + avatarUrl.replace(/"/g, '') + '" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%" onerror="this.style.display=\'none\'">'
-      + '</div>';
+    const img = document.createElement('img');
+    img.src = avatarUrl;
+    img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%';
+    img.addEventListener('error', function() { this.style.display = 'none'; });
+    wrapper.appendChild(img);
   }
-  return fallback;
+  return wrapper;
 }
 
 function appendMsg(msg, scroll) {
@@ -2862,37 +2864,53 @@ function appendMsg(msg, scroll) {
   const firstName = (msg.sender_name || 'Member').split(' ')[0];
   const avatarUrl = msg.avatar_url || '';
 
-  const el = document.createElement('div');
-  el.setAttribute('data-msg-id', msg.id || '');
-  el.style.cssText = 'display:flex;flex-direction:column;align-items:' + (isMe ? 'flex-end' : 'flex-start') + ';gap:2px;margin-bottom:4px';
+  const outer = document.createElement('div');
+  outer.setAttribute('data-msg-id', msg.id || '');
+  outer.style.cssText = 'display:flex;flex-direction:column;align-items:' + (isMe ? 'flex-end' : 'flex-start') + ';gap:2px;margin-bottom:4px';
 
-  // Build bubble content — text or GIF or photo
-  let bubbleContent = '';
+  // Name label
+  const nameLabel = document.createElement('div');
+  nameLabel.style.cssText = 'font-size:10px;color:#9896A8;font-weight:600;margin-' + (isMe ? 'right' : 'left') + ':36px;text-align:' + (isMe ? 'right' : 'left');
+  nameLabel.textContent = firstName;
+  outer.appendChild(nameLabel);
+
+  // Bubble row (pfp + bubble)
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;align-items:flex-end;gap:6px;' + (isMe ? 'justify-content:flex-end' : '');
+
+  const pfpEl = makePfp(firstName, avatarUrl);
+
+  // Bubble
+  const bubble = document.createElement('div');
+  bubble.style.cssText = 'max-width:75%;padding:' + (msg.gif_url || msg.photo_url ? '4px' : '9px 13px') + ';border-radius:' + (isMe ? '16px 16px 4px 16px' : '16px 16px 16px 4px') + ';background:' + (isMe ? '#0A84FF' : '#1A1A24') + ';color:#F0EEF8;font-size:13px;line-height:1.5';
+
   if (msg.gif_url) {
-    bubbleContent = '<img src="' + msg.gif_url.replace(/"/g,'') + '" style="max-width:200px;border-radius:10px;display:block">';
+    const img = document.createElement('img');
+    img.src = msg.gif_url;
+    img.style.cssText = 'max-width:200px;border-radius:10px;display:block';
+    bubble.appendChild(img);
   } else if (msg.photo_url) {
-    bubbleContent = '<img src="' + msg.photo_url.replace(/"/g,'') + '" style="max-width:200px;border-radius:10px;display:block;cursor:pointer" onclick="window.open(this.src)">';
+    const img = document.createElement('img');
+    img.src = msg.photo_url;
+    img.style.cssText = 'max-width:200px;border-radius:10px;display:block;cursor:pointer';
+    img.addEventListener('click', function() { window.open(this.src); });
+    bubble.appendChild(img);
   } else {
-    bubbleContent = '<span style="word-break:break-word">' + (msg.message||'').replace(/</g,'&lt;') + '</span>';
+    bubble.textContent = msg.message || '';
+    bubble.style.wordBreak = 'break-word';
   }
 
-  const pfpHtml = makePfp(firstName, avatarUrl);
-  const bubble = '<div style="max-width:75%;padding:' + (msg.gif_url||msg.photo_url ? '4px' : '9px 13px') + ';border-radius:' + (isMe ? '16px 16px 4px 16px' : '16px 16px 16px 4px') + ';background:' + (isMe ? '#0A84FF' : '#1A1A24') + ';color:#F0EEF8;font-size:13px;line-height:1.5">' + bubbleContent + '</div>';
+  if (isMe) { row.appendChild(bubble); row.appendChild(pfpEl); }
+  else       { row.appendChild(pfpEl);  row.appendChild(bubble); }
+  outer.appendChild(row);
 
-  // Always show first name above bubble
-  const nameLabel = '<div style="font-size:10px;color:#9896A8;font-weight:600;margin-bottom:3px;margin-' + (isMe ? 'right' : 'left') + ':36px;text-align:' + (isMe ? 'right' : 'left') + '">' + firstName.replace(/</g,'&lt;') + '</div>';
+  // Timestamp
+  const ts = document.createElement('div');
+  ts.style.cssText = 'font-size:10px;color:#6E6B80;margin:1px ' + (isMe ? '36px 0 0' : '0 0 0 36px') + ';text-align:' + (isMe ? 'right' : 'left');
+  ts.textContent = time;
+  outer.appendChild(ts);
 
-  if (isMe) {
-    el.innerHTML = nameLabel
-      + '<div style="display:flex;align-items:flex-end;gap:6px;justify-content:flex-end">' + bubble + pfpHtml + '</div>'
-      + '<div style="font-size:10px;color:#6E6B80;margin:1px 36px 0 0;text-align:right">' + time + '</div>';
-  } else {
-    el.innerHTML = nameLabel
-      + '<div style="display:flex;align-items:flex-end;gap:6px">' + pfpHtml + bubble + '</div>'
-      + '<div style="font-size:10px;color:#6E6B80;margin:1px 0 0 36px">' + time + '</div>';
-  }
-
-  container.appendChild(el);
+  container.appendChild(outer);
   if (scroll) container.scrollTop = container.scrollHeight;
 }
 
