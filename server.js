@@ -1110,13 +1110,18 @@ app.get('/trip/:tripId', async (req, res) => {
   const visiblePeople = people.slice(0, 5);
   const overflowPeople = people.slice(5);
   const avatarRow = visiblePeople.map((p, i) =>
-    `<div data-person-avatar="${esc(p)}" data-open-profile="${esc(p)}" title="${esc(p)}" style="width:32px;height:32px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};border:2px solid #06060A;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0;margin-left:${i===0?'0':'-8px'};overflow:hidden;cursor:pointer">${esc(p[0].toUpperCase())}</div>`
+    '<div data-person-avatar="' + esc(p) + '" data-open-profile="' + esc(p) + '" title="' + esc(p) + '" style="width:32px;height:32px;border-radius:50%;background:' + avatarColors[i%avatarColors.length] + ';border:2px solid #06060A;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0;margin-left:' + (i===0?'0':'-8px') + ';overflow:hidden;cursor:pointer">' + esc(p[0].toUpperCase()) + '</div>'
   ).join('')
   + (overflowPeople.length > 0
-    ? `<div id="avatar-overflow-btn" onclick="toggleAvatarOverflow()" title="Show ${overflowPeople.length} more" style="width:32px;height:32px;border-radius:50%;background:#22222E;border:2px solid #06060A;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#9896A8;flex-shrink:0;margin-left:-8px;cursor:pointer;position:relative;z-index:5">+${overflowPeople.length}</div>
-     <div id="avatar-overflow-list" style="display:none;position:absolute;top:44px;left:0;background:#13131A;border:1px solid rgba(255,255,255,0.12);border-radius:12px;padding:8px;z-index:100;min-width:140px;box-shadow:0 8px 32px rgba(0,0,0,0.5)">
-       ${overflowPeople.map((p,i) => `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='transparent'"><div style="width:24px;height:24px;border-radius:50%;background:${avatarColors[(i+5)%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0">${esc(p[0].toUpperCase())}</div><span style="font-size:12px;color:#F0EEF8">${esc(p)}</span></div>`).join('')}
-     </div>`
+    ? '<div id="avatar-overflow-btn" onclick="toggleAvatarOverflow()" style="width:32px;height:32px;border-radius:50%;background:#22222E;border:2px solid #06060A;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#9896A8;flex-shrink:0;margin-left:-8px;cursor:pointer;position:relative;z-index:5">+' + overflowPeople.length + '</div>'
+    + '<div id="avatar-overflow-list" style="display:none;position:absolute;top:44px;left:0;background:#13131A;border:1px solid rgba(255,255,255,0.12);border-radius:12px;padding:8px;z-index:100;min-width:140px;box-shadow:0 8px 32px rgba(0,0,0,0.5)">'
+    + overflowPeople.map((p, i) =>
+        '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px">'
+        + '<div style="width:24px;height:24px;border-radius:50%;background:' + avatarColors[(i+5)%avatarColors.length] + ';display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0">' + esc(p[0].toUpperCase()) + '</div>'
+        + '<span style="font-size:12px;color:#F0EEF8">' + esc(p) + '</span>'
+        + '</div>'
+      ).join('')
+    + '</div>'
     : '');
 
   let countdownHTML = '';
