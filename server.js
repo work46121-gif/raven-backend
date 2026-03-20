@@ -2730,10 +2730,12 @@ async function initChat() {
 
 function openChat() {
   const modal = document.getElementById('chat-modal');
+  if (!modal) { console.warn('chat-modal not found in DOM'); return; }
   modal.style.display = 'flex';
-  document.getElementById('chat-member-count').textContent = D.people.length + ' members';
+  const memberCount = document.getElementById('chat-member-count');
+  if (memberCount) memberCount.textContent = D.people.length + ' members';
   loadChatMsgs();
-  setTimeout(function() { document.getElementById('chat-input').focus(); }, 100);
+  setTimeout(function() { const inp = document.getElementById('chat-input'); if (inp) inp.focus(); }, 100);
 }
 
 function closeChat() {
@@ -2766,10 +2768,17 @@ async function loadChatMsgs() {
 async function initChatDb() {
   return new Promise(function(resolve) {
     if (chatDb) { resolve(); return; }
-    if (window.supabase) { chatDb = window.supabase.createClient(SUPABASE_URL_CHAT, SUPABASE_KEY_CHAT); resolve(); return; }
+    if (window.supabase && window.supabase.createClient) {
+      try { chatDb = window.supabase.createClient(SUPABASE_URL_CHAT, SUPABASE_KEY_CHAT); } catch(e) {}
+      resolve(); return;
+    }
     const s = document.createElement('script');
     s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
-    s.onload = function() { chatDb = window.supabase.createClient(SUPABASE_URL_CHAT, SUPABASE_KEY_CHAT); resolve(); };
+    s.onload = function() {
+      try { chatDb = window.supabase.createClient(SUPABASE_URL_CHAT, SUPABASE_KEY_CHAT); } catch(e) {}
+      resolve();
+    };
+    s.onerror = function() { console.warn('Supabase CDN blocked — chat unavailable'); resolve(); };
     document.head.appendChild(s);
   });
 }
