@@ -2713,57 +2713,12 @@ async function saveReceipt() {
 // ── GROUP CHAT ──
 const SUPABASE_URL_CHAT = 'https://ffjpzkpdumdcwnakpaje.supabase.co';
 const SUPABASE_KEY_CHAT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmanB6a3BkdW1kY3duYWtwYWplIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5ODc4OTcsImV4cCI6MjA4ODU2Mzg5N30.JtDLVu4K1TJ8emcN_mvSHBu6e0y8-jPQv-ypoc9p0RU';
-const { createClient: createChatClient } = window.supabase || {};
 let chatDb = null;
 let chatChannel = null;
-
-async function initChat() {
-  if (!window.supabase) {
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
-    s.onload = function() { chatDb = window.supabase.createClient(SUPABASE_URL_CHAT, SUPABASE_KEY_CHAT); };
-    document.head.appendChild(s);
-  } else {
-    chatDb = window.supabase.createClient(SUPABASE_URL_CHAT, SUPABASE_KEY_CHAT);
-  }
-}
-
-function openChat() {
-  const modal = document.getElementById('chat-modal');
-  if (!modal) { console.warn('chat-modal not found in DOM'); return; }
-  modal.style.display = 'flex';
-  const memberCount = document.getElementById('chat-member-count');
-  if (memberCount) memberCount.textContent = D.people.length + ' members';
-  loadChatMsgs();
-  setTimeout(function() { const inp = document.getElementById('chat-input'); if (inp) inp.focus(); }, 100);
-}
-
-function closeChat() {
-  document.getElementById('chat-modal').style.display = 'none';
-  if (chatChannel && chatDb) { chatDb.removeChannel(chatChannel); chatChannel = null; }
-}
-
-async function loadChatMsgs() {
-  if (!chatDb) { await initChatDb(); }
-  const container = document.getElementById('chat-msgs');
-  container.innerHTML = '<div style="text-align:center;color:#6E6B80;font-size:12px;padding:30px 0">Loading...</div>';
-  try {
-    const { data } = await chatDb.from('trip_messages').select('*').eq('trip_id', TRIP_ID).order('created_at', { ascending: true }).limit(100);
-    container.innerHTML = '';
-    if (!data || data.length === 0) {
-      container.innerHTML = '<div id="chat-empty" style="text-align:center;color:#6E6B80;font-size:12px;padding:30px 0">No messages yet. Say hi! 👋</div>';
-    } else {
-      data.forEach(function(msg) { appendMsg(msg, false); });
-      container.scrollTop = container.scrollHeight;
-    }
-  } catch(e) { container.innerHTML = '<div style="text-align:center;color:#FF4444;font-size:12px;padding:20px 0">Could not load messages</div>'; }
-
-  // Subscribe realtime
-  if (chatChannel) { chatDb.removeChannel(chatChannel); }
-  chatChannel = chatDb.channel('trip-chat-' + TRIP_ID)
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'trip_messages', filter: 'trip_id=eq.' + TRIP_ID }, function(payload) { appendMsg(payload.new, true); })
-    .subscribe();
-}
+let chatReadChannel = null;
+let chatGifUrl = null;
+let chatGifTimer = null;
+let chatGifPanelOpen = false;
 
 async function initChatDb() {
   return new Promise(function(resolve) {
@@ -2778,9 +2733,119 @@ async function initChatDb() {
       try { chatDb = window.supabase.createClient(SUPABASE_URL_CHAT, SUPABASE_KEY_CHAT); } catch(e) {}
       resolve();
     };
-    s.onerror = function() { console.warn('Supabase CDN blocked — chat unavailable'); resolve(); };
+    s.onerror = function() { console.warn('Supabase CDN blocked'); resolve(); };
     document.head.appendChild(s);
   });
+}
+
+function openChat() {
+  const modal = document.getElementById('chat-modal');
+  if (!modal) { console.warn('chat-modal not found in DOM'); return; }
+  modal.style.display = 'flex';
+  // Set trip name as chat header
+  const titleEl = document.getElementById('chat-trip-title');
+  if (titleEl) titleEl.textContent = '✈️ ' + TRIP_NAME;
+  const memberCount = document.getElementById('chat-member-count');
+  if (memberCount) memberCount.textContent = D.people.length + ' members';
+  loadChatMsgs();
+  setTimeout(function() { const inp = document.getElementById('chat-input'); if (inp) inp.focus(); }, 100);
+}
+
+function closeChat() {
+  document.getElementById('chat-modal').style.display = 'none';
+  if (chatChannel && chatDb) { chatDb.removeChannel(chatChannel); chatChannel = null; }
+  if (chatReadChannel && chatDb) { chatDb.removeChannel(chatReadChannel); chatReadChannel = null; }
+}
+
+async function loadChatMsgs() {
+  if (!chatDb) { await initChatDb(); }
+  const container = document.getElementById('chat-msgs');
+  container.innerHTML = '<div style="text-align:center;color:#6E6B80;font-size:12px;padding:30px 0">Loading...</div>';
+  try {
+    const { data } = await chatDb.from('trip_messages').select('*').eq('trip_id', TRIP_ID).order('created_at', { ascending: true }).limit(100);
+    container.innerHTML = '';
+    if (!data || data.length === 0) {
+      container.innerHTML = '<div id="chat-empty" style="text-align:center;color:#6E6B80;font-size:12px;padding:30px 0">No messages yet. Say hi! 👋</div>';
+    } else {
+      data.forEach(function(msg) { appendMsg(msg, false); });
+      container.scrollTop = container.scrollHeight;
+      // Mark last message as read
+      markRead(data[data.length - 1].id);
+    }
+  } catch(e) { container.innerHTML = '<div style="text-align:center;color:#FF4444;font-size:12px;padding:20px 0">Could not load messages</div>'; }
+
+  if (chatChannel) { chatDb.removeChannel(chatChannel); }
+  chatChannel = chatDb.channel('trip-chat-' + TRIP_ID)
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'trip_messages', filter: 'trip_id=eq.' + TRIP_ID }, function(payload) {
+      appendMsg(payload.new, true);
+      markRead(payload.new.id);
+    })
+    .subscribe();
+
+  // Subscribe to read receipts updates
+  if (chatReadChannel) { chatDb.removeChannel(chatReadChannel); }
+  chatReadChannel = chatDb.channel('trip-reads-' + TRIP_ID)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'trip_message_reads', filter: 'trip_id=eq.' + TRIP_ID }, function() {
+      refreshReadReceipts();
+    })
+    .subscribe();
+}
+
+async function markRead(msgId) {
+  if (!chatDb || !window._ravenUserId || !window._ravenFirstName) return;
+  try {
+    await chatDb.from('trip_message_reads').upsert({
+      trip_id: TRIP_ID,
+      user_id: window._ravenUserId,
+      first_name: window._ravenFirstName,
+      last_read_msg_id: msgId,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'trip_id,user_id' });
+  } catch(e) {}
+}
+
+async function refreshReadReceipts() {
+  if (!chatDb) return;
+  try {
+    const { data } = await chatDb.from('trip_message_reads').select('*').eq('trip_id', TRIP_ID);
+    if (!data) return;
+    // Find the last message el and update its read receipt row
+    const msgs = document.getElementById('chat-msgs');
+    const allMsgEls = msgs.querySelectorAll('[data-msg-id]');
+    if (!allMsgEls.length) return;
+    const lastMsgEl = allMsgEls[allMsgEls.length - 1];
+    let readEl = lastMsgEl.querySelector('.read-receipt');
+    if (!readEl) {
+      readEl = document.createElement('div');
+      readEl.className = 'read-receipt';
+      readEl.style.cssText = 'font-size:10px;color:#6E6B80;margin:2px 4px 0;display:flex;align-items:center;gap:3px;flex-wrap:wrap;';
+      lastMsgEl.appendChild(readEl);
+    }
+    const others = data.filter(r => r.user_id !== (window._ravenUserId || ''));
+    if (others.length === 0) { readEl.innerHTML = ''; return; }
+    const names = others.map(r => (r.first_name || '?').split(' ')[0]);
+    readEl.innerHTML = '<span style="opacity:0.5">Read by</span> '
+      + others.map(r => {
+          const firstName = (r.first_name || '?').split(' ')[0];
+          const colors = ['#7C3AED','#30D158','#0A84FF','#FF6B35','#F59E0B'];
+          const bg = colors[firstName.charCodeAt(0) % colors.length];
+          const initials = firstName[0].toUpperCase();
+          return '<span style="display:inline-flex;align-items:center;gap:3px">'
+            + '<span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:' + bg + ';color:#fff;font-size:8px;font-weight:700">' + initials + '</span>'
+            + '<span style="color:#9896A8">' + firstName + '</span>'
+            + '</span>';
+        }).join('<span style="color:#4A4760;margin:0 2px">·</span>');
+  } catch(e) {}
+}
+
+function makePfp(name, avatarUrl) {
+  const colors = ['#7C3AED','#E8633A','#0EA5E9','#30D158','#F59E0B','#EC4899','#14B8A6'];
+  const bg = colors[(name||'').charCodeAt(0) % colors.length];
+  const initial = (name||'?')[0].toUpperCase();
+  if (avatarUrl) {
+    return '<img src="' + avatarUrl + '" style="width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0" onerror="this.outerHTML=\'<div style=&quot;width:28px;height:28px;border-radius:50%;background:' + bg + ';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0&quot;>' + initial + '</div>\'">';
+  }
+  return '<div style="width:28px;height:28px;border-radius:50%;background:' + bg + ';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">' + initial + '</div>';
 }
 
 function appendMsg(msg, scroll) {
@@ -2789,54 +2854,198 @@ function appendMsg(msg, scroll) {
   const container = document.getElementById('chat-msgs');
   const isMe = msg.user_id === (window._ravenUserId || '');
   const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const firstName = (msg.sender_name || 'Member').split(' ')[0];
+  const avatarUrl = msg.avatar_url || '';
+
   const el = document.createElement('div');
-  el.style.cssText = 'display:flex;flex-direction:column;align-items:' + (isMe ? 'flex-end' : 'flex-start') + ';gap:3px';
-  const safeName = msg.sender_name.replace(/</g,'&lt;');
-  const safeMsg = msg.message.replace(/</g,'&lt;');
-  el.innerHTML = (!isMe ? '<div style="font-size:10px;color:#9896A8;font-weight:600;margin-left:4px">' + safeName + '</div>' : '')
-    + '<div style="max-width:80%;padding:9px 13px;border-radius:' + (isMe ? '16px 16px 4px 16px' : '16px 16px 16px 4px') + ';background:' + (isMe ? '#0A84FF' : '#1A1A24') + ';color:#F0EEF8;font-size:13px;line-height:1.5;word-break:break-word">' + safeMsg + '</div>'
-    + '<div style="font-size:10px;color:#6E6B80;margin:0 4px">' + time + '</div>';
+  el.setAttribute('data-msg-id', msg.id || '');
+  el.style.cssText = 'display:flex;flex-direction:column;align-items:' + (isMe ? 'flex-end' : 'flex-start') + ';gap:2px;margin-bottom:4px';
+
+  // Build bubble content — text or GIF or photo
+  let bubbleContent = '';
+  if (msg.gif_url) {
+    bubbleContent = '<img src="' + msg.gif_url.replace(/"/g,'') + '" style="max-width:200px;border-radius:10px;display:block">';
+  } else if (msg.photo_url) {
+    bubbleContent = '<img src="' + msg.photo_url.replace(/"/g,'') + '" style="max-width:200px;border-radius:10px;display:block;cursor:pointer" onclick="window.open(this.src)">';
+  } else {
+    bubbleContent = '<span style="word-break:break-word">' + (msg.message||'').replace(/</g,'&lt;') + '</span>';
+  }
+
+  const pfpHtml = makePfp(firstName, avatarUrl);
+  const bubble = '<div style="max-width:75%;padding:' + (msg.gif_url||msg.photo_url ? '4px' : '9px 13px') + ';border-radius:' + (isMe ? '16px 16px 4px 16px' : '16px 16px 16px 4px') + ';background:' + (isMe ? '#0A84FF' : '#1A1A24') + ';color:#F0EEF8;font-size:13px;line-height:1.5">' + bubbleContent + '</div>';
+
+  // Always show first name above bubble
+  const nameLabel = '<div style="font-size:10px;color:#9896A8;font-weight:600;margin-bottom:3px;margin-' + (isMe ? 'right' : 'left') + ':36px;text-align:' + (isMe ? 'right' : 'left') + '">' + firstName.replace(/</g,'&lt;') + '</div>';
+
+  if (isMe) {
+    el.innerHTML = nameLabel
+      + '<div style="display:flex;align-items:flex-end;gap:6px;justify-content:flex-end">' + bubble + pfpHtml + '</div>'
+      + '<div style="font-size:10px;color:#6E6B80;margin:1px 36px 0 0;text-align:right">' + time + '</div>';
+  } else {
+    el.innerHTML = nameLabel
+      + '<div style="display:flex;align-items:flex-end;gap:6px">' + pfpHtml + bubble + '</div>'
+      + '<div style="font-size:10px;color:#6E6B80;margin:1px 0 0 36px">' + time + '</div>';
+  }
+
   container.appendChild(el);
   if (scroll) container.scrollTop = container.scrollHeight;
 }
 
+// ── CHAT GIF ──
+function toggleChatGifPanel() {
+  chatGifPanelOpen = !chatGifPanelOpen;
+  const panel = document.getElementById('chat-gif-panel');
+  panel.style.display = chatGifPanelOpen ? 'block' : 'none';
+  if (chatGifPanelOpen) document.getElementById('chat-gif-search').focus();
+}
+function searchChatGifs(q) {
+  clearTimeout(chatGifTimer);
+  const container = document.getElementById('chat-gif-results');
+  if (!q.trim()) { container.innerHTML = '<div style="color:#6E6B80;font-size:12px;padding:8px">Type to search...</div>'; return; }
+  container.innerHTML = '<div style="color:#6E6B80;font-size:12px;padding:8px">Searching...</div>';
+  chatGifTimer = setTimeout(function() {
+    fetch(BACKEND + '/gif-search?q=' + encodeURIComponent(q))
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        const gifs = d.gifs || [];
+        if (!gifs.length) { container.innerHTML = '<div style="color:#6E6B80;font-size:12px;padding:8px">No results</div>'; return; }
+        container.innerHTML = '';
+        gifs.forEach(function(g) {
+          const url = g.preview || g.full || ''; if (!url) return;
+          const img = document.createElement('img');
+          img.src = url;
+          img.style.cssText = 'height:70px;width:auto;border-radius:6px;cursor:pointer;object-fit:cover;border:2px solid transparent;flex-shrink:0';
+          img.addEventListener('mouseover', function() { this.style.borderColor = '#0A84FF'; });
+          img.addEventListener('mouseout',  function() { this.style.borderColor = 'transparent'; });
+          img.addEventListener('click', function() {
+            chatGifUrl = g.full || url;
+            document.getElementById('chat-gif-preview').src = chatGifUrl;
+            document.getElementById('chat-gif-preview-wrap').style.display = 'flex';
+            chatGifPanelOpen = false;
+            document.getElementById('chat-gif-panel').style.display = 'none';
+            document.getElementById('chat-gif-search').value = '';
+            container.innerHTML = '';
+          });
+          container.appendChild(img);
+        });
+      }).catch(function() { container.innerHTML = '<div style="color:#FF6B6B;font-size:12px;padding:8px">Error</div>'; });
+  }, 400);
+}
+function clearChatGif() {
+  chatGifUrl = null;
+  document.getElementById('chat-gif-preview-wrap').style.display = 'none';
+  document.getElementById('chat-gif-preview').src = '';
+}
+
+// ── CHAT PHOTO ──
+function openChatPhotoPicker() {
+  document.getElementById('chat-photo-input').click();
+}
+async function handleChatPhoto(input) {
+  const file = input.files[0]; if (!file) return;
+  if (file.size > 5 * 1024 * 1024) { toast('Photo must be under 5MB', false); return; }
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    document.getElementById('chat-photo-preview').src = e.target.result;
+    document.getElementById('chat-photo-preview-wrap').style.display = 'flex';
+    window._chatPhotoData = e.target.result; // base64 data URL
+  };
+  reader.readAsDataURL(file);
+  input.value = '';
+}
+function clearChatPhoto() {
+  window._chatPhotoData = null;
+  document.getElementById('chat-photo-preview-wrap').style.display = 'none';
+  document.getElementById('chat-photo-preview').src = '';
+}
+
 async function sendChat() {
-  const input = document.getElementById('chat-input');
-  const message = input.value.trim();
-  if (!message) return;
   if (!chatDb) await initChatDb();
-  input.value = ''; input.style.height = 'auto';
-  // Get current user session
   const { data: { session } } = await chatDb.auth.getSession();
   if (!session) { toast('Please sign in to chat'); return; }
   window._ravenUserId = session.user.id;
   const firstName = session.user.user_metadata?.full_name?.split(' ')[0] || session.user.email?.split('@')[0] || 'Member';
-  await chatDb.from('trip_messages').insert({ trip_id: TRIP_ID, user_id: session.user.id, sender_name: firstName, message: message, created_at: new Date().toISOString() });
+  window._ravenFirstName = firstName;
+
+  const input = document.getElementById('chat-input');
+  const message = input.value.trim();
+  const gifUrl = chatGifUrl;
+  const photoData = window._chatPhotoData || null;
+
+  if (!message && !gifUrl && !photoData) return;
+
+  input.value = ''; input.style.height = 'auto';
+  clearChatGif();
+  clearChatPhoto();
+
+  await chatDb.from('trip_messages').insert({
+    trip_id: TRIP_ID,
+    user_id: session.user.id,
+    sender_name: firstName,
+    message: message || '',
+    gif_url: gifUrl || null,
+    photo_url: photoData || null,
+    created_at: new Date().toISOString()
+  });
 }
 
-// Wire chat button
-// chat uses inline onclick on button
-
 // Init chat db on load
-initChatDb();
+initChatDb().then(async function() {
+  if (!chatDb) return;
+  try {
+    const { data: { session } } = await chatDb.auth.getSession();
+    if (session?.user) {
+      window._ravenUserId = session.user.id;
+      window._ravenFirstName = session.user.user_metadata?.full_name?.split(' ')[0] || session.user.email?.split('@')[0] || 'Member';
+    }
+  } catch(e) {}
+});
 
 </script>
 
 <!-- ── GROUP CHAT MODAL ── -->
-<div id="chat-modal" style="display:none;position:fixed;bottom:24px;right:24px;width:340px;max-width:calc(100vw - 32px);height:480px;max-height:calc(100vh - 100px);background:#0C0C12;border:1px solid rgba(0,140,255,0.3);border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,0.7);z-index:1000;flex-direction:column;overflow:hidden">
-  <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:#13131A;border-bottom:1px solid rgba(255,255,255,0.07);flex-shrink:0">
+<div id="chat-modal" style="display:none;position:fixed;bottom:24px;right:24px;width:360px;max-width:calc(100vw - 32px);height:520px;max-height:calc(100vh - 100px);background:#0C0C12;border:1px solid rgba(0,140,255,0.3);border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,0.7);z-index:1000;flex-direction:column;overflow:hidden">
+  <!-- Header -->
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#13131A;border-bottom:1px solid rgba(255,255,255,0.07);flex-shrink:0">
     <div>
-      <div style="font-size:13px;font-weight:700">💬 Group Chat</div>
+      <div style="font-size:13px;font-weight:700;color:#F0EEF8" id="chat-trip-title">Group Chat</div>
       <div style="font-size:10px;color:#6E6B80" id="chat-member-count"></div>
     </div>
     <button onclick="closeChat()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:50%;width:28px;height:28px;color:#9896A8;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center">×</button>
   </div>
-  <div id="chat-msgs" style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;min-height:0">
+  <!-- Messages -->
+  <div id="chat-msgs" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;min-height:0">
     <div id="chat-empty" style="text-align:center;color:#6E6B80;font-size:12px;padding:30px 0">No messages yet. Say hi! 👋</div>
   </div>
-  <div style="padding:12px;border-top:1px solid rgba(255,255,255,0.07);flex-shrink:0;display:flex;gap:8px;align-items:flex-end">
-    <textarea id="chat-input" placeholder="Message the group..." rows="1" style="flex:1;background:#1A1A24;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:10px 14px;color:#F0EEF8;font-family:'Epilogue',sans-serif;font-size:13px;resize:none;outline:none;max-height:80px;line-height:1.5;transition:border 0.2s" onfocus="this.style.borderColor='rgba(0,140,255,0.4)'" onblur="this.style.borderColor='rgba(255,255,255,0.1)'" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
-    <button onclick="sendChat()" style="background:#0A84FF;border:none;border-radius:12px;width:38px;height:38px;color:#fff;font-size:18px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center">↑</button>
+  <!-- GIF panel -->
+  <div id="chat-gif-panel" style="display:none;background:#13131A;border-top:1px solid rgba(255,255,255,0.07);padding:8px 12px;flex-shrink:0">
+    <input id="chat-gif-search" type="text" placeholder="Search GIFs..." oninput="searchChatGifs(this.value)" style="width:100%;padding:8px 12px;background:#1A1A24;border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#F0EEF8;font-size:12px;outline:none;margin-bottom:6px">
+    <div id="chat-gif-results" style="display:flex;gap:6px;flex-wrap:wrap;max-height:120px;overflow-y:auto">
+      <div style="color:#6E6B80;font-size:12px;padding:4px">Type to search...</div>
+    </div>
+  </div>
+  <!-- Previews -->
+  <div id="chat-gif-preview-wrap" style="display:none;align-items:center;gap:8px;padding:6px 12px;background:#13131A;border-top:1px solid rgba(255,255,255,0.07);flex-shrink:0">
+    <img id="chat-gif-preview" src="" style="height:60px;border-radius:8px">
+    <button onclick="clearChatGif()" style="background:rgba(255,68,68,0.15);border:1px solid rgba(255,68,68,0.3);border-radius:6px;color:#FF6B6B;font-size:11px;padding:4px 8px;cursor:pointer">✕ Remove</button>
+  </div>
+  <div id="chat-photo-preview-wrap" style="display:none;align-items:center;gap:8px;padding:6px 12px;background:#13131A;border-top:1px solid rgba(255,255,255,0.07);flex-shrink:0">
+    <img id="chat-photo-preview" src="" style="height:60px;border-radius:8px;object-fit:cover">
+    <button onclick="clearChatPhoto()" style="background:rgba(255,68,68,0.15);border:1px solid rgba(255,68,68,0.3);border-radius:6px;color:#FF6B6B;font-size:11px;padding:4px 8px;cursor:pointer">✕ Remove</button>
+  </div>
+  <!-- Input row -->
+  <div style="padding:10px 12px;border-top:1px solid rgba(255,255,255,0.07);flex-shrink:0;background:#0C0C12">
+    <div style="display:flex;gap:6px;align-items:flex-end">
+      <!-- GIF button -->
+      <button onclick="toggleChatGifPanel()" title="GIF" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;width:34px;height:34px;color:#9896A8;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0;display:flex;align-items:center;justify-content:center">GIF</button>
+      <!-- Photo button -->
+      <button onclick="openChatPhotoPicker()" title="Photo" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;width:34px;height:34px;color:#9896A8;cursor:pointer;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center">📷</button>
+      <input id="chat-photo-input" type="file" accept="image/*" style="display:none" onchange="handleChatPhoto(this)">
+      <!-- Text input -->
+      <textarea id="chat-input" placeholder="Message the group..." rows="1" style="flex:1;background:#1A1A24;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:9px 12px;color:#F0EEF8;font-family:'Epilogue',sans-serif;font-size:13px;resize:none;outline:none;max-height:80px;line-height:1.5;transition:border 0.2s" onfocus="this.style.borderColor='rgba(0,140,255,0.4)'" onblur="this.style.borderColor='rgba(255,255,255,0.1)'" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
+      <!-- Send button -->
+      <button onclick="sendChat()" style="background:#0A84FF;border:none;border-radius:12px;width:34px;height:34px;color:#fff;font-size:18px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center">↑</button>
+    </div>
   </div>
 </div>
 
