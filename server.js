@@ -1104,7 +1104,7 @@ app.get('/trip/:tripId', async (req, res) => {
   function esc(str) { return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
   const coverHTML = trip.cover_image
-    ? `<div style="max-width:800px;margin:0 auto;padding:16px 20px 0"><div style="position:relative;width:100%;height:190px;border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,0.07)"><img src="data:image/jpeg;base64,${trip.cover_image}" id="cover-img" style="width:100%;height:100%;object-fit:cover"><button id="cover-change-btn" style="position:absolute;bottom:10px;right:10px;padding:7px 14px;background:rgba(0,0,0,0.7);border:1px solid rgba(255,255,255,0.2);border-radius:8px;color:#fff;font-family:'Epilogue',sans-serif;font-size:12px;font-weight:600;cursor:pointer">📷 Change</button><input id="cover-upload" type="file" accept="image/*" style="display:none"></div></div>`
+    ? `<div style="max-width:800px;margin:0 auto;padding:16px 20px 0"><div style="position:relative;width:100%;height:190px;border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,0.07)"><img src="${baseUrl}/trip/${tripId}/cover-image" id="cover-img" style="width:100%;height:100%;object-fit:cover"><button id="cover-change-btn" style="position:absolute;bottom:10px;right:10px;padding:7px 14px;background:rgba(0,0,0,0.7);border:1px solid rgba(255,255,255,0.2);border-radius:8px;color:#fff;font-family:'Epilogue',sans-serif;font-size:12px;font-weight:600;cursor:pointer">📷 Change</button><input id="cover-upload" type="file" accept="image/*" style="display:none"></div></div>`
     : `<div style="max-width:800px;margin:16px auto 0;padding:0 20px"><div id="cover-empty" style="width:100%;height:100px;border:2px dashed rgba(124,58,237,0.3);border-radius:16px;display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;background:rgba(124,58,237,0.03)"><span style="font-size:20px">🖼</span><span style="font-size:13px;color:#6E6B80;font-weight:500">Add a cover photo for this trip</span></div><input id="cover-upload" type="file" accept="image/*" style="display:none"></div>`;
 
   const avatarRow = people.map((p, i) =>
@@ -1440,7 +1440,7 @@ input:focus,textarea:focus{border-color:var(--purple)}
 <body>
 
 <!-- All page data — safely JSON-encoded, never interpolated into JS -->
-<script id="page-data" type="application/json">${pageData}</script>
+<script id="page-data" type="application/json">${pageData.replace(/<\/script>/gi, '<\\/script>')}</script>
 
 <div class="hdr"><div class="hdr-inner">
   <a href="https://ravensplit.com/dashboard.html" style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;text-decoration:none;color:#9896A8;font-size:13px;font-weight:600;transition:all 0.15s" onmouseover="this.style.color='#F0EEF8';this.style.borderColor='rgba(255,255,255,0.25)'" onmouseout="this.style.color='#9896A8';this.style.borderColor='rgba(255,255,255,0.1)'">← Dashboard</a>
