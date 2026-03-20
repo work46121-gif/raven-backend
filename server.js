@@ -2805,6 +2805,9 @@ async function sendChat() {
   await chatDb.from('trip_messages').insert({ trip_id: TRIP_ID, user_id: session.user.id, sender_name: firstName, message: message, created_at: new Date().toISOString() });
 }
 
+// Wire chat button
+// chat button uses inline onclick
+
 // Init chat db on load
 initChatDb();
 
