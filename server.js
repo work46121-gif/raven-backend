@@ -2806,7 +2806,7 @@ async function sendChat() {
 }
 
 // Wire chat button
-// chat wired via inline onclick
+// chat uses inline onclick on button
 
 // Init chat db on load
 initChatDb();
