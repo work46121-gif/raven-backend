@@ -1107,9 +1107,17 @@ app.get('/trip/:tripId', async (req, res) => {
     ? `<div style="max-width:800px;margin:0 auto;padding:16px 20px 0"><div style="position:relative;width:100%;height:190px;border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,0.07)"><img src="${baseUrl}/trip/${tripId}/cover-image" id="cover-img" style="width:100%;height:100%;object-fit:cover"><button id="cover-change-btn" style="position:absolute;bottom:10px;right:10px;padding:7px 14px;background:rgba(0,0,0,0.7);border:1px solid rgba(255,255,255,0.2);border-radius:8px;color:#fff;font-family:'Epilogue',sans-serif;font-size:12px;font-weight:600;cursor:pointer">📷 Change</button><input id="cover-upload" type="file" accept="image/*" style="display:none"></div></div>`
     : `<div style="max-width:800px;margin:16px auto 0;padding:0 20px"><div id="cover-empty" style="width:100%;height:100px;border:2px dashed rgba(124,58,237,0.3);border-radius:16px;display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;background:rgba(124,58,237,0.03)"><span style="font-size:20px">🖼</span><span style="font-size:13px;color:#6E6B80;font-weight:500">Add a cover photo for this trip</span></div><input id="cover-upload" type="file" accept="image/*" style="display:none"></div>`;
 
-  const avatarRow = people.map((p, i) =>
+  const visiblePeople = people.slice(0, 5);
+  const overflowPeople = people.slice(5);
+  const avatarRow = visiblePeople.map((p, i) =>
     `<div data-person-avatar="${esc(p)}" data-open-profile="${esc(p)}" title="${esc(p)}" style="width:32px;height:32px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};border:2px solid #06060A;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0;margin-left:${i===0?'0':'-8px'};overflow:hidden;cursor:pointer">${esc(p[0].toUpperCase())}</div>`
-  ).join('');
+  ).join('')
+  + (overflowPeople.length > 0
+    ? `<div id="avatar-overflow-btn" onclick="toggleAvatarOverflow()" title="Show ${overflowPeople.length} more" style="width:32px;height:32px;border-radius:50%;background:#22222E;border:2px solid #06060A;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#9896A8;flex-shrink:0;margin-left:-8px;cursor:pointer;position:relative;z-index:5">+${overflowPeople.length}</div>
+     <div id="avatar-overflow-list" style="display:none;position:absolute;top:44px;left:0;background:#13131A;border:1px solid rgba(255,255,255,0.12);border-radius:12px;padding:8px;z-index:100;min-width:140px;box-shadow:0 8px 32px rgba(0,0,0,0.5)">
+       ${overflowPeople.map((p,i) => `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='transparent'"><div style="width:24px;height:24px;border-radius:50%;background:${avatarColors[(i+5)%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0">${esc(p[0].toUpperCase())}</div><span style="font-size:12px;color:#F0EEF8">${esc(p)}</span></div>`).join('')}
+     </div>`
+    : '');
 
   let countdownHTML = '';
   if (trip.trip_date) {
@@ -1128,13 +1136,27 @@ app.get('/trip/:tripId', async (req, res) => {
     const days = Math.round((tripUTC - todayUTC) / 86400000);
     const tripDateLabel = new Date(tripUTC).toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric', timeZone:'UTC' });
     if (days > 0) {
-      const dueDateRow = trip.due_date ? `<div style="margin-top:10px;display:flex;align-items:center;justify-content:center;gap:6px;padding:6px 14px;background:rgba(255,107,53,0.07);border:1px solid rgba(255,107,53,0.2);border-radius:8px;display:inline-flex"><span style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#FF6B35">💰 Bill Due</span><span style="font-size:11px;color:#9896A8">${new Date(trip.due_date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span><span id="edit-due-date-btn" style="font-size:10px;color:#FF6B35;cursor:pointer;margin-left:4px;opacity:0.7">edit</span></div>` : `<div style="margin-top:10px;display:inline-flex;align-items:center;gap:6px;padding:5px 12px;background:rgba(255,255,255,0.03);border:1px dashed rgba(255,255,255,0.1);border-radius:8px;cursor:pointer" id="add-due-date-btn"><span style="font-size:10px;color:#6E6B80">+ Set bill due date</span></div>`;
-    countdownHTML = `<div style="background:linear-gradient(135deg,rgba(124,58,237,0.12),rgba(48,209,88,0.08));border:1px solid rgba(124,58,237,0.22);border-radius:16px;padding:20px;text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#C084FC;font-weight:700;margin-bottom:8px">✈️ Countdown to Trip</div><div style="font-size:72px;font-weight:900;line-height:1;color:#F0EEF8;margin-bottom:4px">${days}</div><div style="font-size:13px;color:#9896A8">day${days!==1?'s':''} to go · ${tripDateLabel}</div>${dueDateRow}</div>`;
+      const dueDateRow = trip.due_date
+        ? `<div style="margin-top:6px;display:inline-flex;align-items:center;gap:6px;padding:5px 12px;background:rgba(255,107,53,0.07);border:1px solid rgba(255,107,53,0.2);border-radius:8px"><span style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#FF6B35">💰 Bill Due</span><span style="font-size:11px;color:#9896A8">${new Date(trip.due_date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span><span id="edit-due-date-btn" style="font-size:10px;color:#FF6B35;cursor:pointer;margin-left:4px;opacity:0.7">edit</span></div>`
+        : `<div style="margin-top:6px;display:inline-flex;align-items:center;gap:6px;padding:5px 12px;background:rgba(255,255,255,0.03);border:1px dashed rgba(255,255,255,0.1);border-radius:8px;cursor:pointer" id="add-due-date-btn"><span style="font-size:10px;color:#6E6B80">+ Set bill due date</span></div>`;
+      const endDateRow = trip.end_date
+        ? `<div style="margin-top:4px;display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:rgba(110,107,128,0.08);border:1px solid rgba(110,107,128,0.2);border-radius:8px"><span style="font-size:10px;color:#6E6B80">🏁 Trip ends</span><span style="font-size:10px;color:#9896A8">${new Date(trip.end_date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span></div>`
+        : `<div style="margin-top:4px;display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:rgba(255,255,255,0.02);border:1px dashed rgba(255,255,255,0.07);border-radius:8px;cursor:pointer" id="add-end-date-btn"><span style="font-size:10px;color:#6E6B80">+ Set trip end date</span></div>`;
+      countdownHTML = `<div style="background:linear-gradient(135deg,rgba(124,58,237,0.12),rgba(48,209,88,0.08));border:1px solid rgba(124,58,237,0.22);border-radius:16px;padding:20px;text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#C084FC;font-weight:700;margin-bottom:8px">✈️ Countdown to Trip</div><div style="font-size:72px;font-weight:900;line-height:1;color:#F0EEF8;margin-bottom:4px">${days}</div><div style="font-size:13px;color:#9896A8">day${days!==1?'s':''} to go · ${tripDateLabel}</div>${endDateRow}${dueDateRow}</div>`;
     } else if (days === 0) {
       countdownHTML = `<div style="background:linear-gradient(135deg,rgba(48,209,88,0.12),rgba(124,58,237,0.08));border:1px solid rgba(48,209,88,0.3);border-radius:16px;padding:20px;text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#30D158;font-weight:700;margin-bottom:8px">✈️ Today's the Day!</div><div style="font-size:48px;font-weight:900;line-height:1;color:#30D158;margin-bottom:4px">🛫</div><div style="font-size:13px;color:#9896A8">${tripDateLabel}</div></div>`;
     } else {
       const ago = Math.abs(days);
-      countdownHTML = `<div style="background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.18);border-radius:16px;padding:16px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:600">✅ Trip was ${ago>0?ago+' day'+(ago!==1?'s':'')+' ago':'today'} · ${tripDateLabel}</div></div>`;
+      // Check if end_date has passed — if so, show "Trip Completed"
+      let isCompleted = false;
+      if (trip.end_date) {
+        const [ey, em, ed] = trip.end_date.split('-').map(Number);
+        const endNum = ey * 10000 + em * 100 + ed;
+        isCompleted = todayNum >= endNum;
+      }
+      countdownHTML = isCompleted
+        ? `<div style="background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.3);border-radius:16px;padding:16px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:700;margin-bottom:4px">✅ Trip Completed</div><div style="font-size:12px;color:#6E6B80">${tripDateLabel} · ${ago} day${ago!==1?'s':''} ago</div></div>`
+        : `<div style="background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.18);border-radius:16px;padding:16px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:600">✅ Trip was ${ago>0?ago+' day'+(ago!==1?'s':'')+' ago':'today'} · ${tripDateLabel}</div></div>`;
     }
   } else {
     countdownHTML = `<div style="background:#13131A;border:1px dashed rgba(255,255,255,0.08);border-radius:14px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="font-size:13px;color:#6E6B80">📅 No trip date set</div><div style="font-size:11px;color:#6E6B80;font-style:italic">Set date in settings</div></div>`;
@@ -1182,13 +1204,13 @@ app.get('/trip/:tripId', async (req, res) => {
           <div data-person-avatar="${esc(p)}" style="width:34px;height:34px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;overflow:hidden">${esc(p[0].toUpperCase())}</div>
           <div>
             <div style="font-weight:600;font-size:14px;display:flex;align-items:center;gap:6px">${esc(p)} <span style="font-size:11px;color:#6E6B80;font-weight:400">›</span></div>
-            <div style="font-size:11px;color:${amtOwed>0?'#FF9A3C':amtReceivable>0?'#A855F7':'#30D158'}">
+            <div class="person-status-display" style="font-size:11px;color:${amtOwed>0?'#FF9A3C':amtReceivable>0?'#A855F7':'#30D158'}">
               ${amtOwed>0 ? `owes $${amtOwed.toFixed(2)}` : amtReceivable>0 ? `collecting $${amtReceivable.toFixed(2)}` : 'all settled ✓'}
             </div>
           </div>
         </div>
         <div style="text-align:right">
-          <div style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${amtOwed>0?'#FF9A3C':amtReceivable>0?'#A855F7':'#9896A8'}">
+          <div class="person-balance-display" data-original-owed="${amtOwed.toFixed(2)}" style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${amtOwed>0?'#FF9A3C':amtReceivable>0?'#A855F7':'#9896A8'}">
             ${amtOwed>0 ? '-$'+amtOwed.toFixed(2) : amtReceivable>0 ? '+$'+amtReceivable.toFixed(2) : '$0.00'}
           </div>
         </div>
@@ -1261,6 +1283,7 @@ app.get('/trip/:tripId', async (req, res) => {
           ${splitEntries.map(([person, amount]) => {
             const pct = total > 0 ? Math.round((parseFloat(amount)/total)*100) : 0;
             const color = avatarColorMap[people.indexOf(person) % avatarColorMap.length] || '#6E6B80';
+            const paidKey = esc(person) + '::' + esc(r.id || receiptId);
             return `<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:12px 14px">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${payer?'10px':'8px'}">
                 <div style="display:flex;align-items:center;gap:8px">
@@ -1275,7 +1298,7 @@ app.get('/trip/:tripId', async (req, res) => {
               <div style="height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;margin-bottom:${payer?'10px':'0'}">
                 <div style="height:100%;width:${pct}%;background:${color};border-radius:2px"></div>
               </div>
-              ${payer ? `<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06)">${payButtonsHtml(payer, amount)}</div>` : ''}
+              ${payer ? `<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px;flex-wrap:wrap">${payButtonsHtml(payer, amount)}<button class="rcpt-mark-paid-btn" data-receipt-paid-key="${paidKey}" data-person-name="${esc(person)}" data-receipt-id="${esc(r.id||receiptId)}" data-amount="${parseFloat(amount).toFixed(2)}" style="padding:7px 14px;background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.2);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✓ Mark as Paid</button></div>` : ''}
             </div>`;
           }).join('')}
         </div>
@@ -1376,6 +1399,7 @@ app.get('/trip/:tripId', async (req, res) => {
     tripName: trip.name,
     tripDate: trip.trip_date || '',
     dueDate: trip.due_date || '',
+    endDate: trip.end_date || '',
     creatorEmail: trip.creator_email || '',
     people,
     hasCoverImage: !!trip.cover_image,
@@ -1462,7 +1486,7 @@ ${coverHTML}
     <span style="width:3px;height:3px;border-radius:50%;background:rgba(255,255,255,0.12)"></span>
     <span style="color:#30D158;font-weight:600">$${grandTotal.toFixed(2)} total</span>
   </div>
-  <div style="display:flex;align-items:center;margin-top:14px;margin-bottom:6px">
+  <div style="display:flex;align-items:center;margin-top:14px;margin-bottom:6px;position:relative">
     ${avatarRow}
     <button id="open-add-members" style="width:32px;height:32px;border-radius:50%;background:#13131A;border:2px dashed rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;cursor:pointer;margin-left:4px;flex-shrink:0;font-size:14px;color:#6E6B80">+</button>
     <button id="open-invite" style="padding:5px 14px;margin-left:10px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.25);border-radius:20px;color:#A855F7;font-family:'Epilogue',sans-serif;font-size:11px;font-weight:700;cursor:pointer">📨 Invite</button>
@@ -1646,7 +1670,8 @@ ${coverHTML}
     <div class="handle"></div>
     <div style="font-size:26px;font-weight:800;margin-bottom:16px">Trip Settings</div>
     <div style="margin-bottom:14px"><div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">Trip Name</div><input id="settings-name" type="text" placeholder="Trip name"></div>
-    <div style="margin-bottom:16px"><div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">Trip Date</div><input id="settings-date" type="date"></div>
+    <div style="margin-bottom:16px"><div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">Trip Start Date</div><input id="settings-date" type="date"></div>
+    <div style="margin-bottom:16px"><div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">🏁 Trip End Date <span style="font-weight:400;text-transform:none;font-size:11px;letter-spacing:0">(marks trip as completed)</span></div><input id="settings-end-date" type="date"></div>
     <div style="margin-bottom:16px"><div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">💰 Bill Due Date <span style="font-weight:400;text-transform:none;font-size:11px;letter-spacing:0">(RAVEN sends reminders after this)</span></div><input id="settings-due-date" type="date"></div>
     <button class="btn-g" id="save-settings-btn" style="margin-bottom:10px">💾 Save Changes</button>
     <button class="btn-o" id="close-settings-btn">Cancel</button>
@@ -1760,7 +1785,9 @@ document.getElementById('invite-url-text').textContent = INVITE_URL;
 document.getElementById('settings-name').value = TRIP_NAME;
 if (TRIP_DATE) document.getElementById('settings-date').value = TRIP_DATE;
 const DUE_DATE = D.dueDate || '';
+const END_DATE = D.endDate || '';
 if (DUE_DATE) { const dd = document.getElementById('settings-due-date'); if (dd) dd.value = DUE_DATE; }
+if (END_DATE) { const ed = document.getElementById('settings-end-date'); if (ed) ed.value = END_DATE; }
 // Wire up inline due date edit/add buttons
 document.addEventListener('DOMContentLoaded', () => {
   const editBtn = document.getElementById('edit-due-date-btn');
@@ -1786,6 +1813,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const personId = btn.getAttribute('data-person');
       const personName = btn.getAttribute('data-name');
       if (personId && personName) markTripPersonPaid(personName, personId, btn);
+      return;
+    }
+    // Per-receipt mark as paid
+    const rcptBtn = e.target.closest('.rcpt-mark-paid-btn');
+    if (rcptBtn) {
+      const personName = rcptBtn.getAttribute('data-person-name');
+      const receiptId  = rcptBtn.getAttribute('data-receipt-id');
+      const amount     = rcptBtn.getAttribute('data-amount');
+      if (personName && receiptId) markReceiptItemPaid(personName, receiptId, amount, rcptBtn);
       return;
     }
     // Open member profile on avatar/name click
@@ -2101,8 +2137,114 @@ function renderPaySlots() {
 // Run after page loads and PAY_PROFILES is enriched from localStorage
 setTimeout(renderPaySlots, 300);
 
-// Mark a person as settled in the trip hub
-function markTripPersonPaid(personName, personId, btn) {
+// ── AVATAR OVERFLOW TOGGLE ──
+function toggleAvatarOverflow() {
+  const list = document.getElementById('avatar-overflow-list');
+  const btn = document.getElementById('avatar-overflow-btn');
+  if (!list) return;
+  const isOpen = list.style.display !== 'none';
+  list.style.display = isOpen ? 'none' : 'block';
+  if (btn) btn.style.background = isOpen ? '#22222E' : 'rgba(124,58,237,0.2)';
+}
+// Close overflow on outside click
+document.addEventListener('click', function(e) {
+  const list = document.getElementById('avatar-overflow-list');
+  if (!list || list.style.display === 'none') return;
+  if (!e.target.closest('#avatar-overflow-btn') && !e.target.closest('#avatar-overflow-list')) {
+    list.style.display = 'none';
+    const btn = document.getElementById('avatar-overflow-btn');
+    if (btn) btn.style.background = '#22222E';
+  }
+});
+
+// ── PER-RECEIPT MARK AS PAID — subtracts from running balance ──
+// Tracks paid amounts per person client-side keyed by TRIP_ID
+function getReceiptPaidMap() {
+  try { return JSON.parse(localStorage.getItem('raven_rcpt_paid_' + TRIP_ID) || '{}'); } catch(e) { return {}; }
+}
+function saveReceiptPaidMap(map) {
+  try { localStorage.setItem('raven_rcpt_paid_' + TRIP_ID, JSON.stringify(map)); } catch(e) {}
+}
+
+function markReceiptItemPaid(personName, receiptId, amount, btn) {
+  if (!btn) return;
+  if (btn.dataset.confirming === '1') {
+    // Confirmed — mark this receipt as paid for this person
+    const map = getReceiptPaidMap();
+    const key = personName + '::' + receiptId;
+    if (!map[key]) {
+      map[key] = parseFloat(amount) || 0;
+      saveReceiptPaidMap(map);
+    }
+    // Update button
+    btn.textContent = '✅ Paid';
+    btn.style.background = 'rgba(48,209,88,0.15)';
+    btn.style.borderColor = 'rgba(48,209,88,0.4)';
+    btn.disabled = true;
+    btn.dataset.confirming = '';
+    // Recalculate and update this person's top-level balance display
+    updatePersonBalanceDisplay(personName);
+    toast(personName + ' paid $' + parseFloat(amount).toFixed(2) + ' ✓', true);
+    return;
+  }
+  btn.dataset.confirming = '1';
+  btn.textContent = '⚠️ Tap again to confirm';
+  btn.style.borderColor = 'rgba(48,209,88,0.5)';
+  setTimeout(() => {
+    if (btn.dataset.confirming === '1') {
+      btn.dataset.confirming = '';
+      btn.textContent = '✓ Mark as Paid';
+      btn.style.borderColor = 'rgba(48,209,88,0.2)';
+    }
+  }, 3000);
+}
+
+function updatePersonBalanceDisplay(personName) {
+  const personId = 'person-' + personName.replace(/[^a-z0-9]/gi, '_');
+  const row = document.getElementById('row-' + personId);
+  if (!row) return;
+
+  // Sum all paid receipt amounts for this person
+  const map = getReceiptPaidMap();
+  let paidSoFar = 0;
+  Object.entries(map).forEach(([key, amt]) => {
+    if (key.startsWith(personName + '::')) paidSoFar += amt;
+  });
+
+  // Find original owed amount from DOM
+  const amtEl = row.querySelector('[data-original-owed]');
+  const originalOwed = amtEl ? parseFloat(amtEl.getAttribute('data-original-owed')) : 0;
+  const remaining = Math.max(0, originalOwed - paidSoFar);
+
+  // Update displayed balance
+  const displayEl = row.querySelector('.person-balance-display');
+  const statusEl  = row.querySelector('.person-status-display');
+  if (displayEl) {
+    displayEl.textContent = remaining > 0 ? '-$' + remaining.toFixed(2) : '$0.00';
+    displayEl.style.color = remaining > 0 ? '#FF9A3C' : '#9896A8';
+  }
+  if (statusEl) {
+    statusEl.textContent = remaining > 0 ? 'owes $' + remaining.toFixed(2) : 'all settled ✓';
+    statusEl.style.color = remaining > 0 ? '#FF9A3C' : '#30D158';
+  }
+}
+
+// Restore per-receipt paid states on load
+(function restoreReceiptPaidStates() {
+  const map = getReceiptPaidMap();
+  Object.keys(map).forEach(key => {
+    const btn = document.querySelector('[data-receipt-paid-key="' + key + '"]');
+    if (btn) {
+      btn.textContent = '✅ Paid';
+      btn.style.background = 'rgba(48,209,88,0.15)';
+      btn.style.borderColor = 'rgba(48,209,88,0.4)';
+      btn.disabled = true;
+    }
+  });
+  // Update all person balances
+  const people = D.people || [];
+  people.forEach(p => updatePersonBalanceDisplay(p));
+})();
   if (!btn) btn = document.getElementById('markpaid-' + personId);
   if (!btn) return;
   if (btn.dataset.confirming === '1') {
@@ -2369,7 +2511,8 @@ document.getElementById('save-settings-btn').addEventListener('click', async fun
   this.textContent = 'Saving...'; this.disabled = true;
   try {
     const dueDate = document.getElementById('settings-due-date')?.value || null;
-    const r = await fetch(BACKEND+'/trip/'+TRIP_ID+'/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,name,trip_date:date||null,due_date:dueDate||null})});
+    const endDate = document.getElementById('settings-end-date')?.value || null;
+    const r = await fetch(BACKEND+'/trip/'+TRIP_ID+'/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,name,trip_date:date||null,due_date:dueDate||null,end_date:endDate||null})});
     const d = await r.json();
     if (d.success) { toast('✅ Trip updated!'); setTimeout(()=>location.reload(),1200); }
     else toast(d.error||'Error',false);
@@ -3179,13 +3322,14 @@ app.post('/trip/:tripId/comment', async (req, res) => {
 app.post('/trip/:tripId/settings', async (req, res) => {
   try {
     const { tripId } = req.params;
-    const { token, name, trip_date, due_date } = req.body;
+    const { token, name, trip_date, due_date, end_date } = req.body;
     const { data: trip } = await supabase.from('trips').select('share_token').eq('id', tripId).single();
     if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
     if (!name?.trim()) return res.json({ success: false, error: 'Name required' });
     const update = { name: name.trim() };
     if (trip_date) update.trip_date = trip_date; else update.trip_date = null;
     if (due_date)  update.due_date  = due_date;  else update.due_date  = null;
+    if (end_date)  update.end_date  = end_date;  else update.end_date  = null;
     await supabase.from('trips').update(update).eq('id', tripId);
     res.json({ success: true });
   } catch(err) { res.json({ success: false, error: err.message }); }
