@@ -2821,6 +2821,25 @@ async function sendChat() {
 initChatDb();
 
 </script>
+
+<!-- ── GROUP CHAT MODAL ── -->
+<div id="chat-modal" style="display:none;position:fixed;bottom:24px;right:24px;width:340px;max-width:calc(100vw - 32px);height:480px;max-height:calc(100vh - 100px);background:#0C0C12;border:1px solid rgba(0,140,255,0.3);border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,0.7);z-index:1000;flex-direction:column;overflow:hidden">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:#13131A;border-bottom:1px solid rgba(255,255,255,0.07);flex-shrink:0">
+    <div>
+      <div style="font-size:13px;font-weight:700">💬 Group Chat</div>
+      <div style="font-size:10px;color:#6E6B80" id="chat-member-count"></div>
+    </div>
+    <button onclick="closeChat()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:50%;width:28px;height:28px;color:#9896A8;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center">×</button>
+  </div>
+  <div id="chat-msgs" style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;min-height:0">
+    <div id="chat-empty" style="text-align:center;color:#6E6B80;font-size:12px;padding:30px 0">No messages yet. Say hi! 👋</div>
+  </div>
+  <div style="padding:12px;border-top:1px solid rgba(255,255,255,0.07);flex-shrink:0;display:flex;gap:8px;align-items:flex-end">
+    <textarea id="chat-input" placeholder="Message the group..." rows="1" style="flex:1;background:#1A1A24;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:10px 14px;color:#F0EEF8;font-family:'Epilogue',sans-serif;font-size:13px;resize:none;outline:none;max-height:80px;line-height:1.5;transition:border 0.2s" onfocus="this.style.borderColor='rgba(0,140,255,0.4)'" onblur="this.style.borderColor='rgba(255,255,255,0.1)'" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
+    <button onclick="sendChat()" style="background:#0A84FF;border:none;border-radius:12px;width:38px;height:38px;color:#fff;font-size:18px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center">↑</button>
+  </div>
+</div>
+
 </body>
 </html>`);
 });
@@ -3111,23 +3130,6 @@ body{font-family:-apple-system,'Helvetica Neue',sans-serif;background:#06060A;co
   </div>
 </div>
 
-<!-- ── GROUP CHAT MODAL ── -->
-<div id="chat-modal" style="display:none;position:fixed;bottom:24px;right:24px;width:340px;max-width:calc(100vw - 32px);height:480px;max-height:calc(100vh - 100px);background:#0C0C12;border:1px solid rgba(0,140,255,0.3);border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,0.7);z-index:1000;flex-direction:column;overflow:hidden">
-  <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:#13131A;border-bottom:1px solid rgba(255,255,255,0.07);flex-shrink:0">
-    <div>
-      <div style="font-size:13px;font-weight:700">💬 Group Chat</div>
-      <div style="font-size:10px;color:#6E6B80" id="chat-member-count"></div>
-    </div>
-    <button onclick="closeChat()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:50%;width:28px;height:28px;color:#9896A8;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center">×</button>
-  </div>
-  <div id="chat-msgs" style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;min-height:0">
-    <div id="chat-empty" style="text-align:center;color:#6E6B80;font-size:12px;padding:30px 0">No messages yet. Say hi! 👋</div>
-  </div>
-  <div style="padding:12px;border-top:1px solid rgba(255,255,255,0.07);flex-shrink:0;display:flex;gap:8px;align-items:flex-end">
-    <textarea id="chat-input" placeholder="Message the group..." rows="1" style="flex:1;background:#1A1A24;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:10px 14px;color:#F0EEF8;font-family:'Epilogue',sans-serif;font-size:13px;resize:none;outline:none;max-height:80px;line-height:1.5;transition:border 0.2s" onfocus="this.style.borderColor='rgba(0,140,255,0.4)'" onblur="this.style.borderColor='rgba(255,255,255,0.1)'" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
-    <button onclick="sendChat()" style="background:#0A84FF;border:none;border-radius:12px;width:38px;height:38px;color:#fff;font-size:18px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center">↑</button>
-  </div>
-</div>
 </body>
 </html>`);
   } catch(err) {
