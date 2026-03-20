@@ -1466,6 +1466,7 @@ ${coverHTML}
     ${avatarRow}
     <button id="open-add-members" style="width:32px;height:32px;border-radius:50%;background:#13131A;border:2px dashed rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;cursor:pointer;margin-left:4px;flex-shrink:0;font-size:14px;color:#6E6B80">+</button>
     <button id="open-invite" style="padding:5px 14px;margin-left:10px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.25);border-radius:20px;color:#A855F7;font-family:'Epilogue',sans-serif;font-size:11px;font-weight:700;cursor:pointer">📨 Invite</button>
+    <button id="open-chat" style="padding:5px 14px;margin-left:8px;background:rgba(0,140,255,0.1);border:1px solid rgba(0,140,255,0.25);border-radius:20px;color:#4DB8FF;font-family:'Epilogue',sans-serif;font-size:11px;font-weight:700;cursor:pointer">💬 Chat</button>
   </div>
 </div>
 
@@ -2708,6 +2709,111 @@ async function saveReceipt() {
     } else{btn.textContent='Save Receipt';btn.disabled=false;toast(d.error||'Error',false);}
   }catch(e){btn.textContent='Save Receipt';btn.disabled=false;toast('Network error',false);}
 }
+
+// ── GROUP CHAT ──
+const SUPABASE_URL_CHAT = 'https://ffjpzkpdumdcwnakpaje.supabase.co';
+const SUPABASE_KEY_CHAT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmanB6a3BkdW1kY3duYWtwYWplIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5ODc4OTcsImV4cCI6MjA4ODU2Mzg5N30.JtDLVu4K1TJ8emcN_mvSHBu6e0y8-jPQv-ypoc9p0RU';
+const { createClient: createChatClient } = window.supabase || {};
+let chatDb = null;
+let chatChannel = null;
+
+async function initChat() {
+  if (!window.supabase) {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+    s.onload = function() { chatDb = window.supabase.createClient(SUPABASE_URL_CHAT, SUPABASE_KEY_CHAT); };
+    document.head.appendChild(s);
+  } else {
+    chatDb = window.supabase.createClient(SUPABASE_URL_CHAT, SUPABASE_KEY_CHAT);
+  }
+}
+
+function openChat() {
+  const modal = document.getElementById('chat-modal');
+  modal.style.display = 'flex';
+  document.getElementById('chat-member-count').textContent = D.people.length + ' members';
+  loadChatMsgs();
+  setTimeout(function() { document.getElementById('chat-input').focus(); }, 100);
+}
+
+function closeChat() {
+  document.getElementById('chat-modal').style.display = 'none';
+  if (chatChannel && chatDb) { chatDb.removeChannel(chatChannel); chatChannel = null; }
+}
+
+async function loadChatMsgs() {
+  if (!chatDb) { await initChatDb(); }
+  const container = document.getElementById('chat-msgs');
+  container.innerHTML = '<div style="text-align:center;color:#6E6B80;font-size:12px;padding:30px 0">Loading...</div>';
+  try {
+    const { data } = await chatDb.from('trip_messages').select('*').eq('trip_id', TRIP_ID).order('created_at', { ascending: true }).limit(100);
+    container.innerHTML = '';
+    if (!data || data.length === 0) {
+      container.innerHTML = '<div id="chat-empty" style="text-align:center;color:#6E6B80;font-size:12px;padding:30px 0">No messages yet. Say hi! 👋</div>';
+    } else {
+      data.forEach(function(msg) { appendMsg(msg, false); });
+      container.scrollTop = container.scrollHeight;
+    }
+  } catch(e) { container.innerHTML = '<div style="text-align:center;color:#FF4444;font-size:12px;padding:20px 0">Could not load messages</div>'; }
+
+  // Subscribe realtime
+  if (chatChannel) { chatDb.removeChannel(chatChannel); }
+  chatChannel = chatDb.channel('trip-chat-' + TRIP_ID)
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'trip_messages', filter: 'trip_id=eq.' + TRIP_ID }, function(payload) { appendMsg(payload.new, true); })
+    .subscribe();
+}
+
+async function initChatDb() {
+  return new Promise(function(resolve) {
+    if (chatDb) { resolve(); return; }
+    if (window.supabase) { chatDb = window.supabase.createClient(SUPABASE_URL_CHAT, SUPABASE_KEY_CHAT); resolve(); return; }
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+    s.onload = function() { chatDb = window.supabase.createClient(SUPABASE_URL_CHAT, SUPABASE_KEY_CHAT); resolve(); };
+    document.head.appendChild(s);
+  });
+}
+
+function appendMsg(msg, scroll) {
+  const empty = document.getElementById('chat-empty');
+  if (empty) empty.remove();
+  const container = document.getElementById('chat-msgs');
+  const isMe = msg.user_id === (window._ravenUserId || '');
+  const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const el = document.createElement('div');
+  el.style.cssText = 'display:flex;flex-direction:column;align-items:' + (isMe ? 'flex-end' : 'flex-start') + ';gap:3px';
+  const safeName = msg.sender_name.replace(/</g,'&lt;');
+  const safeMsg = msg.message.replace(/</g,'&lt;');
+  el.innerHTML = (!isMe ? '<div style="font-size:10px;color:#9896A8;font-weight:600;margin-left:4px">' + safeName + '</div>' : '')
+    + '<div style="max-width:80%;padding:9px 13px;border-radius:' + (isMe ? '16px 16px 4px 16px' : '16px 16px 16px 4px') + ';background:' + (isMe ? '#0A84FF' : '#1A1A24') + ';color:#F0EEF8;font-size:13px;line-height:1.5;word-break:break-word">' + safeMsg + '</div>'
+    + '<div style="font-size:10px;color:#6E6B80;margin:0 4px">' + time + '</div>';
+  container.appendChild(el);
+  if (scroll) container.scrollTop = container.scrollHeight;
+}
+
+async function sendChat() {
+  const input = document.getElementById('chat-input');
+  const message = input.value.trim();
+  if (!message) return;
+  if (!chatDb) await initChatDb();
+  input.value = ''; input.style.height = 'auto';
+  // Get current user session
+  const { data: { session } } = await chatDb.auth.getSession();
+  if (!session) { toast('Please sign in to chat'); return; }
+  window._ravenUserId = session.user.id;
+  const firstName = session.user.user_metadata?.full_name?.split(' ')[0] || session.user.email?.split('@')[0] || 'Member';
+  await chatDb.from('trip_messages').insert({ trip_id: TRIP_ID, user_id: session.user.id, sender_name: firstName, message: message, created_at: new Date().toISOString() });
+}
+
+// Wire chat button
+document.getElementById('open-chat').addEventListener('click', async function() {
+  await initChatDb();
+  openChat();
+});
+
+// Init chat db on load
+initChatDb();
+
 </script>
 </body>
 </html>`);
@@ -2996,6 +3102,24 @@ body{font-family:-apple-system,'Helvetica Neue',sans-serif;background:#06060A;co
   <div class="footer">
     RAVEN splits bills with AI, tracks group trips, and settles up instantly.<br>
     No app download required.
+  </div>
+</div>
+
+<!-- ── GROUP CHAT MODAL ── -->
+<div id="chat-modal" style="display:none;position:fixed;bottom:24px;right:24px;width:340px;max-width:calc(100vw - 32px);height:480px;max-height:calc(100vh - 100px);background:#0C0C12;border:1px solid rgba(0,140,255,0.3);border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,0.7);z-index:1000;flex-direction:column;overflow:hidden">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:#13131A;border-bottom:1px solid rgba(255,255,255,0.07);flex-shrink:0">
+    <div>
+      <div style="font-size:13px;font-weight:700">💬 Group Chat</div>
+      <div style="font-size:10px;color:#6E6B80" id="chat-member-count"></div>
+    </div>
+    <button onclick="closeChat()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:50%;width:28px;height:28px;color:#9896A8;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center">×</button>
+  </div>
+  <div id="chat-msgs" style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;min-height:0">
+    <div id="chat-empty" style="text-align:center;color:#6E6B80;font-size:12px;padding:30px 0">No messages yet. Say hi! 👋</div>
+  </div>
+  <div style="padding:12px;border-top:1px solid rgba(255,255,255,0.07);flex-shrink:0;display:flex;gap:8px;align-items:flex-end">
+    <textarea id="chat-input" placeholder="Message the group..." rows="1" style="flex:1;background:#1A1A24;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:10px 14px;color:#F0EEF8;font-family:'Epilogue',sans-serif;font-size:13px;resize:none;outline:none;max-height:80px;line-height:1.5;transition:border 0.2s" onfocus="this.style.borderColor='rgba(0,140,255,0.4)'" onblur="this.style.borderColor='rgba(255,255,255,0.1)'" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
+    <button onclick="sendChat()" style="background:#0A84FF;border:none;border-radius:12px;width:38px;height:38px;color:#fff;font-size:18px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center">↑</button>
   </div>
 </div>
 </body>
