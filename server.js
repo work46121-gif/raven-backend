@@ -2933,8 +2933,8 @@ function appendMsg(msg, scroll) {
   } else if (msg.photo_url) {
     const img = document.createElement('img');
     img.src = msg.photo_url;
-    img.style.cssText = 'max-width:200px;border-radius:10px;display:block;cursor:pointer';
-    img.addEventListener('click', function() { window.open(this.src); });
+    img.style.cssText = 'max-width:200px;border-radius:10px;display:block;cursor:zoom-in';
+    img.addEventListener('click', function() { openChatPhotoLightbox(this.src); });
     bubble.appendChild(img);
   } else {
     bubble.textContent = msg.message || '';
@@ -3060,6 +3060,23 @@ async function sendChat() {
     photo_url: photoData || null,
     created_at: new Date().toISOString()
   });
+}
+
+function openChatPhotoLightbox(src) {
+  let lb = document.getElementById('chat-photo-lightbox');
+  if (!lb) {
+    lb = document.createElement('div');
+    lb.id = 'chat-photo-lightbox';
+    lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:zoom-out;padding:20px';
+    lb.addEventListener('click', function() { this.remove(); });
+    const img = document.createElement('img');
+    img.id = 'chat-lightbox-img';
+    img.style.cssText = 'max-width:100%;max-height:90vh;border-radius:12px;object-fit:contain;box-shadow:0 20px 60px rgba(0,0,0,0.8)';
+    lb.appendChild(img);
+    document.body.appendChild(lb);
+  }
+  document.getElementById('chat-lightbox-img').src = src;
+  lb.style.display = 'flex';
 }
 
 // Init chat db on load + seed user identity from localStorage profile
