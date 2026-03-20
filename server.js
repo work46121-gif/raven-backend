@@ -1657,10 +1657,10 @@ ${coverHTML}
 <div class="modal-bg" id="add-members-modal">
   <div class="modal-box">
     <div class="handle"></div>
-    <div style="font-size:26px;font-weight:800;margin-bottom:8px">Add Members</div>
-    <div style="font-size:13px;color:#6E6B80;margin-bottom:16px;line-height:1.6">Add more people to this trip.</div>
+    <div style="font-size:26px;font-weight:800;margin-bottom:4px">Add Members</div>
+    <div style="font-size:13px;color:#6E6B80;margin-bottom:16px;line-height:1.6">Enter a name or <span style="color:#A855F7;font-weight:700">@ravenid</span> — using a Raven ID links their account so the trip auto-appears in their hub.</div>
     <div style="display:flex;gap:8px;margin-bottom:14px">
-      <input id="new-member-input" type="text" placeholder="Enter name" style="flex:1">
+      <input id="new-member-input" type="text" placeholder="Name or @ravenid" style="flex:1">
       <button id="add-member-btn" style="padding:12px 18px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.25);border-radius:10px;color:#30D158;font-family:'Epilogue',sans-serif;font-size:14px;font-weight:700;cursor:pointer;flex-shrink:0">+ Add</button>
     </div>
     <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:8px">Current Members</div>
@@ -3195,14 +3195,55 @@ app.post('/trip/:tripId/add-members', async (req, res) => {
     const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
     if (!trip) return res.json({ success: false, error: 'Trip not found' });
     if (trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
+
     const existing = Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people || '[]');
     const newPeople = [...existing];
+
+    // Load current member_emails
+    let memberEmails = [];
+    try { memberEmails = Array.isArray(trip.member_emails) ? trip.member_emails : JSON.parse(trip.member_emails || '[]'); } catch(e) {}
+
     for (const m of (members || [])) {
-      if (m && !newPeople.map(p => p.toLowerCase()).includes(m.toLowerCase())) {
-        newPeople.push(m);
+      if (!m) continue;
+      const clean = m.trim();
+
+      // Check if input looks like a raven_id (@handle or handle)
+      const isRavenId = /^@?[a-z0-9_]{2,30}$/i.test(clean) && !clean.includes(' ') && !clean.includes('@');
+      const ravenHandle = clean.replace(/^@/, '').toLowerCase();
+
+      // Try to look up the user by raven_id first
+      let resolvedName = clean;
+      let resolvedEmail = null;
+      if (isRavenId) {
+        try {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('first_name, last_name, email, raven_id')
+            .eq('raven_id', ravenHandle)
+            .maybeSingle();
+          if (profile) {
+            resolvedName = profile.first_name || clean;
+            resolvedEmail = profile.email || null;
+          }
+        } catch(e) {}
+      }
+
+      // Add display name to people array if not already there
+      if (!newPeople.map(p => p.toLowerCase()).includes(resolvedName.toLowerCase())) {
+        newPeople.push(resolvedName);
+      }
+
+      // Add email to member_emails so their Trip Hub auto-loads this trip
+      if (resolvedEmail && !memberEmails.includes(resolvedEmail.toLowerCase())) {
+        memberEmails.push(resolvedEmail.toLowerCase());
       }
     }
-    await supabase.from('trips').update({ people: JSON.stringify(newPeople) }).eq('id', tripId);
+
+    await supabase.from('trips').update({
+      people: JSON.stringify(newPeople),
+      member_emails: JSON.stringify(memberEmails)
+    }).eq('id', tripId);
+
     res.json({ success: true, people: newPeople });
   } catch(err) {
     console.error('Add members error:', err);
