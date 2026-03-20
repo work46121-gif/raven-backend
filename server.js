@@ -2842,10 +2842,15 @@ function makePfp(name, avatarUrl) {
   const colors = ['#7C3AED','#E8633A','#0EA5E9','#30D158','#F59E0B','#EC4899','#14B8A6'];
   const bg = colors[(name||'').charCodeAt(0) % colors.length];
   const initial = (name||'?')[0].toUpperCase();
+  const fallback = '<div style="width:28px;height:28px;border-radius:50%;background:' + bg + ';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">' + initial + '</div>';
   if (avatarUrl) {
-    return '<img src="' + avatarUrl + '" style="width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0" onerror="this.outerHTML=\'<div style=&quot;width:28px;height:28px;border-radius:50%;background:' + bg + ';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0&quot;>' + initial + '</div>\'">';
+    // Use a wrapper div — set bg+initial as fallback, overlay img on top
+    return '<div style="width:28px;height:28px;border-radius:50%;background:' + bg + ';flex-shrink:0;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff">'
+      + initial
+      + '<img src="' + avatarUrl.replace(/"/g, '') + '" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%" onerror="this.style.display=\'none\'">'
+      + '</div>';
   }
-  return '<div style="width:28px;height:28px;border-radius:50%;background:' + bg + ';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">' + initial + '</div>';
+  return fallback;
 }
 
 function appendMsg(msg, scroll) {
