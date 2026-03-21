@@ -1168,8 +1168,13 @@ app.get('/trip/:tripId', async (req, res) => {
   }
 
   // Build per-person breakdown: who owes whom and how much
+  const settledPeopleList = (() => { try { return Array.isArray(trip.settled_people) ? trip.settled_people : JSON.parse(trip.settled_people || '[]'); } catch(e) { return []; } })();
+  console.log('[settled debug] raw settled_people:', JSON.stringify(trip.settled_people), '| parsed list:', JSON.stringify(settledPeopleList), '| people:', JSON.stringify(people));
+  const settledSet = new Set(settledPeopleList.map(s => s.toLowerCase()));
+
   const owesRows = people.map((p, i) => {
-    const amtOwed = totals[p] || 0;
+    const isSettled = settledSet.has(p.toLowerCase());
+    const amtOwed = isSettled ? 0 : (totals[p] || 0);
     const amtReceivable = owedTo[p] || 0;
     const isCreditor = amtReceivable > 0 && amtOwed === 0;
     const isBoth = amtOwed > 0 && amtReceivable > 0;
@@ -1190,7 +1195,7 @@ app.get('/trip/:tripId', async (req, res) => {
     // Collapse to per-payer totals
     const owesPerPayer = {};
     owesBreakdown.forEach(o => { owesPerPayer[o.payer] = (owesPerPayer[o.payer]||0) + o.amount; });
-    const payerEntries = Object.entries(owesPerPayer);
+    const payerEntries = isSettled ? [] : Object.entries(owesPerPayer);
 
     // Render pay slots with data attributes — filled client-side using PAY_PROFILES
     const payBtnsHtml = payerEntries.map(([payerName, amt]) =>
@@ -1215,12 +1220,13 @@ app.get('/trip/:tripId', async (req, res) => {
           </div>
         </div>
         <div style="text-align:right">
-          <div class="person-balance-display" data-original-owed="${amtOwed.toFixed(2)}" style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${amtOwed>0?'#FF9A3C':amtReceivable>0?'#A855F7':'#9896A8'}">
-            ${amtOwed>0 ? '-$'+amtOwed.toFixed(2) : amtReceivable>0 ? '+$'+amtReceivable.toFixed(2) : '$0.00'}
+          <div class="person-balance-display" data-original-owed="${amtOwed.toFixed(2)}" style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${isSettled?'#9896A8':amtOwed>0?'#FF9A3C':amtReceivable>0?'#A855F7':'#9896A8'}">
+            ${isSettled ? '$0.00' : amtOwed>0 ? '-$'+amtOwed.toFixed(2) : amtReceivable>0 ? '+$'+amtReceivable.toFixed(2) : '$0.00'}
           </div>
         </div>
       </div>
-      ${payerEntries.length>0 ? `<div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px 12px">
+      ${isSettled ? `<div style="background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.15);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:8px"><span style="font-size:16px">✅</span><span style="font-size:13px;color:#30D158;font-weight:600">Settled</span></div>` :
+        payerEntries.length>0 ? `<div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px 12px">
         ${payBtnsHtml}
         <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)">
           <button class="mark-settled-btn" data-person="${personId}" data-name="${esc(p)}" id="markpaid-${personId}" style="display:inline-flex;align-items:center;gap:7px;padding:8px 16px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:9px;color:#30D158;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer">✓ Mark as Settled</button>
@@ -1303,7 +1309,7 @@ app.get('/trip/:tripId', async (req, res) => {
               <div style="height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;margin-bottom:${payer?'10px':'0'}">
                 <div style="height:100%;width:${pct}%;background:${color};border-radius:2px"></div>
               </div>
-              ${payer ? '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px;flex-wrap:wrap">' + payButtonsHtml(payer, amount) + '<button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" style="padding:7px 14px;background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.2);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✓ Mark as Paid</button></div>' : ''}
+              ${(payer && !settledSet.has(person.toLowerCase())) ? '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px;flex-wrap:wrap">' + payButtonsHtml(payer, amount) + '<button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" style="padding:7px 14px;background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.2);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✓ Mark as Paid</button></div>' : (payer && settledSet.has(person.toLowerCase())) ? '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06)"><span style="font-size:11px;color:#30D158">✅ Settled</span></div>' : ''}
             </div>`;
           }).join('')}
         </div>
@@ -3617,15 +3623,21 @@ app.post('/trip/:tripId/mark-settled', async (req, res) => {
     if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
     let settled = [];
     try { settled = Array.isArray(trip.settled_people) ? trip.settled_people : JSON.parse(trip.settled_people || '[]'); } catch(e) {}
-    if (!settled.map(s => s.toLowerCase()).includes((name||'').toLowerCase())) settled.push(name);
+    const nameLower = (name||'').toLowerCase();
+    if (!settled.map(s => s.toLowerCase()).includes(nameLower)) settled.push(name);
     const { error: dbErr } = await supabase.from('trips').update({ settled_people: JSON.stringify(settled) }).eq('id', tripId);
     if (dbErr) { console.error('mark-settled DB error:', dbErr); return res.json({ success: false, error: dbErr.message }); }
-    // Verify the write actually persisted (Supabase silently ignores unknown columns)
-    const { data: verify } = await supabase.from('trips').select('settled_people').eq('id', tripId).single();
+    // Verify the write actually persisted — Supabase silently ignores updates to non-existent columns
+    const { data: verify, error: verifyErr } = await supabase.from('trips').select('settled_people').eq('id', tripId).single();
+    console.log('mark-settled verify:', { verify, verifyErr, name });
+    if (verifyErr) { return res.json({ success: false, error: 'Verify failed: ' + verifyErr.message }); }
+    // If column doesn't exist, Supabase returns the row without that key (undefined)
+    if (verify && !('settled_people' in verify)) {
+      return res.json({ success: false, error: 'Column missing — run in Supabase SQL Editor: ALTER TABLE trips ADD COLUMN IF NOT EXISTS settled_people JSONB DEFAULT \'[]\';' });
+    }
     const savedSettled = (() => { try { return Array.isArray(verify?.settled_people) ? verify.settled_people : JSON.parse(verify?.settled_people || '[]'); } catch(e) { return []; } })();
-    if (!savedSettled.map(s => s.toLowerCase()).includes((name||'').toLowerCase())) {
-      console.error('mark-settled: write did not persist — column may not exist. Run: ALTER TABLE trips ADD COLUMN IF NOT EXISTS settled_people JSONB DEFAULT \'[]\';');
-      return res.json({ success: false, error: 'DB column missing. Run SQL: ALTER TABLE trips ADD COLUMN IF NOT EXISTS settled_people JSONB DEFAULT \'[]\';' });
+    if (!savedSettled.map(s => s.toLowerCase()).includes(nameLower)) {
+      return res.json({ success: false, error: 'Write did not persist — run in Supabase SQL Editor: ALTER TABLE trips ADD COLUMN IF NOT EXISTS settled_people JSONB DEFAULT \'[]\';' });
     }
     res.json({ success: true, settled: savedSettled });
   } catch(err) { res.json({ success: false, error: err.message }); }
