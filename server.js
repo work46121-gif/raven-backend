@@ -1170,12 +1170,32 @@ app.get('/trip/:tripId', async (req, res) => {
   }
 
   // Build per-person breakdown: who owes whom and how much
-  const settledPeopleList = (() => { try { return Array.isArray(trip.settled_people) ? trip.settled_people : JSON.parse(trip.settled_people || '[]'); } catch(e) { return []; } })();
-  const settledSet = new Set(settledPeopleList.map(s => s.toLowerCase()));
+  // settled_credits: { "Name": amountSettled } — stores how much each person has paid off
+  // Can be stored as old list format OR new object format — handle both gracefully
+  const settledCredits = (() => {
+    try {
+      const raw = trip.settled_people;
+      if (!raw) return {};
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      // Old format: array of names ["daddy","Arsalan"] — treat as fully settled
+      if (Array.isArray(parsed)) {
+        const credits = {};
+        parsed.forEach(name => { credits[name.toLowerCase()] = 999999; }); // large number = fully settled
+        return credits;
+      }
+      // New format: { "daddy": 150.13, "Arsalan": 47.77 }
+      const credits = {};
+      Object.entries(parsed).forEach(([k, v]) => { credits[k.toLowerCase()] = parseFloat(v) || 0; });
+      return credits;
+    } catch(e) { return {}; }
+  })();
 
   const owesRows = people.map((p, i) => {
-    const isSettled = settledSet.has(p.toLowerCase());
-    const amtOwed = isSettled ? 0 : (totals[p] || 0);
+    const settledCredit = settledCredits[p.toLowerCase()] || 0;
+    const rawOwed = totals[p] || 0;
+    const amtOwed = Math.max(0, rawOwed - settledCredit);
+    const isSettled = rawOwed > 0 && amtOwed <= 0.005; // fully settled (allow rounding)
+    const isPartiallySettled = settledCredit > 0 && amtOwed > 0.005;
     const amtReceivable = owedTo[p] || 0;
     const isCreditor = amtReceivable > 0 && amtOwed === 0;
     const isBoth = amtOwed > 0 && amtReceivable > 0;
@@ -1193,9 +1213,23 @@ app.get('/trip/:tripId', async (req, res) => {
       } catch(e) {}
     });
 
-    // Collapse to per-payer totals
+    // Collapse to per-payer totals, then subtract settled credit proportionally
+    const owesPerPayerRaw = {};
+    owesBreakdown.forEach(o => { owesPerPayerRaw[o.payer] = (owesPerPayerRaw[o.payer]||0) + o.amount; });
+    // Distribute settled credit proportionally across payers
+    let remainingCredit = settledCredit;
     const owesPerPayer = {};
-    owesBreakdown.forEach(o => { owesPerPayer[o.payer] = (owesPerPayer[o.payer]||0) + o.amount; });
+    if (remainingCredit > 0 && !isSettled) {
+      // Apply credit against each payer proportionally (largest first)
+      Object.entries(owesPerPayerRaw).sort((a,b)=>b[1]-a[1]).forEach(([payer, amt]) => {
+        const deduct = Math.min(remainingCredit, amt);
+        const net = Math.max(0, amt - deduct);
+        remainingCredit -= deduct;
+        if (net > 0.005) owesPerPayer[payer] = net;
+      });
+    } else if (!isSettled) {
+      Object.assign(owesPerPayer, owesPerPayerRaw);
+    }
     const payerEntries = isSettled ? [] : Object.entries(owesPerPayer);
 
     // Render pay slots with data attributes — filled client-side using PAY_PROFILES
@@ -1216,7 +1250,7 @@ app.get('/trip/:tripId', async (req, res) => {
           <div>
             <div style="font-weight:600;font-size:14px;display:flex;align-items:center;gap:6px">${esc(p)} <span style="font-size:11px;color:#6E6B80;font-weight:400">›</span></div>
             <div class="person-status-display" style="font-size:11px;color:${amtOwed>0?'#FF9A3C':amtReceivable>0?'#A855F7':'#30D158'}">
-              ${amtOwed>0 ? `owes $${amtOwed.toFixed(2)}` : amtReceivable>0 ? `collecting $${amtReceivable.toFixed(2)}` : 'all settled ✓'}
+              ${amtOwed>0 ? (isPartiallySettled ? `owes $${amtOwed.toFixed(2)} <span style="color:#30D158">(+$${settledCredit.toFixed(2)} settled)</span>` : `owes $${amtOwed.toFixed(2)}`) : amtReceivable>0 ? `collecting $${amtReceivable.toFixed(2)}` : 'all settled ✓'}
             </div>
           </div>
         </div>
@@ -1423,7 +1457,7 @@ app.get('/trip/:tripId', async (req, res) => {
     endDate: trip.end_date || '',
     creatorEmail: trip.creator_email || '',
     coAdmins: (() => { try { return Array.isArray(trip.co_admins) ? trip.co_admins : JSON.parse(trip.co_admins || '[]'); } catch(e) { return []; } })(),
-    settledPeople: (() => { try { return Array.isArray(trip.settled_people) ? trip.settled_people : JSON.parse(trip.settled_people || '[]'); } catch(e) { return []; } })(),
+    // settledPeople kept for backward compat but rendering is fully server-side
     people,
     hasCoverImage: !!trip.cover_image,
     memberPayProfiles,
@@ -2335,10 +2369,13 @@ function markTripPersonPaid(personName, personId, btn) {
     btn.disabled = true;
     btn.textContent = '⏳ Saving…';
     btn.dataset.confirming = '';
+    // Read the amount from the button label ("✓ Mark as Settled · $X.XX")
+    const settleAmtMatch = (btn.textContent || '').match(/\$([\d.]+)/);
+    const settleAmt = settleAmtMatch ? parseFloat(settleAmtMatch[1]) : 0;
     fetch(BACKEND+'/trip/'+TRIP_ID+'/mark-settled', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ token: TRIP_TOKEN, name: personName })
+      body: JSON.stringify({ token: TRIP_TOKEN, name: personName, amount: settleAmt })
     })
     .then(r => r.json())
     .then(d => {
@@ -2424,28 +2461,7 @@ function adminDeleteReceipt(btn) {
   }, 3000);
 }
 
-// Restore settled states from DB (D.settledPeople) on page load
-document.addEventListener('DOMContentLoaded', function() {
-  try {
-    const settled = D.settledPeople || [];
-    settled.forEach(personName => {
-      const personId = personName.replace(/[^a-z0-9]/gi,'_');
-      const btn = document.getElementById('markpaid-' + personId);
-      if (btn) {
-        btn.textContent = '✅ Settled';
-        btn.style.background = 'rgba(48,209,88,0.15)';
-        btn.style.borderColor = 'rgba(48,209,88,0.4)';
-        btn.disabled = true;
-        const row = document.getElementById('row-' + personId);
-        if (row) {
-          const statusEl = row.querySelector('.person-status-display');
-          if (statusEl) { statusEl.textContent = 'all settled ✓'; statusEl.style.color = '#30D158'; }
-          row.querySelectorAll('.pay-slot').forEach(s => s.style.display = 'none');
-        }
-      }
-    });
-  } catch(e) {}
-});
+// Settled state is fully server-rendered — no client restore needed
 // Also re-run when a receipt is expanded
 // pay slots re-rendered on receipt expand — see toggleReceipt below
 
@@ -3622,28 +3638,35 @@ app.post('/trip/:tripId/remove-member', async (req, res) => {
 app.post('/trip/:tripId/mark-settled', async (req, res) => {
   try {
     const { tripId } = req.params;
-    const { token, name } = req.body;
+    // amount = how much this person is settling right now (their current net owed)
+    const { token, name, amount } = req.body;
     const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
     if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
-    let settled = [];
-    try { settled = Array.isArray(trip.settled_people) ? trip.settled_people : JSON.parse(trip.settled_people || '[]'); } catch(e) {}
+    // Parse existing credits — new format: { "name_lower": amountSettled }
+    let credits = {};
+    try {
+      const raw = trip.settled_people;
+      const parsed = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {};
+      if (Array.isArray(parsed)) {
+        // Migrate old array format
+        parsed.forEach(n => { credits[n.toLowerCase()] = 999999; });
+      } else {
+        Object.entries(parsed).forEach(([k, v]) => { credits[k.toLowerCase()] = parseFloat(v) || 0; });
+      }
+    } catch(e) {}
     const nameLower = (name||'').toLowerCase();
-    if (!settled.map(s => s.toLowerCase()).includes(nameLower)) settled.push(name);
-    const { error: dbErr } = await supabase.from('trips').update({ settled_people: JSON.stringify(settled) }).eq('id', tripId);
+    const settleAmount = parseFloat(amount) || 0;
+    // Add to existing credit (don't overwrite — accumulate)
+    credits[nameLower] = (credits[nameLower] || 0) + settleAmount;
+    const { error: dbErr } = await supabase.from('trips').update({ settled_people: JSON.stringify(credits) }).eq('id', tripId);
     if (dbErr) { console.error('mark-settled DB error:', dbErr); return res.json({ success: false, error: dbErr.message }); }
-    // Verify the write actually persisted — Supabase silently ignores updates to non-existent columns
+    // Verify write persisted
     const { data: verify, error: verifyErr } = await supabase.from('trips').select('settled_people').eq('id', tripId).single();
-    console.log('mark-settled verify:', { verify, verifyErr, name });
     if (verifyErr) { return res.json({ success: false, error: 'Verify failed: ' + verifyErr.message }); }
-    // If column doesn't exist, Supabase returns the row without that key (undefined)
     if (verify && !('settled_people' in verify)) {
       return res.json({ success: false, error: 'Column missing — run in Supabase SQL Editor: ALTER TABLE trips ADD COLUMN IF NOT EXISTS settled_people JSONB DEFAULT \'[]\';' });
     }
-    const savedSettled = (() => { try { return Array.isArray(verify?.settled_people) ? verify.settled_people : JSON.parse(verify?.settled_people || '[]'); } catch(e) { return []; } })();
-    if (!savedSettled.map(s => s.toLowerCase()).includes(nameLower)) {
-      return res.json({ success: false, error: 'Write did not persist — run in Supabase SQL Editor: ALTER TABLE trips ADD COLUMN IF NOT EXISTS settled_people JSONB DEFAULT \'[]\';' });
-    }
-    res.json({ success: true, settled: savedSettled });
+    res.json({ success: true });
   } catch(err) { res.json({ success: false, error: err.message }); }
 });
 
@@ -3801,22 +3824,8 @@ app.post('/trip/:tripId/receipt', async (req, res) => {
     await supabase.from('trip_receipts').insert(tripReceiptRow);
     const { data: all } = await supabase.from('trip_receipts').select('total').eq('trip_id', tripId);
     const newTotal = (all||[]).reduce((s,r) => s+parseFloat(r.total||0), 0);
-    // Un-settle anyone who has a share in this new receipt
-    let updatedTrip = { total: newTotal, receipt_count: (all||[]).length };
-    if (splits && paid_by) {
-      try {
-        let settledList = [];
-        try { settledList = Array.isArray(trip.settled_people) ? trip.settled_people : JSON.parse(trip.settled_people || '[]'); } catch(e) {}
-        const splitObj = typeof splits === 'string' ? JSON.parse(splits) : (splits || {});
-        const debtors = Object.keys(splitObj).filter(k => parseFloat(splitObj[k]) > 0 && k.toLowerCase() !== (paid_by||'').toLowerCase());
-        const debtorSet = new Set(debtors.map(d => d.toLowerCase()));
-        const newSettled = settledList.filter(s => !debtorSet.has(s.toLowerCase()));
-        if (newSettled.length !== settledList.length) {
-          updatedTrip.settled_people = JSON.stringify(newSettled);
-        }
-      } catch(e) {}
-    }
-    await supabase.from('trips').update(updatedTrip).eq('id', tripId);
+    // Credits accumulate — no need to un-settle; new debt shows as new remaining balance
+    await supabase.from('trips').update({ total: newTotal, receipt_count: (all||[]).length }).eq('id', tripId);
     res.json({ success: true });
   } catch(err) { console.error('Trip receipt error:', err); res.json({ success: false, error: err.message }); }
 });
@@ -3834,23 +3843,10 @@ app.post('/trip/:tripId/receipt/:receiptId/edit', async (req, res) => {
     if (total   !== undefined) updates.total   = parseFloat(total) || 0;
     if (splits  !== undefined) updates.splits  = JSON.stringify(splits);
     await supabase.from('trip_receipts').update(updates).eq('id', receiptId).eq('trip_id', tripId);
-    // Recalculate trip total and un-settle anyone with new debt
+    // Recalculate trip total — credits accumulate, no un-settle needed
     const { data: all } = await supabase.from('trip_receipts').select('total').eq('trip_id', tripId);
     const newTotal = (all||[]).reduce((s,r) => s + parseFloat(r.total||0), 0);
-    const { data: fullTrip } = await supabase.from('trips').select('settled_people').eq('id', tripId).single();
-    let tripUpdate = { total: newTotal };
-    if (splits && paid_by && fullTrip) {
-      try {
-        let settledList = [];
-        try { settledList = Array.isArray(fullTrip.settled_people) ? fullTrip.settled_people : JSON.parse(fullTrip.settled_people || '[]'); } catch(e) {}
-        const splitObj = typeof splits === 'string' ? JSON.parse(splits) : (splits || {});
-        const debtors = Object.keys(splitObj).filter(k => parseFloat(splitObj[k]) > 0 && k.toLowerCase() !== (paid_by||'').toLowerCase());
-        const debtorSet = new Set(debtors.map(d => d.toLowerCase()));
-        const newSettled = settledList.filter(s => !debtorSet.has(s.toLowerCase()));
-        if (newSettled.length !== settledList.length) tripUpdate.settled_people = JSON.stringify(newSettled);
-      } catch(e) {}
-    }
-    await supabase.from('trips').update(tripUpdate).eq('id', tripId);
+    await supabase.from('trips').update({ total: newTotal }).eq('id', tripId);
     res.json({ success: true });
   } catch(err) { console.error('Edit receipt error:', err); res.json({ success: false, error: err.message }); }
 });
