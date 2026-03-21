@@ -756,9 +756,172 @@ app.get('/bill/:billId', async (req, res) => {
   const profileB64 = Buffer.from(JSON.stringify(billPayerProfile || {})).toString('base64');
   const paidByNameSafe = JSON.stringify(bill.paid_by || '');
 
-
   const billUrl = `${baseUrl}/bill/${billId}?t=${bill.share_token || ""}`;
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=10&color=30D158&bgcolor=06060A&qzone=1&data=${encodeURIComponent(billUrl)}`;
+
+  // ── CLASSIC MODE (no live_mode) — original read-only bill page ───────────────
+  if (!bill.live_mode) {
+    const classicHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+  <title>🪶 \${bill.name} — RAVEN</title>
+  <meta property="og:title" content="🪶 \${bill.name} — RAVEN" />
+  <meta property="og:description" content="Tap to see what you owe · Bill ID: \${billId}" />
+  <meta property="og:image" content="https://ravensplit.com/raven-hero.png" />
+  <meta property="og:url" content="\${baseUrl}/bill/\${billId}" />
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;padding-bottom:120px}
+    .hdr{position:sticky;top:0;background:rgba(6,6,10,0.95);backdrop-filter:blur(20px);border-bottom:1px solid rgba(255,255,255,0.07);padding:0 20px;z-index:100}
+    .hdr-i{max-width:800px;margin:0 auto;height:56px;display:flex;align-items:center;justify-content:space-between}
+    .pm-row{display:flex;align-items:center;gap:14px;padding:14px 16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:12px;text-decoration:none;margin-bottom:8px;-webkit-tap-highlight-color:transparent;width:100%;cursor:pointer}
+    .pm-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:700;font-size:14px;color:#fff}
+    .pm-info{flex:1;display:flex;flex-direction:column;gap:2px;text-align:left}
+    .pm-info b{font-size:14px;font-weight:600;color:#F0EEF8}
+    .pm-info span{font-size:11px;color:#6E6B80}
+    .raven-footer{max-width:800px;margin:32px auto 0;padding:0 20px 60px;text-align:center}
+    .raven-footer-inner{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:20px;text-decoration:none}
+  </style>
+</head>
+<body>
+  <div class="hdr"><div class="hdr-i">
+    <div style="display:flex;align-items:center;gap:12px">
+      <button onclick="history.back()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#9896A8;padding:6px 12px;font-size:13px;cursor:pointer;font-family:inherit">← Back</button>
+      <div style="font-size:18px;font-weight:900;letter-spacing:0.12em"><a href="https://ravensplit.com/" style="text-decoration:none;color:inherit">🪶 RAVEN</a></div>
+    </div>
+    <div style="font-size:11px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:20px;font-weight:600">\${billId}</div>
+  </div></div>
+
+  <div style="max-width:800px;margin:20px auto 0;padding:0 20px">
+    <div style="font-size:28px;font-weight:800;margin-bottom:6px">\${bill.name}</div>
+    <div style="display:flex;gap:12px">
+      <span style="font-size:12px;color:#6E6B80">Total <strong style="color:#F0EEF8">$\${parseFloat(bill.total||0).toFixed(2)}</strong></span>
+      \${participants.length > 0 ? \`<span style="font-size:12px;color:#6E6B80"><strong style="color:#F0EEF8">\${participants.length}</strong> people</span>\` : ''}
+    </div>
+  </div>
+
+  \${receiptHTML}
+  \${participantsHTML}
+  \${itemsListHTML}
+
+  <div style="max-width:800px;margin:24px auto 0;padding:0 20px 40px">
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:10px">Comments</div>
+    <div id="clist" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+      <div id="no-c" style="color:#6E6B80;font-size:13px;text-align:center;padding:12px 0">No comments yet</div>
+    </div>
+    <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:14px;overflow:hidden">
+      <div style="display:flex;align-items:center;border-bottom:1px solid rgba(255,255,255,0.07)">
+        <input id="cname" type="text" placeholder="Your name" style="flex:1;padding:12px 16px;background:transparent;border:none;color:#F0EEF8;font-family:inherit;font-size:14px;outline:none"/>
+      </div>
+      <textarea id="cbody" placeholder="Add a comment..." rows="2" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#F0EEF8;font-family:inherit;font-size:14px;outline:none;resize:none;line-height:1.5"></textarea>
+      <button onclick="postC()" style="width:100%;padding:13px;background:rgba(48,209,88,0.1);border:none;color:#30D158;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">💬 Post Comment</button>
+    </div>
+  </div>
+
+  <div class="raven-footer"><a href="https://ravensplit.com" class="raven-footer-inner"><span style="font-size:16px">🪶</span><span style="font-size:12px;color:#6E6B80">Split bills free with <strong style="color:#C084FC">RAVEN</strong></span></a></div>
+
+  <input type="hidden" id="pd" value="\${profileB64}">
+  <input type="hidden" id="paid-by-name" value="\${bill.paid_by ? bill.paid_by.replace(/"/g,'&quot;') : ''}">
+
+  <div id="pmod" style="display:none;position:fixed;inset:0;z-index:999">
+    <div onclick="closePay()" style="position:absolute;inset:0;background:rgba(0,0,0,0.8);backdrop-filter:blur(8px)"></div>
+    <div style="position:absolute;bottom:0;left:0;right:0;display:flex;justify-content:center">
+      <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:24px 24px 0 0;padding:24px 20px 52px;width:100%;max-width:600px">
+        <div style="width:36px;height:4px;background:rgba(255,255,255,0.12);border-radius:2px;margin:0 auto 20px"></div>
+        <div style="font-size:18px;font-weight:700;margin-bottom:4px">Pay <span id="pname"></span></div>
+        <div style="font-size:40px;font-weight:800;color:#30D158;margin-bottom:20px" id="pamt">$0.00</div>
+        <div id="pmethods" style="margin-bottom:12px"></div>
+        <button id="pmark" style="width:100%;padding:14px;background:transparent;border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:#9896A8;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:8px">✓ Mark as paid (other method)</button>
+        <button onclick="closePay()" style="width:100%;padding:12px;background:transparent;border:none;color:#6E6B80;font-family:inherit;font-size:13px;cursor:pointer">I'll pay later</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const BID = \${JSON.stringify(billId)};
+    let selectedGif = null;
+    (function(){
+      try {
+        const urlName = new URLSearchParams(window.location.search).get('name');
+        if(urlName){ const el=document.getElementById('cname'); if(el){el.value=decodeURIComponent(urlName);} return; }
+        const profile = JSON.parse(localStorage.getItem('raven_profile')||'{}');
+        if(profile.first_name){ const el=document.getElementById('cname'); if(el){el.value=profile.first_name;} }
+      } catch(e){}
+    })();
+    function showPay(btn) {
+      const pid = btn.dataset.pid, name = btn.dataset.name, amount = btn.dataset.amount;
+      let p = {}; try { p = JSON.parse(atob(document.getElementById('pd').value||'')); } catch(e) {}
+      const paidByName = document.getElementById('paid-by-name')?.value || '';
+      const payeeName = paidByName || p.first_name || 'Bill Creator';
+      document.getElementById('pname').textContent = payeeName;
+      document.getElementById('pamt').textContent = '$' + parseFloat(amount).toFixed(2);
+      const amt = parseFloat(amount).toFixed(2);
+      const mc = document.getElementById('pmethods'); mc.innerHTML = ''; let n = 0;
+      function row(bg, icon, title, sub, href, copy, method) {
+        const el = document.createElement(href?'a':'button'); el.className = 'pm-row';
+        if(href){ el.href=href; el.target='_blank'; }
+        if(copy){ el.addEventListener('click',function(e){ e.preventDefault(); navigator.clipboard.writeText(copy).then(()=>toast('Copied: '+copy)).catch(()=>{}); }); }
+        el.addEventListener('click', function() { setTimeout(() => markPaid(pid, name, method), 300); });
+        el.innerHTML = '<div class="pm-icon" style="background:'+bg+'">'+icon+'</div><div class="pm-info"><b>'+title+'</b><span>'+sub+'</span></div><span style="color:#6E6B80;font-size:16px">→</span>';
+        mc.appendChild(el); n++;
+      }
+      if(p.venmo){const h='@'+p.venmo.replace('@','');row('#008CFF','V','Venmo',h+' · $'+amt,'venmo://paycharge?txn=pay&recipients='+p.venmo.replace('@','')+'&amount='+amt+'&note=Bill',null,'Venmo');}
+      if(p.cashapp){const t=p.cashapp.replace('$','');row('#00D632','$','Cash App','$'+t+' · $'+amt,'https://cash.app/$'+t+'/'+amt,null,'Cash App');}
+      if(p.zelle){row('#6D1ED4','Z','Zelle',p.zelle+' · tap to copy',null,p.zelle,'Zelle');}
+      if(n===0){mc.innerHTML='<p style="color:#6E6B80;text-align:center;padding:16px 0;font-size:13px">No payment methods set up yet.</p>';}
+      document.getElementById('pmark').onclick=function(){ markPaid(pid, name, 'Other'); };
+      document.getElementById('pmod').style.display='block';
+    }
+    function closePay(){ document.getElementById('pmod').style.display='none'; }
+    async function markPaid(pid, name, method) {
+      try {
+        const r=await fetch('/bill/'+BID+'/mark-paid',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({participantId:pid, name, payment_method: method||null})});
+        const d=await r.json();
+        if(d.success){ closePay(); document.getElementById('paybtn-'+pid)?.remove(); const s=document.getElementById('pstatus-'+pid); if(s) s.textContent='✅ Paid'+(method&&method!=='Other'?' via '+method:''); toast('✅ Marked as paid!'); }
+      }catch(e){alert('Error. Try again.');}
+    }
+    async function loadC(){
+      try{
+        const r=await fetch('/bill/'+BID+'/comments'); const d=await r.json(); const comments=d.comments||[];
+        const list=document.getElementById('clist'); const none=document.getElementById('no-c');
+        if(comments.length===0){if(none)none.style.display='block';return;}
+        if(none)none.style.display='none';
+        list.innerHTML=comments.map(c=>{
+          const dt=new Date(c.created_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+          return '<div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:14px 16px">'
+            +'<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px;font-weight:700">'+(c.name||'Anonymous')+'</span><span style="font-size:11px;color:#6E6B80">'+dt+'</span></div>'
+            +(c.body?'<div style="font-size:14px;color:#9896A8;line-height:1.5">'+c.body+'</div>':'')
+            +(c.gif_url?'<img src="'+c.gif_url+'" style="max-width:100%;border-radius:8px;margin-top:8px;display:block">':'')
+            +'</div>';
+        }).join('');
+      }catch(e){}
+    }
+    async function postC(){
+      const name=document.getElementById('cname').value.trim(); const body=document.getElementById('cbody').value.trim();
+      if(!body){toast('Write something first');return;}
+      const btn=document.querySelector('[onclick="postC()"]'); if(btn){btn.textContent='Posting...';btn.disabled=true;}
+      try{
+        const r=await fetch('/bill/'+BID+'/comments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name||'Anonymous',body,gif_url:null})});
+        const d=await r.json(); if(d.success){document.getElementById('cbody').value='';toast('✅ Posted!');loadC();}
+        else toast('Error: '+(d.error||'try again'));
+      }catch(e){toast('Network error');}
+      finally{if(btn){btn.textContent='💬 Post Comment';btn.disabled=false;}}
+    }
+    function toast(msg){
+      let t=document.getElementById('_t');
+      if(!t){t=document.createElement('div');t.id='_t';t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1A1A24;border:1px solid rgba(48,209,88,0.3);color:#30D158;padding:10px 20px;border-radius:20px;font-size:13px;font-weight:600;z-index:9999;white-space:nowrap;pointer-events:none;transition:opacity 0.3s';document.body.appendChild(t);}
+      t.textContent=msg;t.style.opacity='1';clearTimeout(t._t);t._t=setTimeout(()=>t.style.opacity='0',3000);
+    }
+    loadC();
+  </script>
+</body>
+</html>`;
+    return res.send(classicHtml);
+  }
+
+  // ── LIVE MODE — interactive item-claiming page ───────────────────────────────
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
