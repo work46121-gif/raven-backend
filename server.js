@@ -2439,6 +2439,56 @@ document.addEventListener('DOMContentLoaded', function() {
 // Also re-run when a receipt is expanded
 // pay slots re-rendered on receipt expand — see toggleReceipt below
 
+// ── PULL TO REFRESH ──────────────────────────────────────────────────────────
+(function() {
+  let startY = 0, pulling = false, indicator = null;
+  const THRESHOLD = 80; // px drag needed to trigger refresh
+
+  function createIndicator() {
+    indicator = document.createElement('div');
+    indicator.id = 'ptr-indicator';
+    indicator.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;display:flex;align-items:center;justify-content:center;height:0;overflow:hidden;background:rgba(12,12,18,0.95);transition:height 0.1s;pointer-events:none';
+    indicator.innerHTML = '<div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#30D158"><span id="ptr-icon" style="font-size:18px;display:inline-block;transition:transform 0.2s">↓</span><span id="ptr-text">Pull to refresh</span></div>';
+    document.body.appendChild(indicator);
+  }
+
+  document.addEventListener('touchstart', function(e) {
+    if (window.scrollY === 0) {
+      startY = e.touches[0].clientY;
+      pulling = true;
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchmove', function(e) {
+    if (!pulling) return;
+    const dist = Math.min(e.touches[0].clientY - startY, 140);
+    if (dist <= 0) { pulling = false; return; }
+    if (!indicator) createIndicator();
+    indicator.style.height = Math.min(dist * 0.6, 60) + 'px';
+    const icon = document.getElementById('ptr-icon');
+    const text = document.getElementById('ptr-text');
+    if (dist >= THRESHOLD) {
+      if (icon) { icon.style.transform = 'rotate(180deg)'; icon.textContent = '↑'; }
+      if (text) text.textContent = 'Release to refresh';
+    } else {
+      if (icon) { icon.style.transform = 'none'; icon.textContent = '↓'; }
+      if (text) text.textContent = 'Pull to refresh';
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchend', function(e) {
+    if (!pulling) return;
+    pulling = false;
+    const dist = e.changedTouches[0].clientY - startY;
+    if (dist >= THRESHOLD) {
+      if (indicator) { indicator.style.height = '60px'; const t = document.getElementById('ptr-text'); if (t) t.textContent = 'Refreshing…'; }
+      setTimeout(() => location.reload(), 150);
+    } else {
+      if (indicator) indicator.style.height = '0';
+    }
+  }, { passive: true });
+})();
+
 function retryLastScan() {
   if (imgBase64) {
     retryPendingScans();
@@ -3568,7 +3618,8 @@ app.post('/trip/:tripId/mark-settled', async (req, res) => {
     let settled = [];
     try { settled = Array.isArray(trip.settled_people) ? trip.settled_people : JSON.parse(trip.settled_people || '[]'); } catch(e) {}
     if (!settled.map(s => s.toLowerCase()).includes((name||'').toLowerCase())) settled.push(name);
-    await supabase.from('trips').update({ settled_people: JSON.stringify(settled) }).eq('id', tripId);
+    const { error: dbErr } = await supabase.from('trips').update({ settled_people: JSON.stringify(settled) }).eq('id', tripId);
+    if (dbErr) { console.error('mark-settled DB error:', dbErr); return res.json({ success: false, error: dbErr.message }); }
     res.json({ success: true, settled });
   } catch(err) { res.json({ success: false, error: err.message }); }
 });
