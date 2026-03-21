@@ -1303,7 +1303,7 @@ app.get('/trip/:tripId', async (req, res) => {
               <div style="height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;margin-bottom:${payer?'10px':'0'}">
                 <div style="height:100%;width:${pct}%;background:${color};border-radius:2px"></div>
               </div>
-              ${payer ? `<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px;flex-wrap:wrap">${payButtonsHtml(payer, amount)}<button class="rcpt-mark-paid-btn" data-receipt-paid-key="${paidKey}" data-person-name="${esc(person)}" data-receipt-id="${esc(r.id||receiptId)}" data-amount="${parseFloat(amount).toFixed(2)}" style="padding:7px 14px;background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.2);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✓ Mark as Paid</button></div>` : ''}
+              ${payer ? '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px;flex-wrap:wrap">' + payButtonsHtml(payer, amount) + '<button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" style="padding:7px 14px;background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.2);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✓ Mark as Paid</button></div>' : ''}
             </div>`;
           }).join('')}
         </div>
@@ -1576,8 +1576,8 @@ ${coverHTML}
   </div>
   <div id="receipts-body" style="display:none">
     ${(receipts||[]).length===0
-      ? `<div style="text-align:center;padding:28px 20px;color:#6E6B80;font-size:14px;background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:16px"><div style="font-size:32px;margin-bottom:10px">🧾</div><div style="font-weight:600;color:#9896A8;margin-bottom:4px">No receipts yet</div><div>Be the first to add one!</div></div>`
-      : `<div class="card">${receiptRows}</div>`}
+      ? '<div style="text-align:center;padding:28px 20px;color:#6E6B80;font-size:14px;background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:16px"><div style="font-size:32px;margin-bottom:10px">🧾</div><div style="font-weight:600;color:#9896A8;margin-bottom:4px">No receipts yet</div><div>Be the first to add one!</div></div>'
+      : '<div class="card">' + receiptRows + '</div>'}
   </div>
 </div>
 
@@ -3920,6 +3920,27 @@ app.post('/remind-dashboard', async (req, res) => {
 
 app.get('/ping', (req, res) => {
   res.json({ ok: true, ts: Date.now() });
+});
+
+// Serve dashboard.html — proxy fetches this so it always gets the Railway-deployed version
+app.get('/serve-dashboard', (req, res) => {
+  const dashPath = path.join(__dirname, 'public', 'dashboard.html');
+  fs.readFile(dashPath, 'utf8', (err, data) => {
+    if (err) {
+      // Fallback: try same directory as server.js
+      const altPath = path.join(__dirname, 'dashboard.html');
+      fs.readFile(altPath, 'utf8', (err2, data2) => {
+        if (err2) return res.status(404).send('dashboard.html not found on Railway — place it in public/ folder');
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.send(data2);
+      });
+      return;
+    }
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.send(data);
+  });
 });
 
 app.get('/', (req, res) => {
