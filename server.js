@@ -1367,6 +1367,7 @@ app.get('/trip/:tripId', async (req, res) => {
       </div>
       <div id="${receiptId}" style="display:none;padding:0 16px 20px;margin-top:-4px">
         <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:0">
+          ${r.photo_url ? `<div style="margin-bottom:14px"><img src="${esc(r.photo_url)}" onclick="(function(src){const ov=document.createElement('div');ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.96);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;cursor:zoom-out';const img=document.createElement('img');img.src=src;img.style.cssText='max-width:100%;max-height:80vh;border-radius:12px;object-fit:contain';const btn=document.createElement('button');btn.textContent='✕';btn.style.cssText='position:absolute;top:16px;right:16px;background:rgba(255,255,255,0.1);border:none;color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:18px';btn.onclick=function(){ov.remove()};ov.onclick=function(){ov.remove()};ov.appendChild(btn);ov.appendChild(img);document.body.appendChild(ov)})('${esc(r.photo_url)}')" style="width:100%;max-height:200px;object-fit:cover;border-radius:10px;cursor:zoom-in;border:1px solid rgba(255,255,255,0.1);display:block"></div>` : ''}
           ${itemsHtml}
           ${personBreakdownHtml}
           ${totalsHtml}
@@ -1981,11 +1982,11 @@ function buildSavedReceiptsGallery() {
       '<div class="sec-lbl" style="margin-bottom:0">📸 Saved Receipt Photos (' + totalCount + ')' +
       (pending.length > 0 ? ' <span style="font-size:10px;background:rgba(255,107,53,0.15);color:#FF6B35;border-radius:6px;padding:2px 8px;font-weight:700">' + pending.length + ' pending</span>' : '') +
       '</div>' +
-      '<div style="font-size:12px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:8px;user-select:none"><span id="saved-receipts-toggle">▾ Show</span></div>';
+      '<div style="font-size:12px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:8px;user-select:none"><span id="saved-receipts-toggle">▴ Hide</span></div>';
 
     const body = document.createElement('div');
     body.id = 'saved-receipts-body';
-    body.style.display = 'none';
+    body.style.display = 'block'; // auto-open when photos exist
 
     const grid = document.createElement('div');
     grid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px';
