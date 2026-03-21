@@ -1092,6 +1092,8 @@ app.get('/trip/:tripId', async (req, res) => {
     } catch(e) {}
   });
   const grandTotal = Object.values(totals).reduce((s, v) => s + v, 0);
+  // Total spend = sum of all receipt totals (what was actually spent)
+  const totalSpend = (receipts||[]).reduce((s, r) => s + parseFloat(r.total||0), 0);
 
   const baseUrl   = process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : `https://raven-backend-production-fb1f.up.railway.app`;
   const frontendUrl = 'https://ravensplit.com';
@@ -1169,7 +1171,6 @@ app.get('/trip/:tripId', async (req, res) => {
 
   // Build per-person breakdown: who owes whom and how much
   const settledPeopleList = (() => { try { return Array.isArray(trip.settled_people) ? trip.settled_people : JSON.parse(trip.settled_people || '[]'); } catch(e) { return []; } })();
-  console.log('[settled debug] raw settled_people:', JSON.stringify(trip.settled_people), '| parsed list:', JSON.stringify(settledPeopleList), '| people:', JSON.stringify(people));
   const settledSet = new Set(settledPeopleList.map(s => s.toLowerCase()));
 
   const owesRows = people.map((p, i) => {
@@ -1229,7 +1230,7 @@ app.get('/trip/:tripId', async (req, res) => {
         payerEntries.length>0 ? `<div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px 12px">
         ${payBtnsHtml}
         <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)">
-          <button class="mark-settled-btn" data-person="${personId}" data-name="${esc(p)}" id="markpaid-${personId}" style="display:inline-flex;align-items:center;gap:7px;padding:8px 16px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:9px;color:#30D158;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer">✓ Mark as Settled</button>
+          <button class="mark-settled-btn" data-person="${personId}" data-name="${esc(p)}" id="markpaid-${personId}" style="display:inline-flex;align-items:center;gap:7px;padding:8px 16px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:9px;color:#30D158;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer" title="Mark ${esc(p)} as fully settled up">✓ Mark as Settled · $${amtOwed.toFixed(2)}</button>
         </div>
       </div>` : ''}
     </div>`;
@@ -1448,7 +1449,7 @@ app.get('/trip/:tripId', async (req, res) => {
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <title>✈️ ${esc(trip.name)} — RAVEN</title>
 <meta property="og:title" content="✈️ ${esc(trip.name)} — Trip Hub on RAVEN">
-<meta property="og:description" content="${people.length} people · ${(receipts||[]).length} receipts · $${grandTotal.toFixed(2)} total">
+<meta property="og:description" content="${people.length} people · ${(receipts||[]).length} receipts · $${totalSpend.toFixed(2)} total">
 <meta property="og:image" content="${trip.cover_image ? baseUrl+'/trip/'+tripId+'/cover-image' : 'https://ravensplit.com/raven-hero.png'}">
 <meta property="og:image:width" content="800">
 <meta property="og:image:height" content="400">
@@ -1456,7 +1457,7 @@ app.get('/trip/:tripId', async (req, res) => {
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="✈️ ${esc(trip.name)} — Trip Hub on RAVEN">
-<meta name="twitter:description" content="${people.length} people · ${(receipts||[]).length} receipts · $${grandTotal.toFixed(2)} total">
+<meta name="twitter:description" content="${people.length} people · ${(receipts||[]).length} receipts · $${totalSpend.toFixed(2)} total">
 <meta name="twitter:image" content="${trip.cover_image ? baseUrl+'/trip/'+tripId+'/cover-image' : 'https://ravensplit.com/raven-hero.png'}">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Epilogue:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -1508,7 +1509,7 @@ ${coverHTML}
     <span style="width:3px;height:3px;border-radius:50%;background:rgba(255,255,255,0.12)"></span>
     <span>${(receipts||[]).length} receipt${(receipts||[]).length!==1?'s':''}</span>
     <span style="width:3px;height:3px;border-radius:50%;background:rgba(255,255,255,0.12)"></span>
-    <span style="color:#30D158;font-weight:600">$${grandTotal.toFixed(2)} total</span>
+    <span style="color:#30D158;font-weight:600">$${totalSpend.toFixed(2)} total</span>
   </div>
   <div style="display:flex;align-items:center;margin-top:14px;margin-bottom:6px;position:relative">
     ${avatarRow}
@@ -1524,9 +1525,12 @@ ${coverHTML}
   <div class="sec-lbl">Who Owes What</div>
   <div class="card">
     ${owesRows}
-    <div style="display:flex;justify-content:space-between;padding:12px 16px;background:rgba(48,209,88,0.04);border-top:1px solid rgba(48,209,88,0.12)">
-      <span style="font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#9896A8">Grand Total</span>
-      <span style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:#30D158">$${grandTotal.toFixed(2)}</span>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:rgba(48,209,88,0.04);border-top:1px solid rgba(48,209,88,0.12)">
+      <div>
+        <div style="font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#9896A8">Grand Total</div>
+        ${grandTotal===0&&totalSpend>0?'<div style="font-size:10px;color:#30D158;margin-top:2px">✅ Everyone settled up</div>':grandTotal>0?'<div style="font-size:10px;color:#FF9A3C;margin-top:2px">$'+grandTotal.toFixed(2)+' outstanding</div>':''}
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:#30D158">$${totalSpend.toFixed(2)}</span>
     </div>
   </div>
 </div>
@@ -3797,7 +3801,22 @@ app.post('/trip/:tripId/receipt', async (req, res) => {
     await supabase.from('trip_receipts').insert(tripReceiptRow);
     const { data: all } = await supabase.from('trip_receipts').select('total').eq('trip_id', tripId);
     const newTotal = (all||[]).reduce((s,r) => s+parseFloat(r.total||0), 0);
-    await supabase.from('trips').update({ total: newTotal, receipt_count: (all||[]).length }).eq('id', tripId);
+    // Un-settle anyone who has a share in this new receipt
+    let updatedTrip = { total: newTotal, receipt_count: (all||[]).length };
+    if (splits && paid_by) {
+      try {
+        let settledList = [];
+        try { settledList = Array.isArray(trip.settled_people) ? trip.settled_people : JSON.parse(trip.settled_people || '[]'); } catch(e) {}
+        const splitObj = typeof splits === 'string' ? JSON.parse(splits) : (splits || {});
+        const debtors = Object.keys(splitObj).filter(k => parseFloat(splitObj[k]) > 0 && k.toLowerCase() !== (paid_by||'').toLowerCase());
+        const debtorSet = new Set(debtors.map(d => d.toLowerCase()));
+        const newSettled = settledList.filter(s => !debtorSet.has(s.toLowerCase()));
+        if (newSettled.length !== settledList.length) {
+          updatedTrip.settled_people = JSON.stringify(newSettled);
+        }
+      } catch(e) {}
+    }
+    await supabase.from('trips').update(updatedTrip).eq('id', tripId);
     res.json({ success: true });
   } catch(err) { console.error('Trip receipt error:', err); res.json({ success: false, error: err.message }); }
 });
@@ -3815,10 +3834,23 @@ app.post('/trip/:tripId/receipt/:receiptId/edit', async (req, res) => {
     if (total   !== undefined) updates.total   = parseFloat(total) || 0;
     if (splits  !== undefined) updates.splits  = JSON.stringify(splits);
     await supabase.from('trip_receipts').update(updates).eq('id', receiptId).eq('trip_id', tripId);
-    // Recalculate trip total
+    // Recalculate trip total and un-settle anyone with new debt
     const { data: all } = await supabase.from('trip_receipts').select('total').eq('trip_id', tripId);
     const newTotal = (all||[]).reduce((s,r) => s + parseFloat(r.total||0), 0);
-    await supabase.from('trips').update({ total: newTotal }).eq('id', tripId);
+    const { data: fullTrip } = await supabase.from('trips').select('settled_people').eq('id', tripId).single();
+    let tripUpdate = { total: newTotal };
+    if (splits && paid_by && fullTrip) {
+      try {
+        let settledList = [];
+        try { settledList = Array.isArray(fullTrip.settled_people) ? fullTrip.settled_people : JSON.parse(fullTrip.settled_people || '[]'); } catch(e) {}
+        const splitObj = typeof splits === 'string' ? JSON.parse(splits) : (splits || {});
+        const debtors = Object.keys(splitObj).filter(k => parseFloat(splitObj[k]) > 0 && k.toLowerCase() !== (paid_by||'').toLowerCase());
+        const debtorSet = new Set(debtors.map(d => d.toLowerCase()));
+        const newSettled = settledList.filter(s => !debtorSet.has(s.toLowerCase()));
+        if (newSettled.length !== settledList.length) tripUpdate.settled_people = JSON.stringify(newSettled);
+      } catch(e) {}
+    }
+    await supabase.from('trips').update(tripUpdate).eq('id', tripId);
     res.json({ success: true });
   } catch(err) { console.error('Edit receipt error:', err); res.json({ success: false, error: err.message }); }
 });
