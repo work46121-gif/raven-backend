@@ -1408,6 +1408,7 @@ app.get('/trip/:tripId', async (req, res) => {
     dueDate: trip.due_date || '',
     endDate: trip.end_date || '',
     creatorEmail: trip.creator_email || '',
+    coAdmins: (() => { try { return Array.isArray(trip.co_admins) ? trip.co_admins : JSON.parse(trip.co_admins || '[]'); } catch(e) { return []; } })(),
     people,
     hasCoverImage: !!trip.cover_image,
     memberPayProfiles,
@@ -1752,9 +1753,14 @@ const receiptsDataMap = {}; // keyed by receipt id — safe lookup, no user data
 function checkIsAdmin() {
   try {
     const local = JSON.parse(localStorage.getItem('raven_profile') || '{}');
-    // Compare stored email (set by dashboard.html on login) to trip creator email
-    if (local.email && CREATOR_EMAIL && local.email === CREATOR_EMAIL) return true;
-    // Fallback: check supabase session in localStorage (key contains 'auth-token')
+    const myEmail = local.email || '';
+    const myName  = (local.first_name || '').toLowerCase();
+    // Creator check
+    if (myEmail && CREATOR_EMAIL && myEmail === CREATOR_EMAIL) return true;
+    // Co-admin check — match by first name (how people are stored in trips)
+    const coAdmins = (D.coAdmins || []).map(n => n.toLowerCase());
+    if (myName && coAdmins.includes(myName)) return true;
+    // Fallback: check supabase session in localStorage
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key && (key.includes('auth-token') || key.includes('supabase'))) {
@@ -2096,36 +2102,48 @@ function renderPaySlots() {
     panel.appendChild(header);
 
     const methods = [];
-    if (prof.venmo)    { const h=prof.venmo.replace('@','');    methods.push({ label:'Venmo',     sub:'@'+h,         color:'#0084FF', textColor:'#fff', icon:'V', href:'venmo://paycharge?txn=pay&recipients='+h+'&amount='+a+'&note=Trip', copy:null }); }
-    if (prof.cashapp)  { const t=prof.cashapp.replace('$',''); methods.push({ label:'Cash App',  sub:'$'+t,         color:'#00D632', textColor:'#000', icon:'$', href:'https://cash.app/$'+t+'/'+a, copy:null }); }
-    if (prof.zelle)    {                                        methods.push({ label:'Zelle',     sub:prof.zelle,    color:'#6D1ED4', textColor:'#fff', icon:'Z', href:null, copy:prof.zelle }); }
-    if (prof.applepay) {                                        methods.push({ label:'Apple Pay', sub:prof.applepay, color:'#1a1a1a', textColor:'#fff', icon:'✦', href:null, copy:prof.applepay, border:'1px solid #555' }); }
+    if (prof.venmo)   { const h=prof.venmo.replace('@','');    methods.push({ label:'Venmo',    sub:'@'+h,    color:'#0084FF', icon:'V', href:'venmo://paycharge?txn=pay&recipients='+h+'&amount='+a+'&note=Trip+Payment' }); }
+    if (prof.cashapp) { const t=prof.cashapp.replace('$',''); methods.push({ label:'Cash App', sub:'$'+t,    color:'#00D632', icon:'$', href:'https://cash.app/$'+t+'/'+a }); }
+    if (prof.zelle)   {
+      const zelleVal = prof.zelle;
+      const dig = zelleVal.replace(/\D/g,'');
+      const zelleHref = dig.length >= 7
+        ? 'zelle://send?phone=' + encodeURIComponent(zelleVal)
+        : 'https://enroll.zellepay.com/';
+      methods.push({ label:'Zelle', sub: zelleVal + ' · opens Zelle app', color:'#6D1ED4', icon:'Z', href: zelleHref, copy: zelleVal });
+    }
+    if (prof.applepay) {
+      const ap = prof.applepay;
+      const dig = ap.replace(/\D/g,'');
+      const e164 = dig.length===10?'+1'+dig:(dig.length===11&&dig[0]==='1'?'+'+dig:null);
+      const apHref = e164
+        ? 'sms:' + e164 + '&body=' + encodeURIComponent('Sending $' + a + ' via Apple Pay 🪶')
+        : null;
+      methods.push({ label:'Apple Pay', sub: ap + (e164 ? ' · opens iMessage' : ' · tap to copy'), color:'#1c1c1e', icon:'', href: apHref, copy: ap, border:'1px solid #444' });
+    }
 
     methods.forEach((m, mi) => {
       const row = document.createElement('a');
       row.href = m.href || '#';
-      row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:14px 16px;text-decoration:none;' + (mi < methods.length-1 ? 'border-bottom:1px solid rgba(255,255,255,0.05);' : '');
+      if (m.href && (m.href.startsWith('http') || m.href.startsWith('venmo') || m.href.startsWith('zelle'))) row.target = '_blank';
+      row.style.cssText = 'display:flex;align-items:center;gap:14px;padding:14px 16px;text-decoration:none;background:transparent;transition:background 0.15s;' + (mi < methods.length-1 ? 'border-bottom:1px solid rgba(255,255,255,0.06);' : '');
       row.addEventListener('mouseover', () => { row.style.background = 'rgba(255,255,255,0.04)'; });
       row.addEventListener('mouseout',  () => { row.style.background = 'transparent'; });
-      if (m.href && m.href.startsWith('http')) row.target = '_blank';
-      if (!m.href && m.copy) {
-        row.addEventListener('click', e => {
-          e.preventDefault();
-          navigator.clipboard.writeText(m.copy).then(() => toast(m.label + ' info copied!'));
-        });
+      if (m.copy) {
+        row.addEventListener('click', () => { navigator.clipboard.writeText(m.copy).catch(() => {}); });
       }
-      const icon = document.createElement('div');
-      icon.style.cssText = 'width:36px;height:36px;border-radius:9px;background:' + m.color + ';' + (m.border||'') + 'display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900;color:' + m.textColor + ';flex-shrink:0';
-      icon.textContent = m.icon;
+      const iconEl = document.createElement('div');
+      iconEl.style.cssText = 'width:44px;height:44px;border-radius:12px;background:' + m.color + ';' + (m.border ? 'border:'+m.border+';' : '') + 'display:flex;align-items:center;justify-content:center;font-size:' + (m.icon.length > 1 ? '9px' : '18px') + ';font-weight:800;color:#fff;flex-shrink:0';
+      iconEl.textContent = m.icon || '✦';
       const info = document.createElement('div');
-      info.innerHTML = '<div style="font-size:14px;font-weight:700;color:#F0EEF8">' + m.label + '</div><div style="font-size:12px;color:#6E6B80">' + m.sub + (m.copy ? ' · tap to copy' : '') + '</div>';
-      const amt = document.createElement('div');
-      amt.style.marginLeft='auto'; amt.style.fontFamily='Bebas Neue,sans-serif'; amt.style.fontSize='20px'; amt.style.color='#30D158';
-      amt.textContent = '$' + a;
-      row.appendChild(icon); row.appendChild(info); row.appendChild(amt);
+      info.style.cssText = 'flex:1;min-width:0';
+      info.innerHTML = '<div style="font-size:15px;font-weight:700;color:#F0EEF8">' + m.label + '</div><div style="font-size:12px;color:#6E6B80;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + m.sub + '</div>';
+      const arrow = document.createElement('div');
+      arrow.style.cssText = 'font-size:18px;color:rgba(255,255,255,0.3);flex-shrink:0';
+      arrow.textContent = '→';
+      row.appendChild(iconEl); row.appendChild(info); row.appendChild(arrow);
       panel.appendChild(row);
     });
-
     mainBtn.addEventListener('click', () => {
       const open = panel.style.display !== 'none';
       panel.style.display = open ? 'none' : 'block';
