@@ -1529,7 +1529,7 @@ ${coverHTML}
         <div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600">Who paid? <span style="color:#6E6B80;font-weight:400">(they'll collect from others)</span></div>
         <select id="r-paidby" style="width:100%;padding:12px 14px;background:#13131A;border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#F0EEF8;font-family:'Epilogue',sans-serif;font-size:14px;font-weight:600">
           <option value="">— Select who paid —</option>
-          ${people.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('')}
+          ${people.map(p => '<option value="' + esc(p) + '">' + esc(p) + '</option>').join('')}
         </select>
       </div>
       <div>
@@ -1648,7 +1648,7 @@ ${coverHTML}
         <div style="font-size:12px;color:#6E6B80;font-weight:600;margin-bottom:6px">Who Paid?</div>
         <select id="edit-r-paidby" style="width:100%;padding:12px 14px;background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#F0EEF8;font-family:'Epilogue',sans-serif;font-size:14px;font-weight:600">
           <option value="">— No one selected —</option>
-          ${people.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('')}
+          ${people.map(p => '<option value="' + esc(p) + '">' + esc(p) + '</option>').join('')}
         </select>
       </div>
       <div>
