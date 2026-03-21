@@ -1416,6 +1416,7 @@ app.get('/trip/:tripId', async (req, res) => {
     endDate: trip.end_date || '',
     creatorEmail: trip.creator_email || '',
     coAdmins: (() => { try { return Array.isArray(trip.co_admins) ? trip.co_admins : JSON.parse(trip.co_admins || '[]'); } catch(e) { return []; } })(),
+    settledPeople: (() => { try { return Array.isArray(trip.settled_people) ? trip.settled_people : JSON.parse(trip.settled_people || '[]'); } catch(e) { return []; } })(),
     people,
     hasCoverImage: !!trip.cover_image,
     memberPayProfiles,
@@ -2321,24 +2322,38 @@ function markTripPersonPaid(personName, personId, btn) {
   if (!btn) btn = document.getElementById('markpaid-' + personId);
   if (!btn) return;
   if (btn.dataset.confirming === '1') {
-    btn.textContent = '✅ Settled';
-    btn.style.background = 'rgba(48,209,88,0.15)';
-    btn.style.borderColor = 'rgba(48,209,88,0.4)';
     btn.disabled = true;
+    btn.textContent = '⏳ Saving…';
     btn.dataset.confirming = '';
-    const row = document.getElementById('row-' + personId);
-    if (row) {
-      const statusEl = row.querySelector('.person-status-display');
-      if (statusEl) { statusEl.textContent = 'all settled ✓'; statusEl.style.color = '#30D158'; }
-      row.querySelectorAll('.pay-slot').forEach(s => s.style.display = 'none');
-    }
-    try {
-      const key = 'raven_settled_' + TRIP_ID;
-      const settled = JSON.parse(localStorage.getItem(key) || '[]');
-      if (!settled.includes(personName)) settled.push(personName);
-      localStorage.setItem(key, JSON.stringify(settled));
-    } catch(e) {}
-    toast(personName + ' marked as settled ✓', true);
+    fetch(BACKEND+'/trip/'+TRIP_ID+'/mark-settled', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ token: TRIP_TOKEN, name: personName })
+    })
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) {
+        btn.textContent = '✅ Settled';
+        btn.style.background = 'rgba(48,209,88,0.15)';
+        btn.style.borderColor = 'rgba(48,209,88,0.4)';
+        const row = document.getElementById('row-' + personId);
+        if (row) {
+          const statusEl = row.querySelector('.person-status-display');
+          if (statusEl) { statusEl.textContent = 'all settled ✓'; statusEl.style.color = '#30D158'; }
+          row.querySelectorAll('.pay-slot').forEach(s => s.style.display = 'none');
+        }
+        toast(personName + ' marked as settled ✓', true);
+      } else {
+        btn.disabled = false;
+        btn.textContent = '✓ Mark as Settled';
+        toast('Error: ' + (d.error || 'Could not save'), false);
+      }
+    })
+    .catch(() => {
+      btn.disabled = false;
+      btn.textContent = '✓ Mark as Settled';
+      toast('Network error', false);
+    });
     return;
   }
   btn.dataset.confirming = '1';
@@ -2355,11 +2370,54 @@ function markTripPersonPaid(personName, personId, btn) {
   }, 3000);
 }
 
-// Restore settled states from localStorage on page load
+// ── DELETE RECEIPT (admin only) ──
+function adminDeleteReceipt(btn) {
+  const receiptId   = btn.getAttribute('data-receipt-id');
+  const receiptName = btn.getAttribute('data-receipt-name') || 'Receipt';
+  if (btn.dataset.confirming === '1') {
+    btn.dataset.confirming = '';
+    btn.disabled = true;
+    btn.textContent = '⏳';
+    fetch(BACKEND+'/trip/'+TRIP_ID+'/receipt/'+receiptId+'/delete', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ token: TRIP_TOKEN })
+    })
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) {
+        const wrap = document.getElementById(receiptId + '-wrap');
+        if (wrap) wrap.remove();
+        toast('🗑 ' + receiptName + ' deleted', true);
+      } else {
+        btn.disabled = false;
+        btn.textContent = '🗑';
+        toast('Error: ' + (d.error || 'Could not delete'), false);
+      }
+    })
+    .catch(() => {
+      btn.disabled = false;
+      btn.textContent = '🗑';
+      toast('Network error', false);
+    });
+    return;
+  }
+  btn.dataset.confirming = '1';
+  btn.textContent = '❓';
+  btn.title = 'Tap again to confirm delete';
+  setTimeout(() => {
+    if (btn.dataset.confirming === '1') {
+      btn.dataset.confirming = '';
+      btn.textContent = '🗑';
+      btn.title = 'Delete';
+    }
+  }, 3000);
+}
+
+// Restore settled states from DB (D.settledPeople) on page load
 document.addEventListener('DOMContentLoaded', function() {
   try {
-    const key = 'raven_settled_' + TRIP_ID;
-    const settled = JSON.parse(localStorage.getItem(key) || '[]');
+    const settled = D.settledPeople || [];
     settled.forEach(personName => {
       const personId = personName.replace(/[^a-z0-9]/gi,'_');
       const btn = document.getElementById('markpaid-' + personId);
@@ -2369,7 +2427,11 @@ document.addEventListener('DOMContentLoaded', function() {
         btn.style.borderColor = 'rgba(48,209,88,0.4)';
         btn.disabled = true;
         const row = document.getElementById('row-' + personId);
-        if (row) row.querySelectorAll('.pay-slot').forEach(s => s.style.display = 'none');
+        if (row) {
+          const statusEl = row.querySelector('.person-status-display');
+          if (statusEl) { statusEl.textContent = 'all settled ✓'; statusEl.style.color = '#30D158'; }
+          row.querySelectorAll('.pay-slot').forEach(s => s.style.display = 'none');
+        }
       }
     });
   } catch(e) {}
@@ -2892,7 +2954,7 @@ function addPhotoToReceipt(receiptId) {
   input.onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const MAX = 1400;
+    const MAX = 900; // max dimension — keep base64 well under 500KB
     const reader = new FileReader();
     reader.onload = async (ev) => {
       const img = new Image();
@@ -2902,8 +2964,10 @@ function addPhotoToReceipt(receiptId) {
         if (w > MAX || h > MAX) { const r = Math.min(MAX/w, MAX/h); w = Math.round(w*r); h = Math.round(h*r); }
         canvas.width = w; canvas.height = h;
         canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        const b64 = canvas.toDataURL('image/jpeg', 0.82).split(',')[1];
+        const b64 = canvas.toDataURL('image/jpeg', 0.70).split(',')[1];
         const photoUrl = 'data:image/jpeg;base64,' + b64;
+        // Guard: if still over 700KB base64 reject early
+        if (b64.length > 700000) { toast('Photo too large — try a smaller image', false); return; }
         toast('Uploading photo…');
         try {
           const r = await fetch(BACKEND+'/trip/'+TRIP_ID+'/receipt/'+receiptId+'/add-photo', {
@@ -2913,7 +2977,7 @@ function addPhotoToReceipt(receiptId) {
           });
           const d = await r.json();
           if (d.success) { toast('📎 Photo added!'); setTimeout(() => location.reload(), 900); }
-          else toast(d.error || 'Error saving photo', false);
+          else toast('Error: ' + (d.error || 'Could not save photo'), false);
         } catch(e) { toast('Network error', false); }
       };
       img.src = ev.target.result;
@@ -3494,6 +3558,21 @@ app.post('/trip/:tripId/remove-member', async (req, res) => {
   } catch(err) { res.json({ success: false, error: err.message }); }
 });
 
+// ── MARK PERSON AS SETTLED ────────────────────────────────────────────────────
+app.post('/trip/:tripId/mark-settled', async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const { token, name } = req.body;
+    const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
+    if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
+    let settled = [];
+    try { settled = Array.isArray(trip.settled_people) ? trip.settled_people : JSON.parse(trip.settled_people || '[]'); } catch(e) {}
+    if (!settled.map(s => s.toLowerCase()).includes((name||'').toLowerCase())) settled.push(name);
+    await supabase.from('trips').update({ settled_people: JSON.stringify(settled) }).eq('id', tripId);
+    res.json({ success: true, settled });
+  } catch(err) { res.json({ success: false, error: err.message }); }
+});
+
 // ── TRIP SETTINGS ─────────────────────────────────────────────────────────────
 app.post('/trip/:tripId/settings', async (req, res) => {
   try {
@@ -3682,7 +3761,11 @@ app.post('/trip/:tripId/receipt/:receiptId/add-photo', async (req, res) => {
     const { data: trip } = await supabase.from('trips').select('share_token').eq('id', tripId).single();
     if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
     if (!photo_url) return res.json({ success: false, error: 'No photo provided' });
-    await supabase.from('trip_receipts').update({ photo_url }).eq('id', receiptId).eq('trip_id', tripId);
+    const { error: dbErr } = await supabase.from('trip_receipts').update({ photo_url }).eq('id', receiptId).eq('trip_id', tripId);
+    if (dbErr) {
+      console.error('Add photo DB error:', dbErr);
+      return res.json({ success: false, error: dbErr.message || 'DB error' });
+    }
     res.json({ success: true });
   } catch(err) { console.error('Add photo error:', err); res.json({ success: false, error: err.message }); }
 });
