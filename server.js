@@ -1250,7 +1250,7 @@ app.get('/trip/:tripId', async (req, res) => {
           <div>
             <div style="font-weight:600;font-size:14px;display:flex;align-items:center;gap:6px">${esc(p)} <span style="font-size:11px;color:#6E6B80;font-weight:400">›</span></div>
             <div class="person-status-display" style="font-size:11px;color:${amtOwed>0?'#FF9A3C':amtReceivable>0?'#A855F7':'#30D158'}">
-              ${amtOwed>0 ? (isPartiallySettled ? `owes $${amtOwed.toFixed(2)} <span style="color:#30D158">(+$${settledCredit.toFixed(2)} settled)</span>` : `owes $${amtOwed.toFixed(2)}`) : amtReceivable>0 ? `collecting $${amtReceivable.toFixed(2)}` : 'all settled ✓'}
+              ${amtOwed>0 ? (isPartiallySettled ? "owes $" + amtOwed.toFixed(2) + ' <span style="color:#30D158">(+$' + settledCredit.toFixed(2) + ' settled)</span>' : "owes $" + amtOwed.toFixed(2)) : amtReceivable>0 ? "collecting $" + amtReceivable.toFixed(2) : 'all settled ✓'}
             </div>
           </div>
         </div>
