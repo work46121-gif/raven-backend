@@ -478,6 +478,135 @@ app.post('/sms', async (req, res) => {
 
 // ─── BILL UI ─────────────────────────────────────────────────────────────────
 
+// ── BILL: GET state (items + selections + participants) — for polling ──────────
+app.get('/bill/:billId/state', async (req, res) => {
+  try {
+    const { billId } = req.params;
+    const { data: bill } = await supabase.from('bills').select('*').eq('id', billId).single();
+    if (!bill) return res.json({ success: false });
+    const [itemsRes, selectionsRes, participantsRes] = await Promise.all([
+      supabase.from('receipt_items').select('*').eq('bill_id', billId),
+      supabase.from('item_selections').select('*').eq('bill_id', billId),
+      supabase.from('participants').select('*').eq('bill_id', billId).order('name')
+    ]);
+    res.json({
+      success: true,
+      items: itemsRes.data || [],
+      selections: selectionsRes.data || [],
+      participants: participantsRes.data || [],
+      bill: { total: bill.total, tax: bill.tax, tip: bill.tip, paid_by: bill.paid_by, subtotal: bill.subtotal }
+    });
+  } catch(e) { res.json({ success: false, error: e.message }); }
+});
+
+// ── BILL: CLAIM an item ────────────────────────────────────────────────────────
+app.post('/bill/:billId/claim', async (req, res) => {
+  try {
+    const { billId } = req.params;
+    const { item_id, participant_name } = req.body;
+    if (!item_id || !participant_name?.trim()) return res.json({ success: false, error: 'Missing fields' });
+    const name = participant_name.trim();
+    // Check if already claimed by this person
+    const { data: existing } = await supabase.from('item_selections')
+      .select('id').eq('bill_id', billId).eq('item_id', item_id).eq('participant_name', name).maybeSingle();
+    if (existing) return res.json({ success: true, action: 'already_claimed' });
+    await supabase.from('item_selections').insert({ bill_id: billId, item_id, participant_name: name });
+    // Recalculate amounts for all participants
+    await recalcBillAmounts(billId);
+    res.json({ success: true, action: 'claimed' });
+  } catch(e) { res.json({ success: false, error: e.message }); }
+});
+
+// ── BILL: UNCLAIM an item ──────────────────────────────────────────────────────
+app.post('/bill/:billId/unclaim', async (req, res) => {
+  try {
+    const { billId } = req.params;
+    const { item_id, participant_name } = req.body;
+    if (!item_id || !participant_name?.trim()) return res.json({ success: false, error: 'Missing fields' });
+    await supabase.from('item_selections')
+      .delete().eq('bill_id', billId).eq('item_id', item_id).eq('participant_name', participant_name.trim());
+    await recalcBillAmounts(billId);
+    res.json({ success: true, action: 'unclaimed' });
+  } catch(e) { res.json({ success: false, error: e.message }); }
+});
+
+// ── BILL: ADD self as participant (for name entry) ─────────────────────────────
+app.post('/bill/:billId/join', async (req, res) => {
+  try {
+    const { billId } = req.params;
+    const { name } = req.body;
+    if (!name?.trim()) return res.json({ success: false, error: 'Name required' });
+    const { data: bill } = await supabase.from('bills').select('share_token').eq('id', billId).single();
+    if (!bill) return res.json({ success: false, error: 'Bill not found' });
+    const cleanName = name.trim();
+    const { data: existing } = await supabase.from('participants')
+      .select('id').eq('bill_id', billId).ilike('name', cleanName).maybeSingle();
+    if (!existing) {
+      await supabase.from('participants').insert({ bill_id: billId, name: cleanName, amount: 0, paid: false });
+    }
+    res.json({ success: true, name: cleanName });
+  } catch(e) { res.json({ success: false, error: e.message }); }
+});
+
+// Helper: recalculate each participant's amount from item_selections
+async function recalcBillAmounts(billId) {
+  try {
+    const [itemsRes, selectionsRes, participantsRes, billRes] = await Promise.all([
+      supabase.from('receipt_items').select('*').eq('bill_id', billId),
+      supabase.from('item_selections').select('*').eq('bill_id', billId),
+      supabase.from('participants').select('*').eq('bill_id', billId),
+      supabase.from('bills').select('tax,tip,subtotal,total,paid_by').eq('id', billId).single()
+    ]);
+    const items = itemsRes.data || [];
+    const selections = selectionsRes.data || [];
+    const participants = participantsRes.data || [];
+    const bill = billRes.data;
+    if (!bill || items.length === 0 || participants.length === 0) return;
+
+    const billSubtotal = items.reduce((s, i) => s + parseFloat(i.price || 0), 0);
+    const tax = parseFloat(bill.tax || 0);
+    const tip = parseFloat(bill.tip || 0);
+    const paidByLower = (bill.paid_by || '').toLowerCase();
+
+    // Build item → claimers map
+    const itemClaimers = {};
+    items.forEach(i => { itemClaimers[String(i.id)] = []; });
+    selections.forEach(s => {
+      if (itemClaimers[String(s.item_id)]) itemClaimers[String(s.item_id)].push(s.participant_name.toLowerCase());
+    });
+
+    // Check if anyone has claimed anything
+    const anySelections = Object.values(itemClaimers).some(c => c.length > 0);
+
+    for (const p of participants) {
+      if (paidByLower && p.name.toLowerCase() === paidByLower) {
+        // Payer owes nothing
+        await supabase.from('participants').update({ amount: 0 }).eq('id', p.id);
+        continue;
+      }
+      const pLower = p.name.toLowerCase();
+      let itemsTotal = 0;
+      if (anySelections) {
+        items.forEach(item => {
+          const claimers = itemClaimers[String(item.id)] || [];
+          if (claimers.includes(pLower)) {
+            itemsTotal += parseFloat(item.price || 0) / claimers.length;
+          }
+        });
+      } else {
+        // No selections yet — split evenly (excluding payer)
+        const nonPayers = participants.filter(pp => pp.name.toLowerCase() !== paidByLower);
+        itemsTotal = billSubtotal / Math.max(nonPayers.length, 1);
+      }
+      const proportion = billSubtotal > 0 ? itemsTotal / billSubtotal : 0;
+      const myTax = tax * proportion;
+      const myTip = tip * proportion;
+      const total = Math.round((itemsTotal + myTax + myTip) * 100) / 100;
+      await supabase.from('participants').update({ amount: total }).eq('id', p.id);
+    }
+  } catch(e) { console.error('recalcBillAmounts error:', e); }
+}
+
 app.get('/bill/:billId', async (req, res) => {
   const { billId } = req.params;
   const token = req.query.t || req.query.token;
@@ -627,305 +756,513 @@ app.get('/bill/:billId', async (req, res) => {
   const profileB64 = Buffer.from(JSON.stringify(billPayerProfile || {})).toString('base64');
   const paidByNameSafe = JSON.stringify(bill.paid_by || '');
 
+
+  const billUrl = `${baseUrl}/bill/${billId}?t=${bill.share_token || ""}`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=10&color=30D158&bgcolor=06060A&qzone=1&data=${encodeURIComponent(billUrl)}`;
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
   <title>🪶 ${bill.name} — RAVEN</title>
-  <meta property="og:title" content="🪶 ${bill.name} — Split bills free with RAVEN" />
-  <meta property="og:description" content="Tap to see what you owe · Bill ID: ${billId} · Split bills free at ravensplit.com" />
+  <meta property="og:title" content="🪶 ${bill.name} — Pick your items" />
+  <meta property="og:description" content="Tap to claim what you ordered · Bill ID: ${billId}" />
   <meta property="og:image" content="https://ravensplit.com/raven-hero.png" />
-  <meta property="og:image:width" content="1200" />
-  <meta property="og:image:height" content="630" />
   <meta property="og:url" content="${baseUrl}/bill/${billId}" />
-  <meta property="og:type" content="website" />
-  <meta name="twitter:card" content="summary_large_image" />
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;padding-bottom:120px}
-    .hdr{position:sticky;top:0;background:rgba(6,6,10,0.95);backdrop-filter:blur(20px);border-bottom:1px solid rgba(255,255,255,0.07);padding:0 20px;z-index:100}
-    .hdr-i{max-width:800px;margin:0 auto;height:56px;display:flex;align-items:center;justify-content:space-between}
-    .pm-row{display:flex;align-items:center;gap:14px;padding:14px 16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:12px;text-decoration:none;margin-bottom:8px;-webkit-tap-highlight-color:transparent;width:100%;cursor:pointer}
+    .hdr{position:sticky;top:0;background:rgba(6,6,10,0.95);backdrop-filter:blur(20px);border-bottom:1px solid rgba(255,255,255,0.07);padding:0 16px;z-index:100}
+    .hdr-i{max-width:800px;margin:0 auto;height:56px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .card{background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:16px;overflow:hidden}
+    .sec{max-width:800px;margin:16px auto 0;padding:0 16px}
+    .sec-lbl{font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:700;margin-bottom:10px}
+    .item-row{display:flex;align-items:center;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05);gap:12px;cursor:pointer;transition:background 0.15s;-webkit-tap-highlight-color:transparent}
+    .item-row:last-child{border-bottom:none}
+    .item-row:active{background:rgba(255,255,255,0.04)}
+    .item-check{width:24px;height:24px;border-radius:6px;border:2px solid rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all 0.2s;font-size:14px}
+    .item-check.claimed{background:#30D158;border-color:#30D158;color:#000}
+    .item-check.others{background:rgba(48,209,88,0.12);border-color:rgba(48,209,88,0.4)}
+    .claimers-tag{font-size:10px;color:#30D158;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.2);border-radius:6px;padding:2px 6px;white-space:nowrap}
+    .pm-row{display:flex;align-items:center;gap:14px;padding:14px 16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:12px;text-decoration:none;margin-bottom:8px;cursor:pointer;width:100%}
     .pm-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:700;font-size:14px;color:#fff}
     .pm-info{flex:1;display:flex;flex-direction:column;gap:2px;text-align:left}
     .pm-info b{font-size:14px;font-weight:600;color:#F0EEF8}
     .pm-info span{font-size:11px;color:#6E6B80}
-    .raven-footer{max-width:800px;margin:32px auto 0;padding:0 20px 60px;text-align:center}
-    .raven-footer-inner{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:20px;text-decoration:none;transition:all 0.2s}
-    .raven-footer-inner:hover{background:rgba(124,58,237,0.08);border-color:rgba(124,58,237,0.25)}
+    .toast-el{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1A1A24;border:1px solid rgba(48,209,88,0.3);color:#30D158;padding:10px 20px;border-radius:20px;font-size:13px;font-weight:600;z-index:9999;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity 0.3s}
+    .name-modal{position:fixed;inset:0;z-index:500;display:flex;align-items:flex-end;justify-content:center}
+    .name-modal-bg{position:absolute;inset:0;background:rgba(0,0,0,0.8);backdrop-filter:blur(8px)}
+    .name-modal-box{position:relative;background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:24px 24px 0 0;padding:28px 20px 48px;width:100%;max-width:600px;z-index:1}
+    .btn-g{width:100%;padding:14px;background:#30D158;border:none;border-radius:12px;color:#000;font-family:inherit;font-size:15px;font-weight:800;cursor:pointer}
+    .qr-section{max-width:800px;margin:20px auto 0;padding:0 16px;display:flex;flex-direction:column;align-items:center;gap:12px}
+    .pulse{animation:pulse 2s infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
   </style>
 </head>
 <body>
-  <div class="hdr"><div class="hdr-i">
-    <div style="display:flex;align-items:center;gap:12px">
-      <button onclick="history.back()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#9896A8;padding:6px 12px;font-size:13px;cursor:pointer;font-family:inherit">← Back</button>
-      <div style="font-size:18px;font-weight:900;letter-spacing:0.12em"><a href="https://ravensplit.com/" style="text-decoration:none;color:inherit">🪶 RAVEN</a></div>
-    </div>
-    <div style="font-size:11px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:20px;font-weight:600">${billId}</div>
-  </div></div>
 
-  <div style="max-width:800px;margin:20px auto 0;padding:0 20px">
-    <div style="font-size:28px;font-weight:800;margin-bottom:6px">${bill.name}</div>
-    <div style="display:flex;gap:12px">
-      <span style="font-size:12px;color:#6E6B80">Total <strong style="color:#F0EEF8">$${parseFloat(bill.total||0).toFixed(2)}</strong></span>
-      ${participants.length > 0 ? `<span style="font-size:12px;color:#6E6B80"><strong style="color:#F0EEF8">${participants.length}</strong> people</span>` : ''}
+<!-- Name entry modal -->
+<div id="name-modal" class="name-modal" style="display:none">
+  <div class="name-modal-bg" id="name-modal-bg"></div>
+  <div class="name-modal-box">
+    <div style="width:36px;height:4px;background:rgba(255,255,255,0.12);border-radius:2px;margin:0 auto 20px"></div>
+    <div style="font-size:22px;font-weight:800;margin-bottom:6px">Who are you? 👋</div>
+    <div style="font-size:14px;color:#6E6B80;margin-bottom:24px">Enter your name to claim items on the bill</div>
+    <input id="name-input" type="text" placeholder="Your name" autocomplete="name"
+      style="width:100%;padding:14px 16px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:12px;color:#F0EEF8;font-size:16px;font-family:inherit;outline:none;margin-bottom:12px">
+    <button class="btn-g" onclick="submitName()">Start Claiming Items →</button>
+  </div>
+</div>
+
+<!-- Pay modal -->
+<div id="pmod" style="display:none;position:fixed;inset:0;z-index:600">
+  <div onclick="closePay()" style="position:absolute;inset:0;background:rgba(0,0,0,0.8);backdrop-filter:blur(8px)"></div>
+  <div style="position:absolute;bottom:0;left:0;right:0;display:flex;justify-content:center">
+    <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:24px 24px 0 0;padding:24px 20px 52px;width:100%;max-width:600px">
+      <div style="width:36px;height:4px;background:rgba(255,255,255,0.12);border-radius:2px;margin:0 auto 20px"></div>
+      <div style="font-size:18px;font-weight:700;margin-bottom:4px">Pay <span id="pname"></span></div>
+      <div style="font-size:40px;font-weight:800;color:#30D158;margin-bottom:20px" id="pamt">$0.00</div>
+      <div id="pmethods" style="margin-bottom:12px"></div>
+      <button id="pmark" style="width:100%;padding:14px;background:transparent;border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:#9896A8;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:8px">✓ Mark as paid (other method)</button>
+      <button onclick="closePay()" style="width:100%;padding:12px;background:transparent;border:none;color:#6E6B80;font-family:inherit;font-size:13px;cursor:pointer">I'll pay later</button>
     </div>
   </div>
+</div>
 
-  ${receiptHTML}
-  ${participantsHTML}
-  ${itemsListHTML}
+<div id="_t" class="toast-el"></div>
 
-  <div style="max-width:800px;margin:24px auto 0;padding:0 20px 40px">
-    <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:10px">Comments</div>
-    <div id="clist" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
-      <div id="no-c" style="color:#6E6B80;font-size:13px;text-align:center;padding:12px 0">No comments yet</div>
-    </div>
-    <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:14px;overflow:hidden">
-      <div style="display:flex;align-items:center;border-bottom:1px solid rgba(255,255,255,0.07)">
-        <input id="cname" type="text" placeholder="Your name" style="flex:1;padding:12px 16px;background:transparent;border:none;color:#F0EEF8;font-family:inherit;font-size:14px;outline:none"/>
-      </div>
-      <div id="gif-preview-wrap" style="display:none;padding:0 12px;"></div>
-      <textarea id="cbody" placeholder="Add a comment... or just drop a GIF 🎭" rows="2" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#F0EEF8;font-family:inherit;font-size:14px;outline:none;resize:none;line-height:1.5"></textarea>
-      <div style="display:flex;border-bottom:1px solid rgba(255,255,255,0.07)">
-        <button onclick="toggleGif()" style="flex:0;padding:12px 16px;background:transparent;border:none;color:#6E6B80;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">🎭 GIF</button>
-        <div id="gif-selected" style="flex:1;padding:12px 8px;font-size:12px;color:#6E6B80;display:flex;align-items:center;gap:8px;overflow:hidden">
-          <span id="gif-preview-text" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></span>
-          <button id="gif-clear" onclick="clearGif()" style="display:none;background:rgba(255,68,68,0.15);border:none;color:#FF6B6B;font-size:11px;padding:2px 8px;border-radius:6px;cursor:pointer;flex-shrink:0">✕</button>
-        </div>
-      </div>
-      <div id="gif-panel" style="display:none;border-bottom:1px solid rgba(255,255,255,0.07)">
-        <div style="padding:10px 12px;display:flex;gap:8px">
-          <input id="gif-search" type="text" placeholder="Search GIFs..." style="flex:1;padding:9px 12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#F0EEF8;font-family:inherit;font-size:13px;outline:none" oninput="searchGifs(this.value)"/>
-        </div>
-        <div id="gif-results" style="display:flex;flex-wrap:wrap;gap:4px;padding:0 12px 10px;max-height:200px;overflow-y:auto"></div>
-      </div>
-      <button id="csub" onclick="postC()" style="width:100%;padding:13px;background:rgba(48,209,88,0.1);border:none;color:#30D158;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">💬 Post Comment</button>
+<!-- Header -->
+<div class="hdr"><div class="hdr-i">
+  <div style="display:flex;align-items:center;gap:10px">
+    <div style="font-size:20px;font-weight:900;letter-spacing:0.1em"><a href="https://ravensplit.com/" style="text-decoration:none;color:inherit">🪶</a></div>
+    <div>
+      <div style="font-size:15px;font-weight:700">${bill.name}</div>
+      <div style="font-size:11px;color:#6E6B80">ID: ${billId}</div>
     </div>
   </div>
-
-  <input type="hidden" id="pd" value="${profileB64}">
-  <input type="hidden" id="paid-by-name" value="${bill.paid_by ? bill.paid_by.replace(/"/g,'&quot;') : ''}">
-
-  <!-- Acquisition footer — every bill shared is a free ad -->
-  <div class="raven-footer">
-    <a href="https://ravensplit.com" class="raven-footer-inner">
-      <span style="font-size:16px">🪶</span>
-      <span style="font-size:12px;color:#6E6B80">Split bills instantly with <strong style="color:#C084FC">RAVEN</strong> — free to use</span>
-      <span style="font-size:11px;color:#6E6B80">→</span>
-    </a>
+  <div style="display:flex;align-items:center;gap:8px">
+    <button onclick="refreshAll()" id="refresh-btn" style="padding:7px 14px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.25);border-radius:20px;color:#30D158;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">↻ Refresh</button>
+    <button onclick="showQR()" style="padding:7px 14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;color:#9896A8;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">QR</button>
   </div>
+</div></div>
 
-  <div id="pmod" style="display:none;position:fixed;inset:0;z-index:999">
-    <div onclick="closePay()" style="position:absolute;inset:0;background:rgba(0,0,0,0.8);backdrop-filter:blur(8px)"></div>
-    <div style="position:absolute;bottom:0;left:0;right:0;display:flex;justify-content:center">
-      <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:24px 24px 0 0;padding:24px 20px 52px;width:100%;max-width:600px">
-        <div style="width:36px;height:4px;background:rgba(255,255,255,0.12);border-radius:2px;margin:0 auto 20px"></div>
-        <div style="font-size:18px;font-weight:700;margin-bottom:4px">Pay <span id="pname"></span></div>
-        <div style="font-size:40px;font-weight:800;color:#30D158;margin-bottom:20px" id="pamt">$0.00</div>
-        <div id="pmethods" style="margin-bottom:12px"></div>
-        <button id="pmark" style="width:100%;padding:14px;background:transparent;border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:#9896A8;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:8px">✓ Mark as paid (other method)</button>
-        <button onclick="closePay()" style="width:100%;padding:12px;background:transparent;border:none;color:#6E6B80;font-family:inherit;font-size:13px;cursor:pointer">I'll pay later</button>
+<!-- Bill summary -->
+<div class="sec" style="margin-top:20px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+    <div>
+      <div style="font-size:28px;font-weight:800">${bill.name}</div>
+      <div style="font-size:13px;color:#6E6B80;margin-top:4px">
+        $${parseFloat(bill.total||0).toFixed(2)} total · ${participants.length} people
       </div>
     </div>
+    <div style="font-size:32px;font-weight:900;color:#30D158;font-family:'Courier New',monospace">$${parseFloat(bill.total||0).toFixed(2)}</div>
   </div>
+  ${paidByLower ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:10px;margin-bottom:4px"><span style="font-size:16px">💳</span><div><div style="font-size:13px;font-weight:700;color:#C084FC">${bill.paid_by} paid the bill</div><div style="font-size:11px;color:#6E6B80">Everyone else needs to pay them back</div></div></div>` : ''}
+</div>
 
-  <script>
-    const BID = ${JSON.stringify(billId)};
-    let selectedGif = null;
-    let gifTimer = null;
+<!-- Live indicator + your name -->
+<div class="sec" style="margin-top:12px">
+  <div style="display:flex;align-items:center;justify-content:space-between">
+    <div style="display:flex;align-items:center;gap:6px">
+      <div id="live-dot" style="width:7px;height:7px;border-radius:50%;background:#30D158;animation:pulse 2s infinite"></div>
+      <span style="font-size:12px;color:#6E6B80" id="live-lbl">Live · updates every 5s</span>
+    </div>
+    <div id="you-badge" style="display:none;padding:4px 12px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.25);border-radius:20px;font-size:12px;font-weight:700;color:#30D158"></div>
+  </div>
+</div>
 
-    // PostHog — track bill page views (acquisition metric)
-    !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]);t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+" (stub)"},o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagPayload isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
-    posthog.init('YOUR_POSTHOG_KEY',{api_host:'https://us.i.posthog.com',person_profiles:'identified_only'});
-    posthog.capture('bill_page_viewed', { bill_id: BID });
+<!-- Items section (claimable) -->
+${items.length > 0 ? `
+<div class="sec" style="margin-top:16px">
+  <div class="sec-lbl">📋 Tap items you ordered</div>
+  <div class="card" id="items-list">
+    ${items.map(item => `
+    <div class="item-row" id="item-${item.id}" onclick="toggleClaim('${item.id}','${(item.name||'').replace(/'/g,"\'")}')">
+      <div class="item-check" id="check-${item.id}"></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:600">${item.name||'Item'}</div>
+        <div id="claimers-${item.id}" style="font-size:11px;color:#6E6B80;margin-top:2px"></div>
+      </div>
+      <div style="font-size:15px;font-weight:700;color:#F0EEF8;font-family:monospace;flex-shrink:0">$${parseFloat(item.price||0).toFixed(2)}</div>
+    </div>`).join('')}
+  </div>
+  ${bill.tax || bill.tip ? `
+  <div style="margin-top:8px;padding:10px 14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;display:flex;gap:16px">
+    ${bill.tax ? `<span style="font-size:12px;color:#6E6B80">Tax <strong style="color:#9896A8">$${parseFloat(bill.tax).toFixed(2)}</strong></span>` : ''}
+    ${bill.tip ? `<span style="font-size:12px;color:#6E6B80">Tip <strong style="color:#9896A8">$${parseFloat(bill.tip).toFixed(2)}</strong></span>` : ''}
+    <span style="font-size:12px;color:#6E6B80">Split proportionally by order</span>
+  </div>` : ''}
+</div>
+` : ''}
 
-    // ── AUTO-FILL NAME from URL param or localStorage ──
-    (function(){
-      try {
-        const urlName = new URLSearchParams(window.location.search).get('name');
-        if(urlName){ const el=document.getElementById('cname'); if(el){el.value=decodeURIComponent(urlName);el.style.color='#9896A8';} return; }
-        const sn = sessionStorage.getItem('bill_commenter_name');
-        if(sn){ const el=document.getElementById('cname'); if(el){el.value=sn;el.style.color='#9896A8';} return; }
-        const profile = JSON.parse(localStorage.getItem('raven_profile')||'{}');
-        if(profile.first_name){ const el=document.getElementById('cname'); if(el){el.value=profile.first_name;el.style.color='#9896A8';} }
-      } catch(e){}
-    })();
+<!-- Who owes what -->
+<div class="sec" style="margin-top:16px">
+  <div class="sec-lbl">💰 Who owes what</div>
+  <div class="card" id="owes-list">
+    <div style="padding:20px;text-align:center;color:#6E6B80;font-size:13px" id="owes-loading">Loading...</div>
+  </div>
+</div>
 
-    function showPay(btn) {
-      const pid = btn.dataset.pid, name = btn.dataset.name, amount = btn.dataset.amount;
-      let p = {};
-      try { p = JSON.parse(atob(document.getElementById('pd').value||'')); } catch(e){}
-      // Use the paid_by name — that's who people are paying back
-      const paidByName = document.getElementById('paid-by-name')?.value || '';
-      const payeeName = paidByName || p.first_name || 'Bill Creator';
-      document.getElementById('pname').textContent = payeeName;
-      document.getElementById('pamt').textContent = '$' + parseFloat(amount).toFixed(2);
-      const amt = parseFloat(amount).toFixed(2);
-      const mc = document.getElementById('pmethods');
-      mc.innerHTML = '';
-      let n = 0;
+<!-- QR Code section (hidden by default) -->
+<div id="qr-section" style="display:none" class="qr-section">
+  <div class="sec-lbl" style="text-align:center">Share this bill</div>
+  <div style="background:#06060A;border:2px solid rgba(48,209,88,0.3);border-radius:16px;padding:16px;display:inline-block">
+    <img src="${qrUrl}" width="200" height="200" alt="QR Code" style="display:block;border-radius:8px">
+  </div>
+  <div style="font-size:12px;color:#6E6B80;text-align:center">Scan to open this bill on your phone</div>
+  <div style="font-size:13px;font-weight:700;color:#30D158;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:8px;padding:8px 16px;font-family:monospace">${billId}</div>
+  <button onclick="document.getElementById('qr-section').style.display='none'" style="background:transparent;border:none;color:#6E6B80;font-size:13px;cursor:pointer;padding:4px">Hide QR</button>
+</div>
 
-      function row(bg, icon, title, sub, href, copy, method) {
-        const el = document.createElement(href?'a':'button');
-        el.className = 'pm-row';
-        if(href){ el.href=href; el.target='_blank'; }
-        if(copy){ el.addEventListener('click',function(e){ e.preventDefault(); navigator.clipboard.writeText(copy).then(()=>toast('Copied: '+copy)).catch(()=>prompt('Copy:',copy)); }); }
-        el.addEventListener('click', function() { setTimeout(() => markPaid(pid, name, method), 300); });
-        el.innerHTML = '<div class="pm-icon" style="background:'+bg+'">'+icon+'</div><div class="pm-info"><b>'+title+'</b><span>'+sub+'</span></div><span style="color:#6E6B80;font-size:16px">→</span>';
-        mc.appendChild(el);
-        n++;
-      }
+<!-- Receipt image -->
+${bill.receipt_image ? `
+<div class="sec" style="margin-top:16px">
+  <div class="sec-lbl">📸 Receipt</div>
+  <img src="data:image/jpeg;base64,${bill.receipt_image}" style="width:100%;border-radius:14px;display:block">
+</div>` : ''}
 
-      if(p.venmo&&p.venmo.trim()){const h='@'+p.venmo.replace('@','');row('#008CFF','V','Venmo',h+' · $'+amt,'venmo://paycharge?txn=pay&recipients='+p.venmo.replace('@','')+'&amount='+amt+'&note=Bill',null,'Venmo');}
-      if(p.cashapp&&p.cashapp.trim()){const tag=p.cashapp.replace('$','');const t='$'+tag;row('#00D632','$','Cash App',t+' · $'+amt,'https://cash.app/$'+tag+'/'+amt,null,'Cash App');}
-      if(p.zelle&&p.zelle.trim()){row('#6D1ED4','Z','Zelle',p.zelle+' · tap to copy',null,p.zelle,'Zelle');}
-      if(p.applepay&&p.applepay.trim()){
-        const ap=p.applepay.trim();
-        const dig=ap.replace(/\D/g,'');
-        const e164=dig.length===10?'1'+dig:(dig.length===11&&dig[0]==='1'?dig:dig);
-        if(dig.length>=7){
-          const sms='sms:+'+e164+'&body='+encodeURIComponent('Sending $'+amt+' via Apple Pay');
-          const el=document.createElement('a');
-          el.className='pm-row'; el.href=sms;
-          el.addEventListener('click', function(){ setTimeout(() => markPaid(pid, name, 'Apple Pay'), 300); });
-          el.innerHTML='<div class="pm-icon" style="background:#222;border:1px solid #444">Pay</div><div class="pm-info"><b>Apple Pay</b><span>Opens iMessage to '+ap+'</span></div><span style="color:#6E6B80;font-size:16px">→</span>';
-          mc.appendChild(el); n++;
-        } else { row('#222','Pay','Apple Pay',ap+' · tap to copy',null,ap,'Apple Pay'); }
-      }
-      if(n===0){mc.innerHTML='<p style="color:#6E6B80;text-align:center;padding:16px 0;font-size:13px">No payment methods set up yet.</p>';}
-      document.getElementById('pmark').onclick=function(){ markPaid(pid, name, 'Other'); };
-      document.getElementById('pmod').style.display='block';
+<!-- Comments -->
+<div class="sec" style="margin-top:24px">
+  <div class="sec-lbl">💬 Comments</div>
+  <div id="clist" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+    <div id="no-c" style="color:#6E6B80;font-size:13px;text-align:center;padding:12px 0">No comments yet</div>
+  </div>
+  <div class="card">
+    <div style="display:flex;border-bottom:1px solid rgba(255,255,255,0.07)">
+      <input id="cname" type="text" placeholder="Your name" style="flex:1;padding:12px 16px;background:transparent;border:none;color:#F0EEF8;font-family:inherit;font-size:14px;outline:none"/>
+    </div>
+    <textarea id="cbody" placeholder="Add a comment..." rows="2" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#F0EEF8;font-family:inherit;font-size:14px;outline:none;resize:none;line-height:1.5"></textarea>
+    <button onclick="postC()" style="width:100%;padding:13px;background:rgba(48,209,88,0.1);border:none;color:#30D158;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">💬 Post Comment</button>
+  </div>
+</div>
+
+<!-- Footer -->
+<div style="max-width:800px;margin:32px auto 0;padding:0 16px 60px;text-align:center">
+  <a href="https://ravensplit.com" style="display:inline-flex;align-items:center;gap:8px;padding:10px 18px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:20px;text-decoration:none">
+    <span style="font-size:16px">🪶</span>
+    <span style="font-size:12px;color:#6E6B80">Split bills free with <strong style="color:#C084FC">RAVEN</strong></span>
+  </a>
+</div>
+
+<input type="hidden" id="pd" value="${profileB64}">
+<input type="hidden" id="paid-by-name" value="${bill.paid_by ? bill.paid_by.replace(/"/g,'&quot;') : ''}">
+<script>
+const BID = ${JSON.stringify(billId)};
+const BILL_TOKEN = ${JSON.stringify(bill.share_token || '')};
+const BILL_URL = ${JSON.stringify(billUrl)};
+let myName = localStorage.getItem('raven_bill_name_' + BID) || '';
+let pollTimer = null;
+let lastState = null;
+
+// ── NAME SETUP ──
+function initName() {
+  const stored = myName;
+  if (stored) {
+    setNameUI(stored);
+  } else {
+    // Check Raven profile
+    try {
+      const p = JSON.parse(localStorage.getItem('raven_profile') || '{}');
+      if (p.first_name) { autoJoin(p.first_name); return; }
+    } catch(e) {}
+    document.getElementById('name-modal').style.display = 'flex';
+  }
+  // Pre-fill comment name
+  const cn = document.getElementById('cname');
+  if (cn && stored) cn.value = stored;
+}
+
+async function submitName() {
+  const input = document.getElementById('name-input');
+  const name = input.value.trim();
+  if (!name) { input.focus(); return; }
+  await autoJoin(name);
+}
+
+async function autoJoin(name) {
+  try {
+    const r = await fetch('/bill/' + BID + '/join', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ name })
+    });
+    const d = await r.json();
+    if (d.success) {
+      myName = d.name;
+      localStorage.setItem('raven_bill_name_' + BID, myName);
+      document.getElementById('name-modal').style.display = 'none';
+      setNameUI(myName);
+      const cn = document.getElementById('cname');
+      if (cn) cn.value = myName;
+      refreshAll();
+    } else { toast('Error: ' + (d.error || 'try again')); }
+  } catch(e) { toast('Network error'); }
+}
+
+function setNameUI(name) {
+  const b = document.getElementById('you-badge');
+  if (b) { b.textContent = '👤 ' + name; b.style.display = 'block'; }
+}
+
+// ── ITEM CLAIMING ──
+async function toggleClaim(itemId, itemName) {
+  if (!myName) {
+    document.getElementById('name-modal').style.display = 'flex';
+    document.getElementById('name-input').focus();
+    return;
+  }
+  const check = document.getElementById('check-' + itemId);
+  const isClaimed = check && check.classList.contains('claimed');
+  const endpoint = isClaimed ? 'unclaim' : 'claim';
+  try {
+    const r = await fetch('/bill/' + BID + '/' + endpoint, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ item_id: itemId, participant_name: myName })
+    });
+    const d = await r.json();
+    if (d.success) {
+      toast(isClaimed ? '✓ Removed ' + itemName : '✓ Claimed ' + itemName);
+      refreshAll();
+    } else { toast('Error: ' + (d.error || 'try again')); }
+  } catch(e) { toast('Network error'); }
+}
+
+// ── REFRESH / POLLING ──
+async function refreshAll() {
+  const btn = document.getElementById('refresh-btn');
+  if (btn) { btn.textContent = '↻ ...'; btn.style.opacity = '0.6'; }
+  try {
+    const r = await fetch('/bill/' + BID + '/state');
+    const d = await r.json();
+    if (d.success) { renderState(d); }
+  } catch(e) { console.error('Refresh error:', e); }
+  finally {
+    if (btn) { btn.textContent = '↻ Refresh'; btn.style.opacity = '1'; }
+  }
+}
+
+function renderState(d) {
+  const { items, selections, participants, bill } = d;
+  const paidByLower = (bill.paid_by || '').toLowerCase();
+
+  // Build selection map: itemId -> [names]
+  const selMap = {};
+  items.forEach(i => { selMap[String(i.id)] = []; });
+  selections.forEach(s => {
+    if (selMap[String(s.item_id)]) selMap[String(s.item_id)].push(s.participant_name);
+  });
+
+  // Update item checkboxes
+  items.forEach(item => {
+    const key = String(item.id);
+    const claimers = selMap[key] || [];
+    const myN = (myName || '').toLowerCase();
+    const iMine = claimers.some(c => c.toLowerCase() === myN);
+
+    const check = document.getElementById('check-' + item.id);
+    if (check) {
+      check.classList.toggle('claimed', iMine);
+      check.classList.toggle('others', !iMine && claimers.length > 0);
+      check.textContent = iMine ? '✓' : (claimers.length > 0 ? '·' : '');
     }
 
-    function closePay(){ document.getElementById('pmod').style.display='none'; }
+    const claimersEl = document.getElementById('claimers-' + item.id);
+    if (claimersEl) {
+      if (claimers.length === 0) {
+        claimersEl.textContent = 'Tap to claim';
+        claimersEl.style.color = '#6E6B80';
+      } else {
+        const names = claimers.join(', ');
+        claimersEl.innerHTML = '<span class="claimers-tag">' + names + '</span>' + (claimers.length > 1 ? ' <span style="color:#6E6B80;font-size:10px">splitting</span>' : '');
+      }
+    }
+  });
 
-    async function markPaid(pid, name, method) {
-      try{
-        const r=await fetch('/bill/'+BID+'/mark-paid',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({participantId:pid, name, payment_method: method||null})});
-        const d=await r.json();
-        if(d.success){
-          closePay();
-          document.getElementById('paybtn-'+pid)?.remove();
-          const s=document.getElementById('pstatus-'+pid);
-          if(s) s.textContent='✅ Paid' + (method && method !== 'Other' ? ' via '+method : '');
-          toast('✅ Marked as paid!');
+  // Render owes list
+  const owes = document.getElementById('owes-list');
+  if (owes && participants.length > 0) {
+    const nonPayers = participants.filter(p => p.name.toLowerCase() !== paidByLower);
+    owes.innerHTML = (participants.map(p => {
+      const isBillPayer = paidByLower && p.name.toLowerCase() === paidByLower;
+      const isMe = myName && p.name.toLowerCase() === (myName||'').toLowerCase();
+      const amt = parseFloat(p.amount || 0);
+      const myItems = [];
+      items.forEach(item => {
+        const claimers = selMap[String(item.id)] || [];
+        if (claimers.some(c => c.toLowerCase() === p.name.toLowerCase())) {
+          myItems.push({ name: item.name, price: parseFloat(item.price), splitWith: claimers.length });
         }
-      }catch(e){alert('Error. Try again.');}
-    }
+      });
+      const tax = parseFloat(bill.tax || 0);
+      const tip = parseFloat(bill.tip || 0);
+      const billSubtotal = items.reduce((s, i) => s + parseFloat(i.price || 0), 0);
+      const itemsTotal = myItems.reduce((s, i) => s + i.price / i.splitWith, 0);
+      const proportion = billSubtotal > 0 && itemsTotal > 0 ? itemsTotal / billSubtotal : 0;
+      const myTax = tax * proportion;
+      const myTip = tip * proportion;
 
-    function toggleGif() {
-      const panel = document.getElementById('gif-panel');
-      const isOpen = panel.style.display === 'block';
-      panel.style.display = isOpen ? 'none' : 'block';
-      if (!isOpen) {
-        document.getElementById('gif-search').focus();
-        searchGifs('reaction');
+      let breakdown = '';
+      if (myItems.length > 0) {
+        breakdown = '<div style="margin-top:8px;background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px">'
+          + myItems.map(i => {
+              const share = (i.price / i.splitWith).toFixed(2);
+              const sp = i.splitWith > 1 ? ' <span style="color:#9896A8;font-size:10px">(÷' + i.splitWith + ')</span>' : '';
+              return '<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6E6B80">' + i.name + sp + '</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$' + share + '</span></div>';
+            }).join('')
+          + (myTax > 0 ? '<div style="display:flex;justify-content:space-between;padding:2px 0;border-top:1px solid rgba(255,255,255,0.06);margin-top:4px"><span style="font-size:11px;color:#6E6B80">Tax</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$' + myTax.toFixed(2) + '</span></div>' : '')
+          + (myTip > 0 ? '<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="font-size:11px;color:#6E6B80">Tip</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$' + myTip.toFixed(2) + '</span></div>' : '')
+          + '<div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:4px;padding-top:5px;display:flex;justify-content:space-between"><span style="font-size:11px;font-weight:700">Total</span><span style="font-size:12px;font-weight:700;color:#30D158;font-family:monospace">$' + amt.toFixed(2) + '</span></div>'
+          + '</div>';
       }
-    }
 
-    function clearGif() {
-      selectedGif = null;
-      const wrap = document.getElementById('gif-preview-wrap');
-      if (wrap) { wrap.innerHTML = ''; wrap.style.display = 'none'; }
-      document.getElementById('gif-preview-text').textContent = '';
-      document.getElementById('gif-clear').style.display = 'none';
-      document.getElementById('gif-panel').style.display = 'none';
-    }
+      const rowBg = isMe ? 'background:rgba(48,209,88,0.04);border-left:3px solid #30D158;' : '';
+      let action = '';
+      if (isBillPayer) {
+        action = '<span style="font-size:20px">💳</span>';
+      } else if (p.paid) {
+        action = '<span style="font-size:18px">✅</span>';
+      } else if (!isMe && !isBillPayer && amt > 0) {
+        action = '<button onclick="showPay(this)" data-pid="' + p.id + '" data-name="' + p.name.replace(/"/g,'&quot;') + '" data-amount="' + amt.toFixed(2) + '" style="padding:9px 16px;background:#30D158;border:none;border-radius:10px;color:#000;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit;flex-shrink:0">💳 Pay</button>';
+      }
 
-    async function searchGifs(q) {
-      if (!q || q.length < 2) return;
-      clearTimeout(gifTimer);
-      const container = document.getElementById('gif-results');
-      container.innerHTML = '<div style="color:#6E6B80;font-size:12px;padding:8px;width:100%">Searching...</div>';
-      gifTimer = setTimeout(async () => {
-        try {
-          const res = await fetch('/gif-search?q='+encodeURIComponent(q));
-          const data = await res.json();
-          container.innerHTML = '';
-          if (!data.gifs || data.gifs.length === 0) {
-            container.innerHTML = '<div style="color:#6E6B80;font-size:12px;padding:8px;width:100%">No GIFs found</div>';
-            return;
-          }
-          data.gifs.forEach(g => {
-            if (!g.preview) return;
-            const img = document.createElement('img');
-            img.src = g.preview;
-            img.alt = g.title;
-            img.style.cssText = 'width:calc(33.3% - 3px);border-radius:6px;cursor:pointer;object-fit:cover;height:80px;flex-shrink:0';
-            img.addEventListener('click', () => {
-              selectedGif = g.full || g.preview;
-              const wrap = document.getElementById('gif-preview-wrap');
-              if (wrap) {
-                wrap.style.display = 'block';
-                wrap.innerHTML = '<div style="position:relative;display:inline-block;margin:8px 0 4px">'
-                  + '<img src="' + (g.full || g.preview) + '" style="max-width:100%;max-height:160px;border-radius:8px;display:block">'
-                  + '<button onclick="clearGif()" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.75);border:none;color:#fff;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center">×</button>'
-                  + '</div>';
-              }
-              document.getElementById('gif-preview-text').textContent = '🎭 GIF selected';
-              document.getElementById('gif-clear').style.display = 'inline';
-              document.getElementById('gif-panel').style.display = 'none';
-              toast('GIF selected ✓');
-            });
-            container.appendChild(img);
-          });
-        } catch(e) {
-          container.innerHTML = '<div style="color:#FF6B6B;font-size:12px;padding:8px;width:100%">Error loading GIFs</div>';
-        }
-      }, 400);
-    }
+      return '<div id="prow-' + p.id + '" style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05);' + rowBg + '">'
+        + '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">'
+        + '<div style="flex:1;min-width:0">'
+        + '<div style="font-size:15px;font-weight:' + (isMe?'800':'600') + ';color:' + (isMe?'#30D158':'#F0EEF8') + '">' + p.name + (isMe?' (you)':'') + '</div>'
+        + '<div style="font-size:12px;color:' + (isBillPayer?'#C084FC':p.paid?'#30D158':amt>0?'#FF9A3C':'#6E6B80') + ';margin-top:2px">'
+        + (isBillPayer ? '💳 Paid the bill' : p.paid ? '✅ Paid' : amt > 0 ? 'Owes $' + amt.toFixed(2) : myItems.length === 0 && items.length > 0 ? 'No items claimed yet' : 'Settled ✓')
+        + '</div>' + breakdown + '</div>' + action + '</div></div>';
+    }).join('')) || '<div style="padding:20px;text-align:center;color:#6E6B80;font-size:13px">No participants yet. Join to claim items!</div>';
+  } else if (owes) {
+    owes.innerHTML = '<div style="padding:20px;text-align:center;color:#6E6B80;font-size:13px">No participants yet.</div>';
+  }
 
-    async function loadC(){
-      try{
-        const r=await fetch('/bill/'+BID+'/comments');
-        const d=await r.json();
-        const comments=d.comments||[];
-        const list=document.getElementById('clist');
-        const none=document.getElementById('no-c');
-        if(comments.length===0){if(none)none.style.display='block';return;}
-        if(none)none.style.display='none';
-        list.innerHTML=comments.map(c=>{
-          const dt=new Date(c.created_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
-          const gifHtml=c.gif_url?'<img src="'+c.gif_url+'" style="max-width:100%;border-radius:8px;margin-top:8px;display:block">':'';
-          const bodyHtml=c.body?'<div style="font-size:14px;color:#9896A8;line-height:1.5">'+c.body+'</div>':'';
-          return '<div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:14px 16px">'
-            +'<div style="display:flex;justify-content:space-between;margin-bottom:6px">'
-            +'<span style="font-size:13px;font-weight:700">'+(c.name||'Anonymous')+'</span>'
-            +'<span style="font-size:11px;color:#6E6B80">'+dt+'</span></div>'
-            +bodyHtml+gifHtml+'</div>';
-        }).join('');
-      }catch(e){console.error('loadC error',e);}
-    }
+  // Update live label
+  const lbl = document.getElementById('live-lbl');
+  if (lbl) { const t = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); lbl.textContent = 'Updated ' + t; }
+}
 
-    async function postC(){
-      const name=document.getElementById('cname').value.trim();
-      const body=document.getElementById('cbody').value.trim();
-      if(!body && !selectedGif){toast('Write something or pick a GIF first');return;}
-      if(name) sessionStorage.setItem('bill_commenter_name', name);
-      const btn=document.getElementById('csub');
-      btn.textContent='Posting...';btn.disabled=true;
-      try{
-        const r=await fetch('/bill/'+BID+'/comments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name||'Anonymous',body:body||'',gif_url:selectedGif||null})});
-        const d=await r.json();
-        if(d.success){document.getElementById('cbody').value='';clearGif();toast('✅ Posted!');setTimeout(()=>loadC(),500);}
-        else toast('Error: '+(d.error||'try again'));
-      }catch(e){toast('Network error');}
-      finally{btn.textContent='💬 Post Comment';btn.disabled=false;}
-    }
+// ── QR CODE ──
+function showQR() {
+  const el = document.getElementById('qr-section');
+  if (el) { el.style.display = el.style.display === 'none' ? 'flex' : 'none'; if (el.style.display==='flex') el.scrollIntoView({behavior:'smooth'}); }
+}
 
-    function toast(msg){
-      let t=document.getElementById('_t');
-      if(!t){t=document.createElement('div');t.id='_t';t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1A1A24;border:1px solid rgba(48,209,88,0.3);color:#30D158;padding:10px 20px;border-radius:20px;font-size:13px;font-weight:600;z-index:9999;white-space:nowrap;pointer-events:none;transition:opacity 0.3s';document.body.appendChild(t);}
-      t.textContent=msg;t.style.opacity='1';
-      clearTimeout(t._t);t._t=setTimeout(()=>t.style.opacity='0',3000);
-    }
+// ── PAY MODAL ──
+function showPay(btn) {
+  const pid = btn.dataset.pid, name = btn.dataset.name, amount = btn.dataset.amount;
+  let p = {};
+  try { p = JSON.parse(atob(document.getElementById('pd').value||'')); } catch(e) {}
+  const paidByName = document.getElementById('paid-by-name')?.value || '';
+  const payeeName = paidByName || p.first_name || 'Bill Creator';
+  document.getElementById('pname').textContent = payeeName;
+  document.getElementById('pamt').textContent = '$' + parseFloat(amount).toFixed(2);
+  const amt = parseFloat(amount).toFixed(2);
+  const mc = document.getElementById('pmethods');
+  mc.innerHTML = '';
+  let n = 0;
+  function row(bg, icon, title, sub, href, copy, method) {
+    const el = document.createElement(href?'a':'button');
+    el.className = 'pm-row';
+    if (href) { el.href = href; el.target = '_blank'; }
+    if (copy) { el.addEventListener('click', e => { e.preventDefault(); navigator.clipboard.writeText(copy).catch(()=>{}); toast('Copied: '+copy); }); }
+    el.addEventListener('click', () => setTimeout(() => markPaid(pid, name, method), 300));
+    el.innerHTML = '<div class="pm-icon" style="background:'+bg+'">'+icon+'</div><div class="pm-info"><b>'+title+'</b><span>'+sub+'</span></div><span style="color:#6E6B80;font-size:16px">→</span>';
+    mc.appendChild(el); n++;
+  }
+  if (p.venmo) row('#008CFF','V','Venmo','@'+p.venmo.replace('@','')+' · $'+amt,'venmo://paycharge?txn=pay&recipients='+p.venmo.replace('@','')+'&amount='+amt+'&note=Bill',null,'Venmo');
+  if (p.cashapp) { const t=p.cashapp.replace('$',''); row('#00D632','$','Cash App','$'+t+' · $'+amt,'https://cash.app/$'+t+'/'+amt,null,'Cash App'); }
+  if (p.zelle) row('#6D1ED4','Z','Zelle',p.zelle+' · tap to copy',null,p.zelle,'Zelle');
+  if (n === 0) mc.innerHTML = '<p style="color:#6E6B80;text-align:center;padding:16px 0;font-size:13px">No payment methods set up yet.</p>';
+  document.getElementById('pmark').onclick = () => markPaid(pid, name, 'Other');
+  document.getElementById('pmod').style.display = 'block';
+}
 
-    loadC();
-  </script>
+function closePay() { document.getElementById('pmod').style.display = 'none'; }
+
+async function markPaid(pid, name, method) {
+  try {
+    const r = await fetch('/bill/' + BID + '/mark-paid', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ participantId: pid, name, payment_method: method||null })
+    });
+    const d = await r.json();
+    if (d.success) { closePay(); toast('✅ Marked as paid!'); refreshAll(); }
+  } catch(e) { toast('Error. Try again.'); }
+}
+
+// ── COMMENTS ──
+async function loadC() {
+  try {
+    const r = await fetch('/bill/' + BID + '/comments');
+    const d = await r.json();
+    const comments = d.comments || [];
+    const list = document.getElementById('clist');
+    const none = document.getElementById('no-c');
+    if (comments.length === 0) { if (none) none.style.display = 'block'; return; }
+    if (none) none.style.display = 'none';
+    list.innerHTML = comments.map(c => {
+      const dt = new Date(c.created_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+      return '<div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:14px 16px">'
+        + '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px;font-weight:700">'+(c.name||'Anonymous')+'</span><span style="font-size:11px;color:#6E6B80">'+dt+'</span></div>'
+        + (c.body ? '<div style="font-size:14px;color:#9896A8;line-height:1.5">'+c.body+'</div>' : '')
+        + (c.gif_url ? '<img src="'+c.gif_url+'" style="max-width:100%;border-radius:8px;margin-top:8px;display:block">' : '')
+        + '</div>';
+    }).join('');
+  } catch(e) {}
+}
+
+async function postC() {
+  const name = document.getElementById('cname').value.trim() || myName;
+  const body = document.getElementById('cbody').value.trim();
+  if (!body) { toast('Write something first'); return; }
+  const btn = document.querySelector('[onclick="postC()"]');
+  if (btn) { btn.textContent = 'Posting...'; btn.disabled = true; }
+  try {
+    const r = await fetch('/bill/' + BID + '/comments', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ name: name || 'Anonymous', body, gif_url: null })
+    });
+    const d = await r.json();
+    if (d.success) { document.getElementById('cbody').value = ''; toast('✅ Posted!'); loadC(); }
+    else toast('Error: ' + (d.error || 'try again'));
+  } catch(e) { toast('Network error'); }
+  finally { if (btn) { btn.textContent = '💬 Post Comment'; btn.disabled = false; } }
+}
+
+// ── TOAST ──
+function toast(msg, ok) {
+  const t = document.getElementById('_t');
+  if (!t) return;
+  t.textContent = msg;
+  t.style.borderColor = ok === false ? 'rgba(255,68,68,0.3)' : 'rgba(48,209,88,0.3)';
+  t.style.color = ok === false ? '#FF6B6B' : '#30D158';
+  t.style.opacity = '1';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => { t.style.opacity = '0'; }, 2800);
+}
+
+// ── INIT ──
+initName();
+refreshAll();
+loadC();
+
+// Auto-poll every 5 seconds
+pollTimer = setInterval(refreshAll, 5000);
+
+// Stop polling when tab hidden, resume when visible
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { clearInterval(pollTimer); }
+  else { refreshAll(); pollTimer = setInterval(refreshAll, 5000); }
+});
+
+// Enter key on name input
+document.getElementById('name-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') submitName();
+});
+</script>
 </body>
 </html>`;
+
 
   res.send(html);
 });
