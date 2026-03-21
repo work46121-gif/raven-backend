@@ -1941,10 +1941,11 @@ ${coverHTML}
     ${owesRows}
     <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:rgba(48,209,88,0.04);border-top:1px solid rgba(48,209,88,0.12)">
       <div>
-        <div style="font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#9896A8">Grand Total</div>
-        ${grandTotal===0&&totalSpend>0?'<div style="font-size:10px;color:#30D158;margin-top:2px">✅ Everyone settled up</div>':grandTotal>0?'<div style="font-size:10px;color:#FF9A3C;margin-top:2px">$'+grandTotal.toFixed(2)+' outstanding</div>':''}
+        <div style="font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#9896A8">Outstanding</div>
+        <div style="font-size:10px;color:#6E6B80;margin-top:2px">$${totalSpend.toFixed(2)} total spend</div>
+        ${grandTotal===0&&totalSpend>0?'<div style="font-size:10px;color:#30D158;margin-top:2px">✅ Everyone settled up</div>':''}
       </div>
-      <span style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:#30D158">$${totalSpend.toFixed(2)}</span>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${grandTotal>0?'#FF9A3C':'#30D158'}">$${grandTotal.toFixed(2)}</span>
     </div>
   </div>
 </div>
@@ -4459,11 +4460,20 @@ app.post('/bill/:billId/mark-paid', async (req, res) => {
       paid_at: new Date().toISOString(),
       ...(payment_method ? { payment_method } : {})
     }).eq('id', participantId);
+    // Check if all non-payer participants are now paid — update bill status
+    const { data: allParts } = await supabase.from('participants').select('paid,name').eq('bill_id', billId);
+    const paidByLower = (bill.paid_by || '').toLowerCase();
+    const nonPayers = (allParts || []).filter(p => p.name.toLowerCase() !== paidByLower);
+    const allPaid = nonPayers.length > 0 && nonPayers.every(p => p.paid);
+    if (allPaid) {
+      await supabase.from('bills').update({ status: 'completed' }).eq('id', billId);
+    }
     if (bill.creator_phone && !bill.creator_phone.includes('@')) {
       const methodStr = payment_method ? ` via ${payment_method}` : '';
-      await sendSMS(bill.creator_phone, `🪶 RAVEN — ${name} marked as paid${methodStr} for ${bill.name}!`);
+      const allPaidNote = allPaid ? ' — Bill fully settled! 🎉' : '';
+      await sendSMS(bill.creator_phone, `🪶 RAVEN — ${name} marked as paid${methodStr} for ${bill.name}!${allPaidNote}`);
     }
-    res.json({ success: true });
+    res.json({ success: true, allPaid });
   } catch(err) { res.json({ success: false, error: err.message }); }
 });
 
