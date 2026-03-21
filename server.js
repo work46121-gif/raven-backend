@@ -771,7 +771,7 @@ app.get('/bill/:billId', async (req, res) => {
   <meta property="og:url" content="${baseUrl}/bill/${billId}" />
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;padding-bottom:120px}
+    body{font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;padding-bottom:160px}
     .hdr{position:sticky;top:0;background:rgba(6,6,10,0.95);backdrop-filter:blur(20px);border-bottom:1px solid rgba(255,255,255,0.07);padding:0 16px;z-index:100}
     .hdr-i{max-width:800px;margin:0 auto;height:56px;display:flex;align-items:center;justify-content:space-between;gap:10px}
     .card{background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:16px;overflow:hidden}
@@ -831,6 +831,17 @@ app.get('/bill/:billId', async (req, res) => {
 
 <div id="_t" class="toast-el"></div>
 
+<!-- Sticky Pay Bar (shown when YOU owe money) -->
+<div id="pay-bar" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:400;padding:12px 16px;background:rgba(6,6,10,0.97);backdrop-filter:blur(20px);border-top:1px solid rgba(48,209,88,0.2)">
+  <div style="max-width:800px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px">
+    <div>
+      <div style="font-size:12px;color:#6E6B80">You owe <strong style="color:#FF9A3C" id="bar-to">...</strong></div>
+      <div style="font-size:22px;font-weight:900;color:#30D158;font-family:monospace" id="bar-amt">$0.00</div>
+    </div>
+    <button onclick="showMyPayModal(parseFloat(document.getElementById('bar-amt').textContent.replace('$','')))" style="padding:14px 28px;background:#30D158;border:none;border-radius:14px;color:#000;font-weight:900;font-size:15px;cursor:pointer;font-family:inherit;flex-shrink:0">💳 Pay Now</button>
+  </div>
+</div>
+
 <!-- Header -->
 <div class="hdr"><div class="hdr-i">
   <div style="display:flex;align-items:center;gap:10px">
@@ -860,14 +871,17 @@ app.get('/bill/:billId', async (req, res) => {
   ${paidByLower ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:10px;margin-bottom:4px"><span style="font-size:16px">💳</span><div><div style="font-size:13px;font-weight:700;color:#C084FC">${bill.paid_by} paid the bill</div><div style="font-size:11px;color:#6E6B80">Everyone else needs to pay them back</div></div></div>` : ''}
 </div>
 
-<!-- Live indicator + your name -->
+<!-- Live Mode Banner -->
 <div class="sec" style="margin-top:12px">
-  <div style="display:flex;align-items:center;justify-content:space-between">
-    <div style="display:flex;align-items:center;gap:6px">
-      <div id="live-dot" style="width:7px;height:7px;border-radius:50%;background:#30D158;animation:pulse 2s infinite"></div>
-      <span style="font-size:12px;color:#6E6B80" id="live-lbl">Live · updates every 5s</span>
+  <div style="background:linear-gradient(135deg,rgba(48,209,88,0.06),rgba(0,140,255,0.06));border:1px solid rgba(48,209,88,0.2);border-radius:14px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+    <div style="display:flex;align-items:center;gap:10px">
+      <div style="width:8px;height:8px;border-radius:50%;background:#30D158;animation:pulse 2s infinite;flex-shrink:0"></div>
+      <div>
+        <div style="font-size:13px;font-weight:700;color:#30D158">Live Mode</div>
+        <div style="font-size:11px;color:#6E6B80" id="live-lbl">Tap items to claim · auto-updates every 5s</div>
+      </div>
     </div>
-    <div id="you-badge" style="display:none;padding:4px 12px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.25);border-radius:20px;font-size:12px;font-weight:700;color:#30D158"></div>
+    <div id="you-badge" style="display:none;padding:5px 12px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.3);border-radius:20px;font-size:12px;font-weight:700;color:#30D158"></div>
   </div>
 </div>
 
@@ -896,7 +910,7 @@ ${items.length > 0 ? `
 ` : ''}
 
 <!-- Who owes what -->
-<div class="sec" style="margin-top:16px">
+<div class="sec" style="margin-top:16px" id="owes-section">
   <div class="sec-lbl">💰 Who owes what</div>
   <div class="card" id="owes-list">
     <div style="padding:20px;text-align:center;color:#6E6B80;font-size:13px" id="owes-loading">Loading...</div>
@@ -1044,101 +1058,179 @@ function renderState(d) {
   const { items, selections, participants, bill } = d;
   const paidByLower = (bill.paid_by || '').toLowerCase();
 
-  // Build selection map: itemId -> [names]
+  // Build selection map: itemId -> [names] (preserving case)
   const selMap = {};
   items.forEach(i => { selMap[String(i.id)] = []; });
   selections.forEach(s => {
-    if (selMap[String(s.item_id)]) selMap[String(s.item_id)].push(s.participant_name);
+    if (selMap[String(s.item_id)] !== undefined) selMap[String(s.item_id)].push(s.participant_name);
   });
 
-  // Update item checkboxes
+  // ── UPDATE ITEM CHECKBOXES ──
   items.forEach(item => {
     const key = String(item.id);
     const claimers = selMap[key] || [];
     const myN = (myName || '').toLowerCase();
     const iMine = claimers.some(c => c.toLowerCase() === myN);
+    const othersCount = claimers.filter(c => c.toLowerCase() !== myN).length;
 
     const check = document.getElementById('check-' + item.id);
     if (check) {
-      check.classList.toggle('claimed', iMine);
-      check.classList.toggle('others', !iMine && claimers.length > 0);
-      check.textContent = iMine ? '✓' : (claimers.length > 0 ? '·' : '');
+      check.className = 'item-check' + (iMine ? ' claimed' : claimers.length > 0 ? ' others' : '');
+      if (iMine) {
+        check.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 7L5.5 10.5L12 3.5" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      } else if (claimers.length > 0) {
+        // Show mini avatars for other claimers
+        check.innerHTML = '<span style="font-size:11px;font-weight:700;color:#30D158">' + claimers.length + '</span>';
+      } else {
+        check.innerHTML = '';
+      }
     }
 
     const claimersEl = document.getElementById('claimers-' + item.id);
     if (claimersEl) {
       if (claimers.length === 0) {
-        claimersEl.textContent = 'Tap to claim';
-        claimersEl.style.color = '#6E6B80';
+        claimersEl.innerHTML = '<span style="color:#6E6B80;font-size:11px">Tap to claim</span>';
       } else {
-        const names = claimers.join(', ');
-        claimersEl.innerHTML = '<span class="claimers-tag">' + names + '</span>' + (claimers.length > 1 ? ' <span style="color:#6E6B80;font-size:10px">splitting</span>' : '');
+        const isSplit = claimers.length > 1;
+        const nameHtml = claimers.map(c => {
+          const isYou = c.toLowerCase() === myN;
+          return '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;background:' + (isYou?'rgba(48,209,88,0.18)':'rgba(255,255,255,0.08)') + ';border:1px solid ' + (isYou?'rgba(48,209,88,0.4)':'rgba(255,255,255,0.12)') + ';border-radius:20px;font-size:10px;font-weight:700;color:' + (isYou?'#30D158':'#9896A8') + '">' + (isYou?'✓ ':'') + c + '</span>';
+        }).join('');
+        claimersEl.innerHTML = nameHtml + (isSplit ? ' <span style="font-size:10px;color:#FF9A3C;font-weight:600;margin-left:2px">÷' + claimers.length + ' split</span>' : '');
       }
     }
   });
 
-  // Render owes list
+  // ── RENDER WHO OWES WHAT ──
   const owes = document.getElementById('owes-list');
-  if (owes && participants.length > 0) {
-    const nonPayers = participants.filter(p => p.name.toLowerCase() !== paidByLower);
-    owes.innerHTML = (participants.map(p => {
-      const isBillPayer = paidByLower && p.name.toLowerCase() === paidByLower;
-      const isMe = myName && p.name.toLowerCase() === (myName||'').toLowerCase();
-      const amt = parseFloat(p.amount || 0);
-      const myItems = [];
-      items.forEach(item => {
-        const claimers = selMap[String(item.id)] || [];
-        if (claimers.some(c => c.toLowerCase() === p.name.toLowerCase())) {
-          myItems.push({ name: item.name, price: parseFloat(item.price), splitWith: claimers.length });
-        }
-      });
+  if (owes) {
+    if (participants.length === 0) {
+      owes.innerHTML = '<div style="padding:24px;text-align:center;color:#6E6B80;font-size:13px">No participants yet — scan the QR to join!</div>';
+    } else {
       const tax = parseFloat(bill.tax || 0);
       const tip = parseFloat(bill.tip || 0);
       const billSubtotal = items.reduce((s, i) => s + parseFloat(i.price || 0), 0);
-      const itemsTotal = myItems.reduce((s, i) => s + i.price / i.splitWith, 0);
-      const proportion = billSubtotal > 0 && itemsTotal > 0 ? itemsTotal / billSubtotal : 0;
-      const myTax = tax * proportion;
-      const myTip = tip * proportion;
 
-      let breakdown = '';
-      if (myItems.length > 0) {
-        breakdown = '<div style="margin-top:8px;background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px">'
-          + myItems.map(i => {
-              const share = (i.price / i.splitWith).toFixed(2);
-              const sp = i.splitWith > 1 ? ' <span style="color:#9896A8;font-size:10px">(÷' + i.splitWith + ')</span>' : '';
-              return '<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6E6B80">' + i.name + sp + '</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$' + share + '</span></div>';
-            }).join('')
-          + (myTax > 0 ? '<div style="display:flex;justify-content:space-between;padding:2px 0;border-top:1px solid rgba(255,255,255,0.06);margin-top:4px"><span style="font-size:11px;color:#6E6B80">Tax</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$' + myTax.toFixed(2) + '</span></div>' : '')
-          + (myTip > 0 ? '<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="font-size:11px;color:#6E6B80">Tip</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$' + myTip.toFixed(2) + '</span></div>' : '')
-          + '<div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:4px;padding-top:5px;display:flex;justify-content:space-between"><span style="font-size:11px;font-weight:700">Total</span><span style="font-size:12px;font-weight:700;color:#30D158;font-family:monospace">$' + amt.toFixed(2) + '</span></div>'
-          + '</div>';
-      }
+      owes.innerHTML = participants.map(p => {
+        const isBillPayer = paidByLower && p.name.toLowerCase() === paidByLower;
+        const isMe = myName && p.name.toLowerCase() === (myName||'').toLowerCase();
+        const amt = parseFloat(p.amount || 0);
 
-      const rowBg = isMe ? 'background:rgba(48,209,88,0.04);border-left:3px solid #30D158;' : '';
-      let action = '';
-      if (isBillPayer) {
-        action = '<span style="font-size:20px">💳</span>';
-      } else if (p.paid) {
-        action = '<span style="font-size:18px">✅</span>';
-      } else if (!isMe && !isBillPayer && amt > 0) {
-        action = '<button onclick="showPay(this)" data-pid="' + p.id + '" data-name="' + p.name.replace(/"/g,'&quot;') + '" data-amount="' + amt.toFixed(2) + '" style="padding:9px 16px;background:#30D158;border:none;border-radius:10px;color:#000;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit;flex-shrink:0">💳 Pay</button>';
-      }
+        const myItems = [];
+        items.forEach(item => {
+          const claimers = selMap[String(item.id)] || [];
+          if (claimers.some(c => c.toLowerCase() === p.name.toLowerCase())) {
+            myItems.push({ name: item.name, price: parseFloat(item.price||0), splitWith: claimers.length });
+          }
+        });
 
-      return '<div id="prow-' + p.id + '" style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05);' + rowBg + '">'
-        + '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">'
-        + '<div style="flex:1;min-width:0">'
-        + '<div style="font-size:15px;font-weight:' + (isMe?'800':'600') + ';color:' + (isMe?'#30D158':'#F0EEF8') + '">' + p.name + (isMe?' (you)':'') + '</div>'
-        + '<div style="font-size:12px;color:' + (isBillPayer?'#C084FC':p.paid?'#30D158':amt>0?'#FF9A3C':'#6E6B80') + ';margin-top:2px">'
-        + (isBillPayer ? '💳 Paid the bill' : p.paid ? '✅ Paid' : amt > 0 ? 'Owes $' + amt.toFixed(2) : myItems.length === 0 && items.length > 0 ? 'No items claimed yet' : 'Settled ✓')
-        + '</div>' + breakdown + '</div>' + action + '</div></div>';
-    }).join('')) || '<div style="padding:20px;text-align:center;color:#6E6B80;font-size:13px">No participants yet. Join to claim items!</div>';
-  } else if (owes) {
-    owes.innerHTML = '<div style="padding:20px;text-align:center;color:#6E6B80;font-size:13px">No participants yet.</div>';
+        const itemsTotal = myItems.reduce((s, i) => s + i.price / i.splitWith, 0);
+        const proportion = billSubtotal > 0 && itemsTotal > 0 ? itemsTotal / billSubtotal : 0;
+        const myTax = tax * proportion;
+        const myTip = tip * proportion;
+
+        let breakdown = '';
+        if (!isBillPayer && myItems.length > 0) {
+          breakdown = '<div style="margin-top:10px;background:rgba(255,255,255,0.03);border-radius:10px;padding:10px 12px">'
+            + myItems.map(i => {
+                const share = (i.price / i.splitWith).toFixed(2);
+                const sp = i.splitWith > 1 ? ' <span style="color:#FF9A3C;font-size:10px;font-weight:600">÷' + i.splitWith + '</span>' : '';
+                return '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0"><span style="font-size:12px;color:#9896A8">' + i.name + sp + '</span><span style="font-size:12px;color:#9896A8;font-family:monospace">$' + share + '</span></div>';
+              }).join('')
+            + (myTax > 0 ? '<div style="display:flex;justify-content:space-between;padding:3px 0;border-top:1px solid rgba(255,255,255,0.06);margin-top:4px"><span style="font-size:11px;color:#6E6B80">Tax</span><span style="font-size:11px;color:#6E6B80;font-family:monospace">$' + myTax.toFixed(2) + '</span></div>' : '')
+            + (myTip > 0 ? '<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6E6B80">Tip</span><span style="font-size:11px;color:#6E6B80;font-family:monospace">$' + myTip.toFixed(2) + '</span></div>' : '')
+            + '<div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:6px;padding-top:6px;display:flex;justify-content:space-between"><span style="font-size:12px;font-weight:700;color:#F0EEF8">Total</span><span style="font-size:13px;font-weight:800;color:#30D158;font-family:monospace">$' + amt.toFixed(2) + '</span></div>'
+            + '</div>';
+        }
+
+        const rowBorder = isMe ? 'border-left:3px solid #30D158;background:rgba(48,209,88,0.03);' : '';
+        let statusColor = isBillPayer ? '#C084FC' : p.paid ? '#30D158' : amt > 0 ? '#FF9A3C' : '#6E6B80';
+        let statusText = isBillPayer ? '💳 Paid the bill' : p.paid ? '✅ Paid' : amt > 0 ? 'Owes $' + amt.toFixed(2) : myItems.length === 0 && items.length > 0 ? '⏳ Claiming items...' : '✓ Settled';
+        let action = '';
+        if (isBillPayer) action = '<div style="font-size:24px">💳</div>';
+        else if (p.paid) action = '<div style="font-size:22px">✅</div>';
+        else if (isMe && amt > 0) action = '<button onclick="showMyPayModal(' + amt.toFixed(2) + ')" style="padding:10px 16px;background:#30D158;border:none;border-radius:10px;color:#000;font-weight:800;font-size:13px;cursor:pointer;font-family:inherit;flex-shrink:0;white-space:nowrap">Pay Now</button>';
+
+        return '<div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05);' + rowBorder + '">'
+          + '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">'
+          + '<div style="flex:1;min-width:0">'
+          + '<div style="font-size:15px;font-weight:' + (isMe?'800':'600') + ';color:' + (isMe?'#30D158':'#F0EEF8') + '">' + p.name + (isMe ? ' <span style="font-size:11px;font-weight:500;color:#30D158;opacity:0.7">(you)</span>' : '') + '</div>'
+          + '<div style="font-size:12px;color:' + statusColor + ';margin-top:2px">' + statusText + '</div>'
+          + breakdown + '</div>' + action + '</div></div>';
+      }).join('');
+    }
   }
 
-  // Update live label
+  // ── UPDATE STICKY PAY BAR ──
+  const bar = document.getElementById('pay-bar');
+  if (bar) {
+    const me = participants.find(p => myName && p.name.toLowerCase() === myName.toLowerCase());
+    const paidByPart = participants.find(p => p.name.toLowerCase() === paidByLower);
+    const amIBillPayer = myName && myName.toLowerCase() === paidByLower;
+    if (me && !amIBillPayer && !me.paid && parseFloat(me.amount||0) > 0) {
+      bar.style.display = 'block';
+      const amtEl = document.getElementById('bar-amt');
+      const toEl = document.getElementById('bar-to');
+      if (amtEl) amtEl.textContent = '$' + parseFloat(me.amount).toFixed(2);
+      if (toEl) toEl.textContent = bill.paid_by || 'the bill payer';
+    } else {
+      bar.style.display = 'none';
+    }
+  }
+
+  // ── LIVE LABEL ──
   const lbl = document.getElementById('live-lbl');
-  if (lbl) { const t = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); lbl.textContent = 'Updated ' + t; }
+  if (lbl) { const t = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); lbl.textContent = 'Live · ' + t; }
+}
+
+// ── MY PAY MODAL ──
+function showMyPayModal(amt) {
+  let p = {};
+  try { p = JSON.parse(atob(document.getElementById('pd').value||'')); } catch(e) {}
+  const paidByName = document.getElementById('paid-by-name')?.value || '';
+  const payeeName = paidByName || p.first_name || 'Bill Creator';
+  document.getElementById('pname').textContent = payeeName;
+  document.getElementById('pamt').textContent = '$' + parseFloat(amt).toFixed(2);
+  const amtStr = parseFloat(amt).toFixed(2);
+  const mc = document.getElementById('pmethods');
+  mc.innerHTML = '';
+  let n = 0;
+  function row(bg, icon, title, sub, href, copy, method) {
+    const el = document.createElement(href?'a':'button');
+    el.className = 'pm-row';
+    if (href) { el.href = href; el.target = '_blank'; el.rel = 'noopener'; }
+    if (copy) { el.addEventListener('click', e => { e.preventDefault(); navigator.clipboard.writeText(copy).catch(()=>{}); toast('Copied: '+copy); }); }
+    // Find my participant ID
+    el.addEventListener('click', () => {
+      setTimeout(() => {
+        // Find me in the owes list and mark paid
+        fetch('/bill/' + BID + '/state').then(r=>r.json()).then(d => {
+          const me = (d.participants||[]).find(p => myName && p.name.toLowerCase() === myName.toLowerCase());
+          if (me) markPaid(me.id, me.name, method);
+        });
+      }, 400);
+    });
+    el.innerHTML = '<div class="pm-icon" style="background:'+bg+'">'+icon+'</div><div class="pm-info"><b>'+title+'</b><span>'+sub+'</span></div><span style="color:#6E6B80;font-size:16px">→</span>';
+    mc.appendChild(el); n++;
+  }
+  if (p.venmo) row('#008CFF','V','Venmo','@'+p.venmo.replace('@','')+' · $'+amtStr,'venmo://paycharge?txn=pay&recipients='+p.venmo.replace('@','')+'&amount='+amtStr+'&note=Bill+Split',null,'Venmo');
+  if (p.cashapp) { const t=p.cashapp.replace('$',''); row('#00D632','$','Cash App','$'+t+' · $'+amtStr,'https://cash.app/$'+t+'/'+amtStr,null,'Cash App'); }
+  if (p.zelle) row('#6D1ED4','Z','Zelle',p.zelle+' · tap to copy',null,p.zelle,'Zelle');
+  if (p.applepay && p.applepay.trim()) {
+    const ap = p.applepay.trim(), dig = ap.replace(/\D/g,'');
+    if (dig.length >= 7) {
+      const e164 = dig.length===10?'1'+dig:dig;
+      row('#222','Pay','Apple Pay','Opens iMessage to '+ap,'sms:+'+e164+'&body='+encodeURIComponent('Sending $'+amtStr+' via Apple Pay'),null,'Apple Pay');
+    } else { row('#222','Pay','Apple Pay',ap+' · tap to copy',null,ap,'Apple Pay'); }
+  }
+  if (n === 0) mc.innerHTML = '<p style="color:#6E6B80;text-align:center;padding:20px 0;font-size:14px">💳 Ask ' + payeeName + ' how they want to be paid</p>';
+  document.getElementById('pmark').onclick = () => {
+    fetch('/bill/' + BID + '/state').then(r=>r.json()).then(d => {
+      const me = (d.participants||[]).find(p => myName && p.name.toLowerCase() === myName.toLowerCase());
+      if (me) markPaid(me.id, me.name, 'Other');
+    });
+  };
+  document.getElementById('pmod').style.display = 'block';
 }
 
 // ── QR CODE ──
