@@ -1342,24 +1342,26 @@ app.get('/trip/:tripId', async (req, res) => {
         </div>
       </div>`;
 
+    const thumbHtml = r.photo_url
+      ? '<img src="' + esc(r.photo_url) + '" style="width:44px;height:44px;border-radius:10px;object-fit:cover;flex-shrink:0;border:1px solid rgba(255,255,255,0.1)">'
+      : '<div style="width:44px;height:44px;border-radius:10px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.2);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">🧾</div>';
+
     return `
     <div style="border-bottom:1px solid rgba(255,255,255,0.05)" id="${receiptId}-wrap">
-      <div onclick="toggleReceipt('${receiptId}')" style="display:flex;align-items:center;justify-content:space-between;padding:16px;cursor:pointer;gap:12px;transition:background 0.15s" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
-        <div style="flex:1;min-width:0">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:5px">
-            <div style="width:36px;height:36px;border-radius:10px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.2);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">🧾</div>
-            <div>
-              <div style="font-weight:700;font-size:15px;color:#F0EEF8">${esc(r.name||'Receipt')}</div>
-              <div style="font-size:11px;color:#6E6B80;margin-top:1px">${dateStr}${payer ? ` · 💳 ${esc(payer)} paid` : ''} · ${allEntries.length} ${allEntries.length===1?'person':'people'}</div>
-            </div>
+      <div onclick="toggleReceipt('${receiptId}')" style="display:flex;align-items:flex-start;justify-content:space-between;padding:14px 16px;cursor:pointer;gap:12px;transition:background 0.15s" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
+        <div style="display:flex;align-items:flex-start;gap:10px;flex:1;min-width:0">
+          ${thumbHtml}
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:15px;color:#F0EEF8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.name||'Receipt')}</div>
+            <div style="font-size:11px;color:#6E6B80;margin-top:2px">${dateStr}${payer ? ' · 💳 ' + esc(payer) + ' paid' : ''} · ${allEntries.length} ${allEntries.length===1?'person':'people'}</div>
+            ${splitEntries.length > 0 ? '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">' + splitPillsHtml + '</div>' : ''}
           </div>
-          ${splitEntries.length > 0 ? `<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;padding-left:46px">${splitPillsHtml}</div>` : ''}
         </div>
-        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
-          <div style="font-family:'Bebas Neue',sans-serif;font-size:26px;color:#30D158;letter-spacing:0.03em;line-height:1">$${total.toFixed(2)}</div>
-          <button onclick="event.stopPropagation();openEditReceipt('${esc(r.id)}')" style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.06);border:none;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0" title="Edit receipt">✏️</button>
-          <button class="admin-delete-receipt-btn" data-receipt-id="${r.id}" data-receipt-name="${esc(r.name||'Receipt')}" onclick="event.stopPropagation();adminDeleteReceipt(this)" style="display:none;width:28px;height:28px;border-radius:50%;background:rgba(255,68,68,0.1);border:1px solid rgba(255,68,68,0.25);cursor:pointer;font-size:13px;align-items:center;justify-content:center;flex-shrink:0;color:#FF6B6B" title="Delete receipt">🗑</button>
-          <div id="${receiptId}-chevron" style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center;font-size:12px;color:#6E6B80;transition:transform 0.2s;flex-shrink:0">▾</div>
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;padding-top:2px">
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:#30D158;letter-spacing:0.03em;line-height:1">$${total.toFixed(2)}</div>
+          <button onclick="event.stopPropagation();openEditReceipt('${esc(r.id)}')" style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.06);border:none;color:#9896A8;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px" title="Edit">✎</button>
+          <button class="admin-delete-receipt-btn" data-receipt-id="${r.id}" data-receipt-name="${esc(r.name||'Receipt')}" onclick="event.stopPropagation();adminDeleteReceipt(this)" style="width:26px;height:26px;border-radius:50%;background:rgba(255,68,68,0.08);border:none;color:#FF6B6B;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px" title="Delete">🗑</button>
+          <div id="${receiptId}-chevron" style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center;font-size:11px;color:#6E6B80;transition:transform 0.2s">▾</div>
         </div>
       </div>
       <div id="${receiptId}" style="display:none;padding:0 16px 20px;margin-top:-4px">
