@@ -1175,6 +1175,7 @@ app.get('/trip/:tripId', async (req, res) => {
   const settledCredits = (() => {
     try {
       const raw = trip.settled_people;
+      console.log('[settled_people raw]', JSON.stringify(raw));
       if (!raw) return {};
       const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
       // Old format: array of names ["daddy","Arsalan"] — store as 999999 credit (fully settled)
@@ -3659,7 +3660,8 @@ app.post('/trip/:tripId/mark-settled', async (req, res) => {
     const settleAmount = parseFloat(amount) || 0;
     // Add to existing credit (don't overwrite — accumulate)
     credits[nameLower] = (credits[nameLower] || 0) + settleAmount;
-    const { error: dbErr } = await supabase.from('trips').update({ settled_people: JSON.stringify(credits) }).eq('id', tripId);
+    console.log('[mark-settled] writing credits:', JSON.stringify(credits), 'tripId:', tripId, 'name:', name, 'amount:', settleAmount);
+    const { error: dbErr } = await supabase.from('trips').update({ settled_people: credits }).eq('id', tripId);
     if (dbErr) { console.error('mark-settled DB error:', dbErr); return res.json({ success: false, error: dbErr.message }); }
     // Verify write persisted
     const { data: verify, error: verifyErr } = await supabase.from('trips').select('settled_people').eq('id', tripId).single();
@@ -3667,6 +3669,7 @@ app.post('/trip/:tripId/mark-settled', async (req, res) => {
     if (verify && !('settled_people' in verify)) {
       return res.json({ success: false, error: 'Column missing — run in Supabase SQL Editor: ALTER TABLE trips ADD COLUMN IF NOT EXISTS settled_people JSONB DEFAULT \'[]\';' });
     }
+    console.log('[mark-settled] verified in DB:', JSON.stringify(verify?.settled_people));
     res.json({ success: true });
   } catch(err) { res.json({ success: false, error: err.message }); }
 });
