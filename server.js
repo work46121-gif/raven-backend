@@ -933,6 +933,44 @@ app.get('/bill/:billId', async (req, res) => {
 
 // ─── TRIP HUB ─────────────────────────────────────────────────────────────────
 
+
+// Helper: compute outstanding balance for a trip (respecting settled credits)
+async function computeOutstanding(tripId) {
+  try {
+    const { data: receipts } = await supabase.from('trip_receipts').select('splits,paid_by,total').eq('trip_id', tripId);
+    const { data: trip } = await supabase.from('trips').select('settled_people,people').eq('id', tripId).single();
+    if (!receipts || !trip) return null;
+    let settledCreds = {};
+    try {
+      let sp = trip.settled_people;
+      if (typeof sp === 'string') { try { sp = JSON.parse(sp); } catch(e){} }
+      if (typeof sp === 'string') { try { sp = JSON.parse(sp); } catch(e){} }
+      if (sp && !Array.isArray(sp) && typeof sp === 'object') {
+        Object.entries(sp).forEach(([k,v]) => { if (parseFloat(v)>0) settledCreds[k.toLowerCase()] = parseFloat(v); });
+      }
+    } catch(e) {}
+    const people = (() => { try { return Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people||'[]'); } catch(e){ return []; } })();
+    const rawTotals = {};
+    people.forEach(p => { rawTotals[p.toLowerCase()] = 0; });
+    receipts.forEach(r => {
+      try {
+        const splits = typeof r.splits==='string' ? JSON.parse(r.splits) : (r.splits||{});
+        const payer = (r.paid_by||'').toLowerCase();
+        Object.entries(splits).forEach(([person, amt]) => {
+          const pl = person.toLowerCase();
+          if (pl === payer) return;
+          rawTotals[pl] = (rawTotals[pl]||0) + (parseFloat(amt)||0);
+        });
+      } catch(e) {}
+    });
+    let outstanding = 0;
+    Object.entries(rawTotals).forEach(([pl, raw]) => {
+      outstanding += Math.max(0, raw - (settledCreds[pl] || 0));
+    });
+    return parseFloat(outstanding.toFixed(2));
+  } catch(e) { return null; }
+}
+
 app.post('/trip/create', async (req, res) => {
   try {
     const { name, people, trip_date, cover_image, creator_email } = req.body;
@@ -1269,7 +1307,7 @@ app.get('/trip/:tripId', async (req, res) => {
         payerEntries.length>0 ? `<div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px 12px">
         ${payBtnsHtml}
         <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)">
-          <button class="mark-settled-btn" data-person="${personId}" data-name="${esc(p)}" id="markpaid-${personId}" style="display:inline-flex;align-items:center;gap:7px;padding:8px 16px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:9px;color:#30D158;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer" title="Mark ${esc(p)} as fully settled up">✓ All Paid · $${amtOwed.toFixed(2)}</button>
+          <button class="mark-settled-btn" data-person="${personId}" data-name="${esc(p)}" id="markpaid-${personId}" style="display:inline-flex;align-items:center;gap:7px;padding:8px 16px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:9px;color:#30D158;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer" title="Mark ${esc(p)} as fully settled up" data-settle-amount="${amtOwed.toFixed(2)}">✓ All Paid · $${amtOwed.toFixed(2)}</button>
         </div>
       </div>` : ''}
     </div>`;
@@ -2371,9 +2409,8 @@ function markTripPersonPaid(personName, personId, btn) {
   if (!btn) btn = document.getElementById('markpaid-' + personId);
   if (!btn) return;
   if (btn.dataset.confirming === '1') {
-    // Read amount BEFORE changing button text
-    const settleAmtMatch = (btn.textContent || '').match(/\$([\d.]+)/);
-    const settleAmt = settleAmtMatch ? parseFloat(settleAmtMatch[1]) : 0;
+    // Read amount from data attribute (reliable, not affected by text changes)
+    const settleAmt = parseFloat(btn.getAttribute('data-settle-amount') || '0') || 0;
     btn.disabled = true;
     btn.textContent = '⏳ Saving…';
     btn.dataset.confirming = '';
@@ -3683,6 +3720,11 @@ app.post('/trip/:tripId/mark-settled', async (req, res) => {
       return res.json({ success: false, error: 'Column missing — run in Supabase SQL Editor: ALTER TABLE trips ADD COLUMN IF NOT EXISTS settled_people JSONB DEFAULT \'[]\';' });
     }
     console.log('[mark-settled] verified in DB:', JSON.stringify(verify?.settled_people));
+    // Update trips.total = outstanding (what dashboard shows)
+    try {
+      const outstanding = await computeOutstanding(tripId);
+      if (outstanding !== null) await supabase.from('trips').update({ total: outstanding }).eq('id', tripId);
+    } catch(e) { console.error('Outstanding recalc error:', e); }
     res.json({ success: true });
   } catch(err) { res.json({ success: false, error: err.message }); }
 });
@@ -3840,9 +3882,9 @@ app.post('/trip/:tripId/receipt', async (req, res) => {
     if (parseFloat(discount) > 0) tripReceiptRow.discount = parseFloat(discount);
     await supabase.from('trip_receipts').insert(tripReceiptRow);
     const { data: all } = await supabase.from('trip_receipts').select('total').eq('trip_id', tripId);
-    const newTotal = (all||[]).reduce((s,r) => s+parseFloat(r.total||0), 0);
     // Credits accumulate — no need to un-settle; new debt shows as new remaining balance
-    await supabase.from('trips').update({ total: newTotal, receipt_count: (all||[]).length }).eq('id', tripId);
+    const outstanding = await computeOutstanding(tripId);
+    await supabase.from('trips').update({ total: outstanding !== null ? outstanding : 0, receipt_count: (all||[]).length }).eq('id', tripId);
     res.json({ success: true });
   } catch(err) { console.error('Trip receipt error:', err); res.json({ success: false, error: err.message }); }
 });
@@ -3895,8 +3937,8 @@ app.post('/trip/:tripId/receipt/:receiptId/delete', async (req, res) => {
     await supabase.from('trip_receipts').delete().eq('id', receiptId).eq('trip_id', tripId);
     // Recalculate trip total and receipt count
     const { data: remaining } = await supabase.from('trip_receipts').select('total').eq('trip_id', tripId);
-    const newTotal = (remaining||[]).reduce((s,r) => s + parseFloat(r.total||0), 0);
-    await supabase.from('trips').update({ total: newTotal, receipt_count: (remaining||[]).length }).eq('id', tripId);
+    const outstanding2 = await computeOutstanding(tripId);
+    await supabase.from('trips').update({ total: outstanding2 !== null ? outstanding2 : 0, receipt_count: (remaining||[]).length }).eq('id', tripId);
     res.json({ success: true });
   } catch(err) { console.error('Delete receipt error:', err); res.json({ success: false, error: err.message }); }
 });
