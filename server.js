@@ -1174,10 +1174,13 @@ app.get('/trip/:tripId', async (req, res) => {
   // Can be stored as old list format OR new object format — handle both gracefully
   const settledCredits = (() => {
     try {
-      const raw = trip.settled_people;
+      let raw = trip.settled_people;
+      // Handle double-stringified JSONB
+      if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch(e) {} }
+      if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch(e) {} }
       console.log('[settled_people raw]', JSON.stringify(raw));
       if (!raw) return {};
-      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      const parsed = raw;
       // Old format: array of names ["daddy","Arsalan"] — store as 999999 credit (fully settled)
       // The per-person rawOwed check in the render will cap this at the actual amount
       if (Array.isArray(parsed)) {
@@ -2368,12 +2371,12 @@ function markTripPersonPaid(personName, personId, btn) {
   if (!btn) btn = document.getElementById('markpaid-' + personId);
   if (!btn) return;
   if (btn.dataset.confirming === '1') {
+    // Read amount BEFORE changing button text
+    const settleAmtMatch = (btn.textContent || '').match(/\$([\d.]+)/);
+    const settleAmt = settleAmtMatch ? parseFloat(settleAmtMatch[1]) : 0;
     btn.disabled = true;
     btn.textContent = '⏳ Saving…';
     btn.dataset.confirming = '';
-    // Read the amount from the button label ("✓ Mark as Settled · $X.XX")
-    const settleAmtMatch = (btn.textContent || '').match(/\$([\d.]+)/);
-    const settleAmt = settleAmtMatch ? parseFloat(settleAmtMatch[1]) : 0;
     fetch(BACKEND+'/trip/'+TRIP_ID+'/mark-settled', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
@@ -3647,17 +3650,27 @@ app.post('/trip/:tripId/mark-settled', async (req, res) => {
     // Parse existing credits — new format: { "name_lower": amountSettled }
     let credits = {};
     try {
-      const raw = trip.settled_people;
-      const parsed = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {};
+      let raw = trip.settled_people;
+      // Handle double-stringified JSONB (stored as string inside JSONB)
+      if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch(e) {} }
+      if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch(e) {} } // double-encoded
+      const parsed = raw || {};
       if (Array.isArray(parsed)) {
-        // Migrate old array format: treat existing settled people as having 999999 credit
+        // Migrate old array format
         parsed.forEach(n => { credits[n.toLowerCase()] = 999999; });
       } else if (parsed && typeof parsed === 'object') {
-        Object.entries(parsed).forEach(([k, v]) => { credits[k.toLowerCase()] = parseFloat(v) || 0; });
+        Object.entries(parsed).forEach(([k, v]) => {
+          const num = parseFloat(v) || 0;
+          if (num > 0) credits[k.toLowerCase()] = num; // ignore zeros from bad writes
+        });
       }
     } catch(e) {}
     const nameLower = (name||'').toLowerCase();
     const settleAmount = parseFloat(amount) || 0;
+    if (settleAmount <= 0) {
+      console.warn('[mark-settled] amount is 0 — rejecting write for', name);
+      return res.json({ success: false, error: 'Amount is 0 — button text parsing failed' });
+    }
     // Add to existing credit (don't overwrite — accumulate)
     credits[nameLower] = (credits[nameLower] || 0) + settleAmount;
     console.log('[mark-settled] writing credits:', JSON.stringify(credits), 'tripId:', tripId, 'name:', name, 'amount:', settleAmount);
