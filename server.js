@@ -1420,7 +1420,9 @@ app.get('/trip/:tripId', async (req, res) => {
         name: r.name || 'Receipt',
         paid_by: r.paid_by || '',
         total: parseFloat(r.total||0),
-        splits: splitsData
+        splits: splitsData,
+        photo_url: r.photo_url || '',
+        created_at: r.created_at || ''
       };
     })
   });
@@ -1943,55 +1945,92 @@ if (new URLSearchParams(window.location.search).get('action') === 'receipt') {
   setTimeout(() => { document.getElementById('receipt-form-wrap').style.display='block'; document.getElementById('open-receipt-btn').style.display='none'; }, 300);
 }
 
-// ── SAVED RECEIPTS — build gallery from localStorage photos ──
+// ── SAVED RECEIPTS — build gallery from DB receipts (visible to ALL members) ──
 function buildSavedReceiptsGallery() {
   try {
-    const pending = JSON.parse(localStorage.getItem('raven_pending_receipts') || '[]');
-    const mine = pending.filter(p => p.tripId === TRIP_ID);
-    if (mine.length === 0) return;
-    // Inject saved receipts section before the receipts accordion
+    // Use receipts from the DB (passed via pageData) — not localStorage
+    const dbReceipts = (D.receiptsData || []).filter(r => r.photo_url);
+    // Also check localStorage for pending (not-yet-submitted) photos by this user
+    let pending = [];
+    try { pending = JSON.parse(localStorage.getItem('raven_pending_receipts') || '[]').filter(p => p.tripId === TRIP_ID && !p.scanned); } catch(e) {}
+
+    if (dbReceipts.length === 0 && pending.length === 0) return;
+
     const section = document.createElement('div');
+    section.id = 'saved-receipts-section';
     section.className = 'sec';
     section.style.marginTop = '16px';
-    const unscanned = mine.filter(p => !p.scanned);
 
-    // Header row — clicking toggles body
+    const totalCount = dbReceipts.length + pending.length;
     const header = document.createElement('div');
     header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;cursor:pointer';
-    const labelHtml = '📸 Saved Receipt Photos (' + mine.length + ')' +
-      (unscanned.length > 0 ? ' <span style="font-size:10px;background:rgba(255,107,53,0.15);color:#FF6B35;border-radius:6px;padding:2px 8px;font-weight:700">'+unscanned.length+' unscanned</span>' : '');
     header.innerHTML =
-      '<div class="sec-lbl" style="margin-bottom:0">' + labelHtml + '</div>' +
+      '<div class="sec-lbl" style="margin-bottom:0">📸 Saved Receipt Photos (' + totalCount + ')' +
+      (pending.length > 0 ? ' <span style="font-size:10px;background:rgba(255,107,53,0.15);color:#FF6B35;border-radius:6px;padding:2px 8px;font-weight:700">' + pending.length + ' pending</span>' : '') +
+      '</div>' +
       '<div style="font-size:12px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:8px;user-select:none"><span id="saved-receipts-toggle">▾ Show</span></div>';
 
-    // Body — hidden by default
     const body = document.createElement('div');
     body.id = 'saved-receipts-body';
     body.style.display = 'none';
 
-    // Photo grid
     const grid = document.createElement('div');
     grid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px';
-    mine.forEach(r => {
+
+    // DB receipts with photos — visible to everyone
+    dbReceipts.forEach(r => {
+      const d = new Date(r.created_at);
+      const label = d.toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'America/New_York'});
+      const cell = document.createElement('div');
+      cell.style.cssText = 'position:relative;border-radius:10px;overflow:hidden;cursor:pointer;border:2px solid rgba(48,209,88,0.4)';
+      const img = document.createElement('img');
+      img.src = r.photo_url;
+      img.style.cssText = 'width:100%;aspect-ratio:3/4;object-fit:cover;display:block';
+      img.addEventListener('error', () => { cell.style.display='none'; });
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.7);padding:4px 6px';
+      overlay.innerHTML = '<div style="font-size:9px;color:#30D158;font-weight:600">✅</div><div style="font-size:8px;color:#9896A8">' + label + '</div>';
+      cell.appendChild(img);
+      cell.appendChild(overlay);
+      cell.addEventListener('click', () => {
+        const ov = document.createElement('div');
+        ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.96);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px';
+        const closeBtn = document.createElement('button');
+        closeBtn.style.cssText = 'position:absolute;top:16px;right:16px;background:rgba(255,255,255,0.1);border:none;color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:18px';
+        closeBtn.textContent = '✕';
+        closeBtn.addEventListener('click', () => ov.remove());
+        const fi = document.createElement('img');
+        fi.src = r.photo_url;
+        fi.style.cssText = 'max-width:100%;max-height:72vh;border-radius:12px;object-fit:contain';
+        const lbl = document.createElement('div');
+        lbl.style.cssText = 'margin-top:12px;font-size:13px;color:#9896A8';
+        lbl.textContent = r.name + ' · $' + r.total.toFixed(2);
+        ov.appendChild(closeBtn); ov.appendChild(fi); ov.appendChild(lbl);
+        document.body.appendChild(ov);
+      });
+      grid.appendChild(cell);
+    });
+
+    // Pending (localStorage) photos — only this user sees these until submitted
+    pending.forEach(r => {
       const d = new Date(r.savedAt);
       const label = d.toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'America/New_York'});
       const cell = document.createElement('div');
-      cell.style.cssText = 'position:relative;border-radius:10px;overflow:hidden;cursor:pointer;border:2px solid ' + (r.scanned ? 'rgba(48,209,88,0.4)' : 'rgba(255,107,53,0.4)');
-      cell.innerHTML =
-        '<img src="data:' + (r.mediaType||'image/jpeg') + ';base64,' + r.imageBase64 + '" style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block">' +
+      cell.style.cssText = 'position:relative;border-radius:10px;overflow:hidden;cursor:pointer;border:2px solid rgba(255,107,53,0.4)';
+      cell.innerHTML = '<img src="data:' + (r.mediaType||'image/jpeg') + ';base64,' + r.imageBase64 + '" style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block">' +
         '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.7);padding:4px 6px">' +
-          '<div style="font-size:9px;color:#fff;font-weight:600">' + (r.scanned ? '✅' : '⏳') + '</div>' +
-          '<div style="font-size:8px;color:#9896A8">' + label + '</div>' +
-        '</div>';
+        '<div style="font-size:9px;color:#FF6B35;font-weight:600">⏳ Pending</div>' +
+        '<div style="font-size:8px;color:#9896A8">' + label + '</div></div>';
       cell.addEventListener('click', () => viewSavedReceipt(r.id));
       grid.appendChild(cell);
     });
+
     body.appendChild(grid);
 
-    if (unscanned.length > 0) {
+    if (pending.length > 0) {
       const retryBtn = document.createElement('button');
-      retryBtn.style.cssText = 'width:100%;padding:10px;background:rgba(255,107,53,0.1);border:1px solid rgba(255,107,53,0.3);border-radius:10px;color:#FF6B35;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer';
-      retryBtn.textContent = '↻ Retry scanning ' + unscanned.length + ' pending photo' + (unscanned.length>1?'s':'');
+      retryBtn.style.cssText = 'width:100%;padding:10px;background:rgba(255,107,53,0.1);border:1px solid rgba(255,107,53,0.3);border-radius:10px;color:#FF6B35;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:8px';
+      retryBtn.textContent = '↻ Retry scanning ' + pending.length + ' pending photo' + (pending.length>1?'s':'');
       retryBtn.addEventListener('click', retryPendingScans);
       body.appendChild(retryBtn);
     } else {
@@ -2001,7 +2040,6 @@ function buildSavedReceiptsGallery() {
       body.appendChild(doneMsg);
     }
 
-    // Toggle on header click
     header.addEventListener('click', () => {
       const open = body.style.display !== 'none';
       body.style.display = open ? 'none' : 'block';
@@ -2011,7 +2049,6 @@ function buildSavedReceiptsGallery() {
 
     section.appendChild(header);
     section.appendChild(body);
-    // Insert before the All Receipts section
     const receiptsSec = document.getElementById('receipts-body');
     if (receiptsSec) receiptsSec.closest('.sec').parentNode.insertBefore(section, receiptsSec.closest('.sec'));
   } catch(e) { console.error('Saved receipts gallery error:', e); }
@@ -2094,14 +2131,7 @@ function renderPaySlots() {
     // Options panel
     const panel = document.createElement('div');
     panel.id = slotId;
-    panel.style.cssText = 'display:none;margin-top:10px;background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:12px;overflow:hidden';
-
-    const header = document.createElement('div');
-    header.style.cssText = 'padding:10px 14px;font-size:11px;color:#6E6B80;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;border-bottom:1px solid rgba(255,255,255,0.06)';
-    header.textContent = 'Choose how to pay ' + payerName;
-    panel.appendChild(header);
-
-    const methods = [];
+    panel.style.cssText = 'display:none;margin-top:10px;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.4)';
     if (prof.venmo)   { const h=prof.venmo.replace('@','');    methods.push({ label:'Venmo',    sub:'@'+h,    color:'#0084FF', icon:'V', href:'venmo://paycharge?txn=pay&recipients='+h+'&amount='+a+'&note=Trip+Payment' }); }
     if (prof.cashapp) { const t=prof.cashapp.replace('$',''); methods.push({ label:'Cash App', sub:'$'+t,    color:'#00D632', icon:'$', href:'https://cash.app/$'+t+'/'+a }); }
     if (prof.zelle)   {
@@ -2126,20 +2156,20 @@ function renderPaySlots() {
       const row = document.createElement('a');
       row.href = m.href || '#';
       if (m.href && (m.href.startsWith('http') || m.href.startsWith('venmo') || m.href.startsWith('zelle'))) row.target = '_blank';
-      row.style.cssText = 'display:flex;align-items:center;gap:14px;padding:14px 16px;text-decoration:none;background:transparent;transition:background 0.15s;' + (mi < methods.length-1 ? 'border-bottom:1px solid rgba(255,255,255,0.06);' : '');
-      row.addEventListener('mouseover', () => { row.style.background = 'rgba(255,255,255,0.04)'; });
-      row.addEventListener('mouseout',  () => { row.style.background = 'transparent'; });
+      row.style.cssText = 'display:flex;align-items:center;gap:14px;padding:14px 16px;text-decoration:none;background:' + m.color + ';transition:opacity 0.15s;' + (mi < methods.length-1 ? 'border-bottom:1px solid rgba(0,0,0,0.15);' : '') + 'border-radius:' + (methods.length===1?'12px':(mi===0?'12px 12px 0 0':mi===methods.length-1?'0 0 12px 12px':'0')) + ';';
+      row.addEventListener('mouseover', () => { row.style.opacity = '0.88'; });
+      row.addEventListener('mouseout',  () => { row.style.opacity = '1'; });
       if (m.copy) {
         row.addEventListener('click', () => { navigator.clipboard.writeText(m.copy).catch(() => {}); });
       }
       const iconEl = document.createElement('div');
-      iconEl.style.cssText = 'width:44px;height:44px;border-radius:12px;background:' + m.color + ';' + (m.border ? 'border:'+m.border+';' : '') + 'display:flex;align-items:center;justify-content:center;font-size:' + (m.icon.length > 1 ? '9px' : '18px') + ';font-weight:800;color:#fff;flex-shrink:0';
+      iconEl.style.cssText = 'width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;font-size:' + (m.icon.length > 1 ? '9px' : '20px') + ';font-weight:800;color:#fff;flex-shrink:0';
       iconEl.textContent = m.icon || '✦';
       const info = document.createElement('div');
       info.style.cssText = 'flex:1;min-width:0';
-      info.innerHTML = '<div style="font-size:15px;font-weight:700;color:#F0EEF8">' + m.label + '</div><div style="font-size:12px;color:#6E6B80;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + m.sub + '</div>';
+      info.innerHTML = '<div style="font-size:15px;font-weight:700;color:#fff">' + m.label + '</div><div style="font-size:12px;color:rgba(255,255,255,0.7);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + m.sub + '</div>';
       const arrow = document.createElement('div');
-      arrow.style.cssText = 'font-size:18px;color:rgba(255,255,255,0.3);flex-shrink:0';
+      arrow.style.cssText = 'font-size:18px;color:rgba(255,255,255,0.5);flex-shrink:0';
       arrow.textContent = '→';
       row.appendChild(iconEl); row.appendChild(info); row.appendChild(arrow);
       panel.appendChild(row);
