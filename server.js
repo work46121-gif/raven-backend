@@ -1177,10 +1177,11 @@ app.get('/trip/:tripId', async (req, res) => {
       const raw = trip.settled_people;
       if (!raw) return {};
       const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      // Old format: array of names ["daddy","Arsalan"] — treat as fully settled
+      // Old format: array of names ["daddy","Arsalan"] — store as 999999 credit (fully settled)
+      // The per-person rawOwed check in the render will cap this at the actual amount
       if (Array.isArray(parsed)) {
         const credits = {};
-        parsed.forEach(name => { credits[name.toLowerCase()] = 999999; }); // large number = fully settled
+        parsed.forEach(name => { credits[name.toLowerCase()] = 999999; });
         return credits;
       }
       // New format: { "daddy": 150.13, "Arsalan": 47.77 }
@@ -1264,7 +1265,7 @@ app.get('/trip/:tripId', async (req, res) => {
         payerEntries.length>0 ? `<div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px 12px">
         ${payBtnsHtml}
         <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)">
-          <button class="mark-settled-btn" data-person="${personId}" data-name="${esc(p)}" id="markpaid-${personId}" style="display:inline-flex;align-items:center;gap:7px;padding:8px 16px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:9px;color:#30D158;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer" title="Mark ${esc(p)} as fully settled up">✓ Mark as Settled · $${amtOwed.toFixed(2)}</button>
+          <button class="mark-settled-btn" data-person="${personId}" data-name="${esc(p)}" id="markpaid-${personId}" style="display:inline-flex;align-items:center;gap:7px;padding:8px 16px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:9px;color:#30D158;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer" title="Mark ${esc(p)} as fully settled up">✓ All Paid · $${amtOwed.toFixed(2)}</button>
         </div>
       </div>` : ''}
     </div>`;
@@ -3648,9 +3649,9 @@ app.post('/trip/:tripId/mark-settled', async (req, res) => {
       const raw = trip.settled_people;
       const parsed = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {};
       if (Array.isArray(parsed)) {
-        // Migrate old array format
+        // Migrate old array format: treat existing settled people as having 999999 credit
         parsed.forEach(n => { credits[n.toLowerCase()] = 999999; });
-      } else {
+      } else if (parsed && typeof parsed === 'object') {
         Object.entries(parsed).forEach(([k, v]) => { credits[k.toLowerCase()] = parseFloat(v) || 0; });
       }
     } catch(e) {}
