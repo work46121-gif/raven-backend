@@ -1558,7 +1558,38 @@ app.get('/trip/:tripId', async (req, res) => {
       });
     } catch(e) {}
   });
-  const grandTotal = Object.values(totals).reduce((s, v) => s + v, 0);
+  // Build per-person breakdown: who owes whom and how much
+  // settled_credits: { "Name": amountSettled } — stores how much each person has paid off
+  // Can be stored as old list format OR new object format — handle both gracefully
+  const settledCredits = (() => {
+    try {
+      let raw = trip.settled_people;
+      // Handle double-stringified JSONB
+      if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch(e) {} }
+      if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch(e) {} }
+      console.log('[settled_people raw]', JSON.stringify(raw));
+      if (!raw) return {};
+      const parsed = raw;
+      // Old format: array of names ["daddy","Arsalan"] — store as 999999 credit (fully settled)
+      // The per-person rawOwed check in the render will cap this at the actual amount
+      if (Array.isArray(parsed)) {
+        const credits = {};
+        parsed.forEach(name => { credits[name.toLowerCase()] = 999999; });
+        return credits;
+      }
+      // New format: { "daddy": 150.13, "Arsalan": 47.77 }
+      const credits = {};
+      Object.entries(parsed).forEach(([k, v]) => { credits[k.toLowerCase()] = parseFloat(v) || 0; });
+      return credits;
+    } catch(e) { return {}; }
+  })();
+
+
+  // grandTotal = outstanding (after settled credits)
+  const grandTotal = Object.entries(totals).reduce((s, [person, raw]) => {
+    const credit = settledCredits[person.toLowerCase()] || 0;
+    return s + Math.max(0, raw - credit);
+  }, 0);
   // Total spend = sum of all receipt totals (what was actually spent)
   const totalSpend = (receipts||[]).reduce((s, r) => s + parseFloat(r.total||0), 0);
 
@@ -1635,32 +1666,6 @@ app.get('/trip/:tripId', async (req, res) => {
   } else {
     countdownHTML = `<div style="background:#13131A;border:1px dashed rgba(255,255,255,0.08);border-radius:14px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="font-size:13px;color:#6E6B80">📅 No trip date set</div><div style="font-size:11px;color:#6E6B80;font-style:italic">Set date in settings</div></div>`;
   }
-
-  // Build per-person breakdown: who owes whom and how much
-  // settled_credits: { "Name": amountSettled } — stores how much each person has paid off
-  // Can be stored as old list format OR new object format — handle both gracefully
-  const settledCredits = (() => {
-    try {
-      let raw = trip.settled_people;
-      // Handle double-stringified JSONB
-      if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch(e) {} }
-      if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch(e) {} }
-      console.log('[settled_people raw]', JSON.stringify(raw));
-      if (!raw) return {};
-      const parsed = raw;
-      // Old format: array of names ["daddy","Arsalan"] — store as 999999 credit (fully settled)
-      // The per-person rawOwed check in the render will cap this at the actual amount
-      if (Array.isArray(parsed)) {
-        const credits = {};
-        parsed.forEach(name => { credits[name.toLowerCase()] = 999999; });
-        return credits;
-      }
-      // New format: { "daddy": 150.13, "Arsalan": 47.77 }
-      const credits = {};
-      Object.entries(parsed).forEach(([k, v]) => { credits[k.toLowerCase()] = parseFloat(v) || 0; });
-      return credits;
-    } catch(e) { return {}; }
-  })();
 
   const owesRows = people.map((p, i) => {
     const settledCredit = settledCredits[p.toLowerCase()] || 0;
@@ -2284,21 +2289,28 @@ const receiptsDataMap = {}; // keyed by receipt id — safe lookup, no user data
 function checkIsAdmin() {
   try {
     const local = JSON.parse(localStorage.getItem('raven_profile') || '{}');
-    const myEmail = local.email || '';
+    const myEmail = (local.email || '').toLowerCase();
     const myName  = (local.first_name || '').toLowerCase();
+    const myEmailPrefix = myEmail.split('@')[0];
     // Creator check
-    if (myEmail && CREATOR_EMAIL && myEmail === CREATOR_EMAIL) return true;
-    // Co-admin check — match by first name (how people are stored in trips)
+    if (myEmail && CREATOR_EMAIL && myEmail === CREATOR_EMAIL.toLowerCase()) return true;
+    // Co-admin check — match by first name OR email prefix
     const coAdmins = (D.coAdmins || []).map(n => n.toLowerCase());
     if (myName && coAdmins.includes(myName)) return true;
+    if (myEmailPrefix && coAdmins.includes(myEmailPrefix)) return true;
+    // Also check if any co-admin name appears in the email (e.g. "daddy" in "daddy@gmail.com")
+    if (myEmail && coAdmins.some(a => myEmail.includes(a) || a.includes(myEmailPrefix))) return true;
     // Fallback: check supabase session in localStorage
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key && (key.includes('auth-token') || key.includes('supabase'))) {
         try {
           const val = JSON.parse(localStorage.getItem(key) || '{}');
-          const email = val?.user?.email || val?.currentSession?.user?.email || '';
-          if (email && email === CREATOR_EMAIL) return true;
+          const email = (val?.user?.email || val?.currentSession?.user?.email || '').toLowerCase();
+          if (email && CREATOR_EMAIL && email === CREATOR_EMAIL.toLowerCase()) return true;
+          // Also check co-admin by email in session
+          const emailPrefix = email.split('@')[0];
+          if (emailPrefix && coAdmins.includes(emailPrefix)) return true;
         } catch(e) {}
       }
     }
