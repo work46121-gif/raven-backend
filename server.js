@@ -1360,6 +1360,7 @@ app.get('/trip/:tripId', async (req, res) => {
         <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;padding-top:2px">
           <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:#30D158;letter-spacing:0.03em;line-height:1">$${total.toFixed(2)}</div>
           <button onclick="event.stopPropagation();openEditReceipt('${esc(r.id)}')" style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.06);border:none;color:#9896A8;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px" title="Edit">✎</button>
+          ${!r.photo_url ? `<button onclick="event.stopPropagation();addPhotoToReceipt('${esc(r.id)}')" style="width:26px;height:26px;border-radius:50%;background:rgba(48,209,88,0.08);border:none;color:#30D158;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px" title="Add photo">📎</button>` : ''}
           <button class="admin-delete-receipt-btn" data-receipt-id="${r.id}" data-receipt-name="${esc(r.name||'Receipt')}" onclick="event.stopPropagation();adminDeleteReceipt(this)" style="width:26px;height:26px;border-radius:50%;background:rgba(255,68,68,0.08);border:none;color:#FF6B6B;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px" title="Delete">🗑</button>
           <div id="${receiptId}-chevron" style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center;font-size:11px;color:#6E6B80;transition:transform 0.2s">▾</div>
         </div>
@@ -1392,9 +1393,14 @@ app.get('/trip/:tripId', async (req, res) => {
     `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px"><span style="color:#9896A8">${esc(p)}</span><span id="ep-${esc(p.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,''))}" style="color:#30D158;font-weight:600">$0.00</span></div>`
   ).join('');
 
-  const existingMemberRows = people.map((p, i) =>
-    `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#13131A;border:1px solid rgba(255,255,255,0.07);border-radius:10px"><div style="display:flex;align-items:center;gap:9px"><div style="width:28px;height:28px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff">${esc(p[0].toUpperCase())}</div><span style="font-size:13px;font-weight:600">${esc(p)}</span></div><span style="font-size:11px;color:#6E6B80">existing</span></div>`
-  ).join('');
+  const coAdminsList = (() => { try { return Array.isArray(trip.co_admins) ? trip.co_admins : JSON.parse(trip.co_admins || '[]'); } catch(e) { return []; } })();
+  const existingMemberRows = people.map((p, i) => {
+    const isCoAdmin = coAdminsList.map(n=>n.toLowerCase()).includes(p.toLowerCase());
+    const adminBadge = isCoAdmin ? `<span style="font-size:10px;background:rgba(124,58,237,0.15);color:#A855F7;border:1px solid rgba(124,58,237,0.25);border-radius:6px;padding:2px 7px;font-weight:700;margin-left:6px">⚙️ co-admin</span>` : '';
+    const adminBtn = `<button onclick="event.stopPropagation();toggleCoAdmin(this,'${esc(p)}')" data-name="${esc(p)}" data-is-admin="${isCoAdmin?'1':'0'}" class="admin-only-btn" style="display:none;padding:5px 10px;font-size:11px;font-weight:700;border-radius:7px;border:1px solid ${isCoAdmin?'rgba(124,58,237,0.4)':'rgba(255,255,255,0.12)'};background:${isCoAdmin?'rgba(124,58,237,0.12)':'rgba(255,255,255,0.05)'};color:${isCoAdmin?'#A855F7':'#9896A8'};cursor:pointer;font-family:inherit">${isCoAdmin?'- Admin':'+ Admin'}</button>`;
+    const removeBtn = `<button onclick="event.stopPropagation();removeMember(this,'${esc(p)}')" class="admin-only-btn" style="display:none;padding:5px 10px;font-size:11px;font-weight:700;border-radius:7px;border:1px solid rgba(255,68,68,0.3);background:rgba(255,68,68,0.08);color:#FF6B6B;cursor:pointer;font-family:inherit;margin-left:4px">Remove</button>`;
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#13131A;border:1px solid rgba(255,255,255,0.07);border-radius:10px"><div style="display:flex;align-items:center;gap:9px;flex:1;min-width:0"><div style="width:28px;height:28px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">${esc(p[0].toUpperCase())}</div><span style="font-size:13px;font-weight:600">${esc(p)}</span>${adminBadge}</div><div style="display:flex;align-items:center;gap:4px;flex-shrink:0">${adminBtn}${removeBtn}</div></div>`;
+  }).join('');
 
   // All user-controlled data goes into a single JSON blob read by JS — NEVER interpolated into JS template literals
   const pageData = JSON.stringify({
@@ -1553,6 +1559,10 @@ ${coverHTML}
       <div id="r-even-sec">
         <div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600">Total Amount</div>
         <div style="position:relative"><span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#6E6B80">$</span><input id="r-total" type="number" placeholder="0.00" step="0.01" style="padding-left:28px"></div>
+        <div style="margin-top:10px">
+          <div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600">Discount / Promo <span style="font-weight:400">(optional)</span></div>
+          <div style="position:relative"><span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#FF6B6B">-$</span><input id="r-discount" type="number" placeholder="0.00" step="0.01" style="padding-left:36px"></div>
+        </div>
         <div id="r-even-prev" style="margin-top:10px;display:none;background:#13131A;border-radius:10px;padding:10px 14px">
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:8px">Per Person</div>
           ${perPersonInputs}
@@ -1815,6 +1825,9 @@ document.addEventListener('DOMContentLoaded', () => {
   if (IS_ADMIN) {
     document.querySelectorAll('.admin-delete-receipt-btn').forEach(btn => {
       btn.style.display = 'flex';
+    });
+    document.querySelectorAll('.admin-only-btn').forEach(btn => {
+      btn.style.display = 'inline-flex';
     });
   }
 
@@ -2870,6 +2883,79 @@ function tripPhoto(file) {
   reader.readAsDataURL(file);
 }
 
+// ── ADD PHOTO TO EXISTING RECEIPT ──
+function addPhotoToReceipt(receiptId) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const MAX = 1400;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const img = new Image();
+      img.onload = async () => {
+        const canvas = document.createElement('canvas');
+        let w = img.width, h = img.height;
+        if (w > MAX || h > MAX) { const r = Math.min(MAX/w, MAX/h); w = Math.round(w*r); h = Math.round(h*r); }
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        const b64 = canvas.toDataURL('image/jpeg', 0.82).split(',')[1];
+        const photoUrl = 'data:image/jpeg;base64,' + b64;
+        toast('Uploading photo…');
+        try {
+          const r = await fetch(BACKEND+'/trip/'+TRIP_ID+'/receipt/'+receiptId+'/add-photo', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ token: TRIP_TOKEN, photo_url: photoUrl })
+          });
+          const d = await r.json();
+          if (d.success) { toast('📎 Photo added!'); setTimeout(() => location.reload(), 900); }
+          else toast(d.error || 'Error saving photo', false);
+        } catch(e) { toast('Network error', false); }
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
+}
+
+async function toggleCoAdmin(btn, name) {
+  const isAdmin = btn.getAttribute('data-is-admin') === '1';
+  btn.disabled = true;
+  try {
+    const r = await fetch(BACKEND+'/trip/'+TRIP_ID+'/toggle-admin', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({token: TRIP_TOKEN, name, make_admin: !isAdmin})
+    });
+    const d = await r.json();
+    if (d.success) {
+      toast(isAdmin ? name+' removed as co-admin' : name+' is now a co-admin ⚙️');
+      setTimeout(() => location.reload(), 900);
+    } else { toast(d.error || 'Error', false); btn.disabled = false; }
+  } catch(e) { toast('Network error', false); btn.disabled = false; }
+}
+
+async function removeMember(btn, name) {
+  if (!confirm('Remove ' + name + ' from this trip?')) return;
+  btn.disabled = true;
+  try {
+    const r = await fetch(BACKEND+'/trip/'+TRIP_ID+'/remove-member', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({token: TRIP_TOKEN, name})
+    });
+    const d = await r.json();
+    if (d.success) {
+      toast(name + ' removed from trip');
+      setTimeout(() => location.reload(), 900);
+    } else { toast(d.error || 'Error', false); btn.disabled = false; }
+  } catch(e) { toast('Network error', false); btn.disabled = false; }
+}
+
 async function saveReceipt() {
   const name=document.getElementById('r-name').value.trim()||'Receipt';
   const paidBy=(document.getElementById('r-paidby')||{}).value||'';
@@ -2878,21 +2964,25 @@ async function saveReceipt() {
   let total=0, splits={};
   if(splitType==='even'){
     total=parseFloat(document.getElementById('r-total').value)||0;
+    const discount=parseFloat((document.getElementById('r-discount')||{}).value)||0;
     if(total<=0){btn.textContent='Save Receipt';btn.disabled=false;toast('Enter a total amount',false);return;}
-    const per=total/PEOPLE.length; PEOPLE.forEach(p=>{splits[p]=per;});
+    const finalTotal = Math.max(0, total - discount);
+    const per=finalTotal/PEOPLE.length; PEOPLE.forEach(p=>{splits[p]=per;});
+    total = finalTotal;
   } else {
     PEOPLE.forEach(p=>{splits[p]=0;});
     tripItems.forEach(item=>{const as=item.assignees.length>0?item.assignees:PEOPLE;const sh=item.price/as.length;as.forEach(p=>{splits[p]=(splits[p]||0)+sh;});total+=item.price;});
     if(total<=0){btn.textContent='Save Receipt';btn.disabled=false;toast('Add at least one item',false);return;}
   }
   try{
-    const r=await fetch(BACKEND+'/trip/'+TRIP_ID+'/receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,total,splits,token:TRIP_TOKEN,items:splitType==='itemized'?tripItems:[],paid_by:paidBy||null})});
+    const r=await fetch(BACKEND+'/trip/'+TRIP_ID+'/receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,total,splits,token:TRIP_TOKEN,items:splitType==='itemized'?tripItems:[],paid_by:paidBy||null,discount:parseFloat((document.getElementById('r-discount')||{}).value)||0})});
     const d=await r.json();
     if(d.success){
       toast('✅ Receipt saved!');
       // Reset form for next receipt — then reload to show updated totals
       document.getElementById('r-name').value='';
       document.getElementById('r-total').value='';
+      const discEl=document.getElementById('r-discount'); if(discEl) discEl.value='';
       document.getElementById('r-preview').style.display='none';
       document.getElementById('r-empty').style.display='block';
       document.getElementById('r-scan-status').style.display='none';
@@ -3370,6 +3460,39 @@ app.post('/trip/:tripId/comment', async (req, res) => {
   } catch(err) { res.json({ success: false, error: err.message }); }
 });
 
+// ── TOGGLE CO-ADMIN ───────────────────────────────────────────────────────────
+app.post('/trip/:tripId/toggle-admin', async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const { token, name, make_admin } = req.body;
+    const { data: trip } = await supabase.from('trips').select('share_token, co_admins, creator_email').eq('id', tripId).single();
+    if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
+    let coAdmins = [];
+    try { coAdmins = Array.isArray(trip.co_admins) ? trip.co_admins : JSON.parse(trip.co_admins || '[]'); } catch(e) {}
+    if (make_admin) {
+      if (!coAdmins.map(n=>n.toLowerCase()).includes((name||'').toLowerCase())) coAdmins.push(name);
+    } else {
+      coAdmins = coAdmins.filter(n => n.toLowerCase() !== (name||'').toLowerCase());
+    }
+    await supabase.from('trips').update({ co_admins: JSON.stringify(coAdmins) }).eq('id', tripId);
+    res.json({ success: true, co_admins: coAdmins });
+  } catch(err) { res.json({ success: false, error: err.message }); }
+});
+
+// ── REMOVE MEMBER FROM TRIP ───────────────────────────────────────────────────
+app.post('/trip/:tripId/remove-member', async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const { token, name } = req.body;
+    const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
+    if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
+    const people = (Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people || '[]'))
+      .filter(p => p.toLowerCase() !== (name||'').toLowerCase());
+    await supabase.from('trips').update({ people: JSON.stringify(people) }).eq('id', tripId);
+    res.json({ success: true, people });
+  } catch(err) { res.json({ success: false, error: err.message }); }
+});
+
 // ── TRIP SETTINGS ─────────────────────────────────────────────────────────────
 app.post('/trip/:tripId/settings', async (req, res) => {
   try {
@@ -3512,7 +3635,7 @@ app.post('/trip/:tripId/join', async (req, res) => {
 app.post('/trip/:tripId/receipt', async (req, res) => {
   try {
     const { tripId } = req.params;
-    const { name, total, splits, token, items, paid_by, tax, tip, service_fee } = req.body;
+    const { name, total, splits, token, items, paid_by, tax, tip, service_fee, discount } = req.body;
     const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
     if (!trip) return res.json({ success: false, error: 'Trip not found' });
     if (trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
@@ -3520,6 +3643,7 @@ app.post('/trip/:tripId/receipt', async (req, res) => {
     if (parseFloat(tax) > 0) tripReceiptRow.tax = parseFloat(tax);
     if (parseFloat(tip) > 0) tripReceiptRow.tip = parseFloat(tip);
     if (parseFloat(service_fee) > 0) tripReceiptRow.service_fee = parseFloat(service_fee);
+    if (parseFloat(discount) > 0) tripReceiptRow.discount = parseFloat(discount);
     await supabase.from('trip_receipts').insert(tripReceiptRow);
     const { data: all } = await supabase.from('trip_receipts').select('total').eq('trip_id', tripId);
     const newTotal = (all||[]).reduce((s,r) => s+parseFloat(r.total||0), 0);
@@ -3547,6 +3671,19 @@ app.post('/trip/:tripId/receipt/:receiptId/edit', async (req, res) => {
     await supabase.from('trips').update({ total: newTotal }).eq('id', tripId);
     res.json({ success: true });
   } catch(err) { console.error('Edit receipt error:', err); res.json({ success: false, error: err.message }); }
+});
+
+// ── ADD PHOTO TO EXISTING RECEIPT ─────────────────────────────────────────────
+app.post('/trip/:tripId/receipt/:receiptId/add-photo', async (req, res) => {
+  try {
+    const { tripId, receiptId } = req.params;
+    const { token, photo_url } = req.body;
+    const { data: trip } = await supabase.from('trips').select('share_token').eq('id', tripId).single();
+    if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
+    if (!photo_url) return res.json({ success: false, error: 'No photo provided' });
+    await supabase.from('trip_receipts').update({ photo_url }).eq('id', receiptId).eq('trip_id', tripId);
+    res.json({ success: true });
+  } catch(err) { console.error('Add photo error:', err); res.json({ success: false, error: err.message }); }
 });
 
 // ─── DELETE RECEIPT (admin only — verified by share token) ───────────────────
