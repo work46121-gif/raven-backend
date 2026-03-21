@@ -2250,26 +2250,23 @@ function updatePersonBalanceDisplay(personName) {
   const people = D.people || [];
   people.forEach(p => updatePersonBalanceDisplay(p));
 })();
+
+// Mark a person as settled in the trip hub
+function markTripPersonPaid(personName, personId, btn) {
   if (!btn) btn = document.getElementById('markpaid-' + personId);
   if (!btn) return;
   if (btn.dataset.confirming === '1') {
-    // Second tap — mark as settled
     btn.textContent = '✅ Settled';
     btn.style.background = 'rgba(48,209,88,0.15)';
     btn.style.borderColor = 'rgba(48,209,88,0.4)';
     btn.disabled = true;
     btn.dataset.confirming = '';
-    // Update the status row text
     const row = document.getElementById('row-' + personId);
     if (row) {
-      const statusEl = row.querySelector('[style*="owes $"]');
+      const statusEl = row.querySelector('.person-status-display');
       if (statusEl) { statusEl.textContent = 'all settled ✓'; statusEl.style.color = '#30D158'; }
-      const amountEl = row.querySelector("[style*='font-family:']") || row.querySelector(".person-amount");
-      if (amountEl) { amountEl.textContent = '$0.00'; amountEl.style.color = '#9896A8'; }
-      // Hide pay slots
       row.querySelectorAll('.pay-slot').forEach(s => s.style.display = 'none');
     }
-    // Store in localStorage so it persists across page refresh for this session
     try {
       const key = 'raven_settled_' + TRIP_ID;
       const settled = JSON.parse(localStorage.getItem(key) || '[]');
@@ -2279,7 +2276,6 @@ function updatePersonBalanceDisplay(personName) {
     toast(personName + ' marked as settled ✓', true);
     return;
   }
-  // First tap — confirm state
   btn.dataset.confirming = '1';
   btn.textContent = '⚠️ Tap again to confirm';
   btn.style.background = 'rgba(48,209,88,0.15)';
