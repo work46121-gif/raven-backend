@@ -2123,6 +2123,7 @@ function renderPaySlots() {
     }
 
     // Main "Pay" button
+    const methods = [];
     const slotId = 'payopt-' + Math.random().toString(36).slice(2,8);
     const mainBtn = document.createElement('button');
     mainBtn.style.cssText = 'display:inline-flex;align-items:center;gap:8px;padding:10px 18px;background:linear-gradient(135deg,#30D158,#0EA5E9);border:none;border-radius:10px;font-family:inherit;font-size:14px;font-weight:700;color:#000;cursor:pointer';
