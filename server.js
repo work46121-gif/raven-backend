@@ -3620,7 +3620,14 @@ app.post('/trip/:tripId/mark-settled', async (req, res) => {
     if (!settled.map(s => s.toLowerCase()).includes((name||'').toLowerCase())) settled.push(name);
     const { error: dbErr } = await supabase.from('trips').update({ settled_people: JSON.stringify(settled) }).eq('id', tripId);
     if (dbErr) { console.error('mark-settled DB error:', dbErr); return res.json({ success: false, error: dbErr.message }); }
-    res.json({ success: true, settled });
+    // Verify the write actually persisted (Supabase silently ignores unknown columns)
+    const { data: verify } = await supabase.from('trips').select('settled_people').eq('id', tripId).single();
+    const savedSettled = (() => { try { return Array.isArray(verify?.settled_people) ? verify.settled_people : JSON.parse(verify?.settled_people || '[]'); } catch(e) { return []; } })();
+    if (!savedSettled.map(s => s.toLowerCase()).includes((name||'').toLowerCase())) {
+      console.error('mark-settled: write did not persist — column may not exist. Run: ALTER TABLE trips ADD COLUMN IF NOT EXISTS settled_people JSONB DEFAULT \'[]\';');
+      return res.json({ success: false, error: 'DB column missing. Run SQL: ALTER TABLE trips ADD COLUMN IF NOT EXISTS settled_people JSONB DEFAULT \'[]\';' });
+    }
+    res.json({ success: true, settled: savedSettled });
   } catch(err) { res.json({ success: false, error: err.message }); }
 });
 
@@ -4294,4 +4301,16 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🪶 RAVEN SMS server running on port ${PORT}`));
+app.listen(PORT, async () => {
+  console.log(`🪶 RAVEN SMS server running on port ${PORT}`);
+  // Auto-migrate: ensure new columns exist (safe to run repeatedly)
+  try {
+    await supabase.rpc('exec_sql', { sql: "ALTER TABLE trips ADD COLUMN IF NOT EXISTS settled_people JSONB DEFAULT '[]'" });
+  } catch(e) { /* rpc may not exist — that's ok, manual SQL needed */ }
+  try {
+    await supabase.rpc('exec_sql', { sql: "ALTER TABLE trip_receipts ADD COLUMN IF NOT EXISTS discount NUMERIC DEFAULT 0" });
+  } catch(e) {}
+  try {
+    await supabase.rpc('exec_sql', { sql: "ALTER TABLE trip_receipts ADD COLUMN IF NOT EXISTS photo_url TEXT" });
+  } catch(e) {}
+});
