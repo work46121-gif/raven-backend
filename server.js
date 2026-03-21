@@ -536,14 +536,21 @@ app.post('/bill/:billId/join', async (req, res) => {
     const { billId } = req.params;
     const { name } = req.body;
     if (!name?.trim()) return res.json({ success: false, error: 'Name required' });
-    const { data: bill } = await supabase.from('bills').select('share_token').eq('id', billId).single();
+    const { data: bill } = await supabase.from('bills').select('share_token, live_mode, live_people_count').eq('id', billId).single();
     if (!bill) return res.json({ success: false, error: 'Bill not found' });
     const cleanName = name.trim();
+    // Check if person already exists
     const { data: existing } = await supabase.from('participants')
       .select('id').eq('bill_id', billId).ilike('name', cleanName).maybeSingle();
-    if (!existing) {
-      await supabase.from('participants').insert({ bill_id: billId, name: cleanName, amount: 0, paid: false });
+    if (existing) return res.json({ success: true, name: cleanName }); // already joined
+    // Max members check for live mode
+    if (bill.live_mode && bill.live_people_count > 0) {
+      const { count } = await supabase.from('participants').select('id', { count: 'exact', head: true }).eq('bill_id', billId);
+      if (count >= bill.live_people_count) {
+        return res.json({ success: false, error: 'max_reached', maxCount: bill.live_people_count });
+      }
     }
+    await supabase.from('participants').insert({ bill_id: billId, name: cleanName, amount: 0, paid: false });
     res.json({ success: true, name: cleanName });
   } catch(e) { res.json({ success: false, error: e.message }); }
 });
@@ -756,7 +763,7 @@ app.get('/bill/:billId', async (req, res) => {
   const profileB64 = Buffer.from(JSON.stringify(billPayerProfile || {})).toString('base64');
   const paidByNameSafe = JSON.stringify(bill.paid_by || '');
 
-  const billUrl = `${baseUrl}/bill/${billId}?t=${bill.share_token || ""}`;
+  const billUrl = `https://ravensplit.com/bill/${billId}?t=${bill.share_token || ''}`;
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=10&color=30D158&bgcolor=06060A&qzone=1&data=${encodeURIComponent(billUrl)}`;
 
   // ── CLASSIC MODE (no live_mode) — original read-only bill page ───────────────
@@ -766,11 +773,11 @@ app.get('/bill/:billId', async (req, res) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-  <title>🪶 \${bill.name} — RAVEN</title>
-  <meta property="og:title" content="🪶 \${bill.name} — RAVEN" />
-  <meta property="og:description" content="Tap to see what you owe · Bill ID: \${billId}" />
+  <title>🪶 ${bill.name} — RAVEN</title>
+  <meta property="og:title" content="🪶 ${bill.name} — RAVEN" />
+  <meta property="og:description" content="Tap to see what you owe · Bill ID: ${billId}" />
   <meta property="og:image" content="https://ravensplit.com/raven-hero.png" />
-  <meta property="og:url" content="\${baseUrl}/bill/\${billId}" />
+  <meta property="og:url" content="${baseUrl}/bill/${billId}" />
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;padding-bottom:120px}
@@ -791,20 +798,20 @@ app.get('/bill/:billId', async (req, res) => {
       <button onclick="history.back()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#9896A8;padding:6px 12px;font-size:13px;cursor:pointer;font-family:inherit">← Back</button>
       <div style="font-size:18px;font-weight:900;letter-spacing:0.12em"><a href="https://ravensplit.com/" style="text-decoration:none;color:inherit">🪶 RAVEN</a></div>
     </div>
-    <div style="font-size:11px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:20px;font-weight:600">\${billId}</div>
+    <div style="font-size:11px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:20px;font-weight:600">${billId}</div>
   </div></div>
 
   <div style="max-width:800px;margin:20px auto 0;padding:0 20px">
-    <div style="font-size:28px;font-weight:800;margin-bottom:6px">\${bill.name}</div>
+    <div style="font-size:28px;font-weight:800;margin-bottom:6px">${bill.name}</div>
     <div style="display:flex;gap:12px">
-      <span style="font-size:12px;color:#6E6B80">Total <strong style="color:#F0EEF8">$\${parseFloat(bill.total||0).toFixed(2)}</strong></span>
-      \${participants.length > 0 ? \`<span style="font-size:12px;color:#6E6B80"><strong style="color:#F0EEF8">\${participants.length}</strong> people</span>\` : ''}
+      <span style="font-size:12px;color:#6E6B80">Total <strong style="color:#F0EEF8">$${parseFloat(bill.total||0).toFixed(2)}</strong></span>
+      ${participants.length > 0 ? `<span style="font-size:12px;color:#6E6B80"><strong style="color:#F0EEF8">${participants.length}</strong> people</span>` : ''}
     </div>
   </div>
 
-  \${receiptHTML}
-  \${participantsHTML}
-  \${itemsListHTML}
+  ${receiptHTML}
+  ${participantsHTML}
+  ${itemsListHTML}
 
   <div style="max-width:800px;margin:24px auto 0;padding:0 20px 40px">
     <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:10px">Comments</div>
@@ -822,8 +829,8 @@ app.get('/bill/:billId', async (req, res) => {
 
   <div class="raven-footer"><a href="https://ravensplit.com" class="raven-footer-inner"><span style="font-size:16px">🪶</span><span style="font-size:12px;color:#6E6B80">Split bills free with <strong style="color:#C084FC">RAVEN</strong></span></a></div>
 
-  <input type="hidden" id="pd" value="\${profileB64}">
-  <input type="hidden" id="paid-by-name" value="\${bill.paid_by ? bill.paid_by.replace(/"/g,'&quot;') : ''}">
+  <input type="hidden" id="pd" value="${profileB64}">
+  <input type="hidden" id="paid-by-name" value="${bill.paid_by ? bill.paid_by.replace(/"/g,'&quot;') : ''}">
 
   <div id="pmod" style="display:none;position:fixed;inset:0;z-index:999">
     <div onclick="closePay()" style="position:absolute;inset:0;background:rgba(0,0,0,0.8);backdrop-filter:blur(8px)"></div>
@@ -840,7 +847,7 @@ app.get('/bill/:billId', async (req, res) => {
   </div>
 
   <script>
-    const BID = \${JSON.stringify(billId)};
+    const BID = ${JSON.stringify(billId)};
     let selectedGif = null;
     (function(){
       try {
@@ -1015,8 +1022,7 @@ app.get('/bill/:billId', async (req, res) => {
     </div>
   </div>
   <div style="display:flex;align-items:center;gap:8px">
-    <button onclick="refreshAll()" id="refresh-btn" style="padding:7px 14px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.25);border-radius:20px;color:#30D158;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">↻ Refresh</button>
-    <button onclick="showQR()" style="padding:7px 14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;color:#9896A8;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">QR</button>
+    <button onclick="showQR()" style="padding:7px 14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;color:#9896A8;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📱 QR</button>
   </div>
 </div></div>
 
@@ -1171,6 +1177,17 @@ async function autoJoin(name) {
       const cn = document.getElementById('cname');
       if (cn) cn.value = myName;
       refreshAll();
+    } else if (d.error === 'max_reached') {
+      // Show max members reached UI
+      const modal = document.getElementById('name-modal');
+      const box = modal.querySelector('.name-modal-box');
+      if (box) {
+        box.innerHTML = '<div style="width:36px;height:4px;background:rgba(255,255,255,0.12);border-radius:2px;margin:0 auto 20px"></div>'
+          + '<div style="font-size:40px;text-align:center;margin-bottom:12px">🚫</div>'
+          + '<div style="font-size:20px;font-weight:800;margin-bottom:8px;text-align:center">Table is Full</div>'
+          + '<div style="font-size:14px;color:#6E6B80;margin-bottom:16px;text-align:center;line-height:1.6">This bill has reached its maximum of <strong style="color:#F0EEF8">' + (d.maxCount || '?') + ' people</strong>.<br>Ask the bill creator to start a new bill for additional guests.</div>'
+          + '<div style="background:rgba(255,107,53,0.08);border:1px solid rgba(255,107,53,0.2);border-radius:10px;padding:12px 14px;font-size:12px;color:#FF9A3C;text-align:center">Tax and tip calculations are based on the number of people set when this bill was created</div>';
+      }
     } else { toast('Error: ' + (d.error || 'try again')); }
   } catch(e) { toast('Network error'); }
 }
@@ -1205,16 +1222,11 @@ async function toggleClaim(itemId, itemName) {
 
 // ── REFRESH / POLLING ──
 async function refreshAll() {
-  const btn = document.getElementById('refresh-btn');
-  if (btn) { btn.textContent = '↻ ...'; btn.style.opacity = '0.6'; }
   try {
     const r = await fetch('/bill/' + BID + '/state');
     const d = await r.json();
     if (d.success) { renderState(d); }
   } catch(e) { console.error('Refresh error:', e); }
-  finally {
-    if (btn) { btn.textContent = '↻ Refresh'; btn.style.opacity = '1'; }
-  }
 }
 
 function renderState(d) {
@@ -1495,6 +1507,37 @@ function toast(msg, ok) {
   clearTimeout(t._timer);
   t._timer = setTimeout(() => { t.style.opacity = '0'; }, 2800);
 }
+
+// ── PULL TO REFRESH (mobile) ──
+(function() {
+  let startY = 0, pulling = false, ind = null;
+  const THRESH = 75;
+  function makeInd() {
+    ind = document.createElement('div');
+    ind.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;height:0;overflow:hidden;background:rgba(12,12,18,0.97);display:flex;align-items:center;justify-content:center;transition:height 0.1s;pointer-events:none';
+    ind.innerHTML = '<div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#30D158"><span id="ptr-b-icon" style="font-size:18px;display:inline-block;transition:transform 0.2s">↓</span><span id="ptr-b-text">Pull to refresh</span></div>';
+    document.body.appendChild(ind);
+  }
+  document.addEventListener('touchstart', e => { if (window.scrollY === 0) { startY = e.touches[0].clientY; pulling = true; } }, {passive:true});
+  document.addEventListener('touchmove', e => {
+    if (!pulling) return;
+    const dist = Math.min(e.touches[0].clientY - startY, 130);
+    if (dist <= 0) { pulling = false; return; }
+    if (!ind) makeInd();
+    ind.style.height = Math.min(dist * 0.55, 52) + 'px';
+    const icon = document.getElementById('ptr-b-icon'), text = document.getElementById('ptr-b-text');
+    if (dist >= THRESH) { if(icon){icon.style.transform='rotate(180deg)';icon.textContent='↑';} if(text)text.textContent='Release to refresh'; }
+    else { if(icon){icon.style.transform='none';icon.textContent='↓';} if(text)text.textContent='Pull to refresh'; }
+  }, {passive:true});
+  document.addEventListener('touchend', e => {
+    if (!pulling) return; pulling = false;
+    const dist = e.changedTouches[0].clientY - startY;
+    if (dist >= THRESH) {
+      if(ind){ind.style.height='52px'; const t=document.getElementById('ptr-b-text'); if(t)t.textContent='Refreshing...';}
+      refreshAll().then(() => { setTimeout(() => { if(ind) ind.style.height='0'; }, 300); });
+    } else { if(ind) ind.style.height='0'; }
+  }, {passive:true});
+})();
 
 // ── INIT ──
 initName();
