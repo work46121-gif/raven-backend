@@ -1983,12 +1983,30 @@ app.get('/trip/:tripId', async (req, res) => {
         return credits;
       }
       // New format — may contain per-receipt keys 'person::receipt::id' or person-level keys
+      // First pass: find which people have receipt-level keys
+      const hasReceiptKeys = {};
+      Object.keys(parsed).forEach(k => {
+        if (k.includes('::receipt::')) {
+          hasReceiptKeys[k.split('::receipt::')[0].toLowerCase()] = true;
+        }
+      });
+      // Second pass: sum credits, but skip person-level key if receipt-level keys exist
+      // (avoids double-counting when both are stored together)
       const credits = {};
       Object.entries(parsed).forEach(([k, v]) => {
         const val = parseFloat(v) || 0;
         if (val <= 0) return;
-        const personKey = k.includes('::receipt::') ? k.split('::receipt::')[0] : k.toLowerCase();
-        credits[personKey] = (credits[personKey] || 0) + val;
+        if (k.includes('::receipt::')) {
+          const personKey = k.split('::receipt::')[0].toLowerCase();
+          credits[personKey] = (credits[personKey] || 0) + val;
+        } else {
+          // Person-level key: only count it if NO receipt-level keys exist for this person
+          const personKey = k.toLowerCase();
+          if (!hasReceiptKeys[personKey]) {
+            credits[personKey] = (credits[personKey] || 0) + val;
+          }
+          // else: skip — receipt-level keys give us the precise breakdown
+        }
       });
       return credits;
     } catch(e) { return {}; }
@@ -5044,8 +5062,8 @@ app.post('/trip/:tripId/mark-settled', async (req, res) => {
             storedAny = true;
           }
         });
-        // Also keep a person-level key as fallback sentinel
-        if (storedAny) credits[nameLower] = settleAmount;
+        // NOTE: intentionally NOT storing a person-level key alongside receipt-level keys
+        // Person-level key causes double-counting in settledCredits computation
       } catch(e) {
         // Fallback: just store person-level key
         credits[nameLower] = Math.max(credits[nameLower] || 0, settleAmount);
