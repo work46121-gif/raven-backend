@@ -2110,7 +2110,7 @@ app.get('/trip/:tripId', async (req, res) => {
   const owesRows = people.map((p, i) => {
     const rawOwed = totals[p] || 0;
     const settledCredit = Math.min(settledCredits[p.toLowerCase()] || 0, rawOwed); // cap at rawOwed — prevents 999999 sentinel over-settling
-    const amtOwed = Math.max(0, rawOwed - settledCredit);
+    const amtOwed = Math.round(Math.max(0, rawOwed - settledCredit) * 100) / 100;
     const isSettled = rawOwed > 0.02 && amtOwed <= 0.02; // fully settled (allow up to 2¢ rounding drift)
     const isPartiallySettled = settledCredit > 0 && amtOwed > 0.02;
     const amtReceivable = owedTo[p] || 0;
@@ -2132,7 +2132,7 @@ app.get('/trip/:tripId', async (req, res) => {
 
     // Collapse to per-payer totals
     const owesPerPayerRaw = {};
-    owesBreakdown.forEach(o => { owesPerPayerRaw[o.payer] = (owesPerPayerRaw[o.payer]||0) + o.amount; });
+    owesBreakdown.forEach(o => { owesPerPayerRaw[o.payer] = Math.round(((owesPerPayerRaw[o.payer]||0) + o.amount) * 100) / 100; });
 
     // Apply credits per-payer using receipt-level keys from settledPeopleRaw
     // Each key like "mel::receipt::22" tells us exactly which receipt (and thus which payer) was settled
@@ -5148,17 +5148,12 @@ app.post('/trip/:tripId/partial-unsettle', async (req, res) => {
     const reduceBy = parseFloat(amount) || 0;
 
     if (receiptKey) {
-      // Delete the receipt-level key if it exists
+      // Delete the receipt-level key for this specific receipt
       delete credits[receiptKey];
-      // ALSO reduce the person-level key if it exists
-      // (person may have been settled via "Mark as Paid" top-level button which
-      //  stores a person-level key, not per-receipt keys)
-      if (credits[nameLower] !== undefined && reduceBy > 0) {
-        const current = Math.min(credits[nameLower], 999998);
-        const newCredit = Math.max(0, Math.round((current - reduceBy) * 100) / 100);
-        if (newCredit <= 0.02) { delete credits[nameLower]; }
-        else { credits[nameLower] = newCredit; }
-      }
+      // ALWAYS delete the person-level key too — it's a legacy sentinel that causes
+      // false credits (e.g. daddy=1.25 leftover after reducing 150.13 - 148.88).
+      // Remaining settled receipts are tracked via their own receipt-level keys only.
+      delete credits[nameLower];
     } else {
       const current = Math.min(credits[nameLower] || 0, 999998);
       const newCredit = Math.max(0, current - reduceBy);
