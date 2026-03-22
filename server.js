@@ -1371,12 +1371,15 @@ async function refreshAll() {
     if (_optimisticPaid && Object.keys(_optimisticPaid).length > 0) {
       d.participants.forEach(p => {
         const key = p.name.toLowerCase();
-        const patch = _optimisticPaid[key];
-        if (patch) {
-          p.paid = true;
-          p.payment_method = patch.method;
-          // Once server confirms paid, remove from optimistic map
-          if (p.paid) delete _optimisticPaid[key];
+        if (_optimisticPaid[key]) {
+          if (p.paid) {
+            // Server now confirms paid — safe to remove optimistic override
+            delete _optimisticPaid[key];
+          } else {
+            // Server hasn't caught up yet — keep overriding
+            p.paid = true;
+            p.payment_method = _optimisticPaid[key].method;
+          }
         }
       });
     }
@@ -1543,16 +1546,30 @@ function showMyPayModal(amt) {
   const mc = document.getElementById('pmethods');
   mc.innerHTML = '';
   let n = 0;
+
+  // Payment app rows — open the app, but DON'T auto-mark paid
+  // User must explicitly confirm below via "I paid via [method]"
   function row(bg, icon, title, sub, href, copy, method) {
     const el = document.createElement(href?'a':'button');
     el.className = 'pm-row';
     if (href) { el.href = href; el.target = '_blank'; el.rel = 'noopener'; }
     if (copy) { el.addEventListener('click', e => { e.preventDefault(); navigator.clipboard.writeText(copy).catch(()=>{}); toast('Copied: '+copy); }); }
-    // Mark paid directly by name — avoids stale state race condition
-    el.addEventListener('click', () => setTimeout(() => markPaidByName(myName, method), 300));
+    // Clicking opens the payment app — then user taps confirm below
+    el.addEventListener('click', () => {
+      // Pre-select this method in the confirm button
+      const pmBtn = document.getElementById('pmark');
+      if (pmBtn) {
+        pmBtn.textContent = '✅ I paid via ' + method + ' →';
+        pmBtn.style.background = 'rgba(48,209,88,0.12)';
+        pmBtn.style.borderColor = 'rgba(48,209,88,0.4)';
+        pmBtn.style.color = '#30D158';
+        pmBtn.onclick = () => markPaidByName(myName, method);
+      }
+    });
     el.innerHTML = '<div class="pm-icon" style="background:'+bg+'">'+icon+'</div><div class="pm-info"><b>'+title+'</b><span>'+sub+'</span></div><span style="color:#6E6B80;font-size:16px">→</span>';
     mc.appendChild(el); n++;
   }
+
   if (p.venmo) row('#008CFF','V','Venmo','@'+p.venmo.replace('@','')+' · $'+amtStr,'venmo://paycharge?txn=pay&recipients='+p.venmo.replace('@','')+'&amount='+amtStr+'&note=Bill+Split',null,'Venmo');
   if (p.cashapp) { const t=p.cashapp.replace('$',''); row('#00D632','$','Cash App','$'+t+' · $'+amtStr,'https://cash.app/$'+t+'/'+amtStr,null,'Cash App'); }
   if (p.zelle) row('#6D1ED4','Z','Zelle',p.zelle+' · tap to copy',null,p.zelle,'Zelle');
@@ -1563,45 +1580,69 @@ function showMyPayModal(amt) {
       row('#222','Pay','Apple Pay','Opens iMessage to '+ap,'sms:+'+e164+'&body='+encodeURIComponent('Sending $'+amtStr+' via Apple Pay'),null,'Apple Pay');
     } else { row('#222','Pay','Apple Pay',ap+' · tap to copy',null,ap,'Apple Pay'); }
   }
-  if (n === 0) {
-    const noMethodDiv2 = document.createElement('div');
-    noMethodDiv2.innerHTML = '<div style="font-size:12px;color:#6E6B80;margin-bottom:10px;text-align:center">' + payeeName + " hasn't set up payment methods.<br>How did you pay?</div>";
-    ['Venmo','Cash App','Zelle','Apple Pay','Bank Transfer','Cash'].forEach(function(m) {
-      const b = document.createElement('button');
-      b.textContent = m;
-      b.style.cssText = 'display:block;width:100%;padding:10px 14px;margin-bottom:6px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#F0EEF8;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;text-align:left';
-      b.addEventListener('click', (function(method){ return function(){
-        markPaidByName(myName, method);
-      }; })(m));
-      noMethodDiv2.appendChild(b);
-    });
-    mc.appendChild(noMethodDiv2);
+
+  // "Paid via method" button — expands to full method list
+  const pmBtn = document.getElementById('pmark');
+  if (pmBtn) {
+    pmBtn.textContent = '✓ Paid via method ›';
+    pmBtn.style.background = 'rgba(255,255,255,0.04)';
+    pmBtn.style.borderColor = 'rgba(255,255,255,0.1)';
+    pmBtn.style.color = '#9896A8';
+    // Build method selection list below pmark when clicked
+    pmBtn.onclick = () => {
+      // If already showing method list, don't re-add
+      const existing = document.getElementById('method-select-list');
+      if (existing) { existing.remove(); pmBtn.textContent = '✓ Paid via method ›'; return; }
+      const list = document.createElement('div');
+      list.id = 'method-select-list';
+      list.style.cssText = 'margin-top:8px;display:flex;flex-direction:column;gap:6px';
+      ['Cash','Venmo','Cash App','Zelle','Apple Pay','Bank Transfer','Other'].forEach(function(m) {
+        const b = document.createElement('button');
+        b.textContent = m;
+        b.style.cssText = 'width:100%;padding:12px 16px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#F0EEF8;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;text-align:left;transition:background 0.15s';
+        b.addEventListener('click', (function(method){ return function(){ markPaidByName(myName, method); }; })(m));
+        list.appendChild(b);
+      });
+      pmBtn.insertAdjacentElement('afterend', list);
+      pmBtn.textContent = '✓ Paid via method ▴';
+    };
   }
-  document.getElementById('pmark').onclick = () => markPaidByName(myName, 'Other');
+
   document.getElementById('pmod').style.display = 'block';
+  // Pause polling while modal is open so optimistic state doesn't get overwritten
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 }
 
 // Mark paid by name — no stale /state fetch needed, server handles ghost IDs by name
 async function markPaidByName(name, method) {
   if (!name) { toast('Could not identify your name. Try refreshing.'); return; }
+  // Optimistically mark immediately — polling is paused so this won't get overwritten
+  _optimisticPaid[name.toLowerCase()] = { method: method || null };
+  closePay(); // closes modal and resumes polling
+  const methodLabel = method && method !== 'Other' ? ' via ' + method : '';
+  toast('✅ ' + name + ' paid' + methodLabel + '!');
+  _lastStateHash = '';
+  refreshAll(); // re-render immediately with optimistic state
+  // Fire the actual DB write in the background
   try {
     const r = await fetch(BACKEND_URL + '/bill/' + BID + '/mark-paid', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ participantId: null, name, payment_method: method||null })
     });
     const d = await r.json();
-    if (d.success) {
-      closePay();
-      const methodLabel = method && method !== 'Other' ? ' via ' + method : '';
-      toast('✅ ' + name + ' paid' + methodLabel + '!');
-      // Optimistically mark as paid — survives the next refreshAll re-render
-      _optimisticPaid[name.toLowerCase()] = { method: method || null };
+    if (!d.success) {
+      // DB write failed — remove optimistic override and show error
+      delete _optimisticPaid[name.toLowerCase()];
       _lastStateHash = '';
       refreshAll();
-    } else {
-      toast('Error marking paid. Try again.');
+      toast('⚠️ Could not save payment. Try again.');
     }
-  } catch(e) { toast('Error. Try again.'); }
+  } catch(e) {
+    delete _optimisticPaid[name.toLowerCase()];
+    _lastStateHash = '';
+    refreshAll();
+    toast('⚠️ Network error. Try again.');
+  }
 }
 
 // ── QR CODE ──
@@ -1640,7 +1681,14 @@ function showPay(btn) {
   document.getElementById('pmod').style.display = 'block';
 }
 
-function closePay() { document.getElementById('pmod').style.display = 'none'; }
+function closePay() {
+  document.getElementById('pmod').style.display = 'none';
+  // Remove method select list if open
+  const list = document.getElementById('method-select-list');
+  if (list) list.remove();
+  // Resume polling
+  if (!pollTimer) { pollTimer = setInterval(refreshAll, 800); }
+}
 
 async function markPaid(pid, name, method) {
   try {
