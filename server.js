@@ -511,6 +511,9 @@ app.post('/bill/:billId/claim', async (req, res) => {
       .select('id').eq('bill_id', billId).eq('item_id', item_id).eq('participant_name', name).maybeSingle();
     if (existing) return res.json({ success: true, action: 'already_claimed' });
     await supabase.from('item_selections').insert({ bill_id: billId, item_id, participant_name: name });
+    // If person was marked paid, un-mark them since their order changed
+    await supabase.from('participants').update({ paid: false, paid_at: null, payment_method: null })
+      .eq('bill_id', billId).ilike('name', name).eq('paid', true);
     // Recalculate amounts for all participants
     await recalcBillAmounts(billId);
     res.json({ success: true, action: 'claimed' });
@@ -523,8 +526,12 @@ app.post('/bill/:billId/unclaim', async (req, res) => {
     const { billId } = req.params;
     const { item_id, participant_name } = req.body;
     if (!item_id || !participant_name?.trim()) return res.json({ success: false, error: 'Missing fields' });
+    const name = participant_name.trim();
     await supabase.from('item_selections')
-      .delete().eq('bill_id', billId).eq('item_id', item_id).eq('participant_name', participant_name.trim());
+      .delete().eq('bill_id', billId).eq('item_id', item_id).eq('participant_name', name);
+    // If person was marked paid, un-mark them since their order changed
+    await supabase.from('participants').update({ paid: false, paid_at: null, payment_method: null })
+      .eq('bill_id', billId).ilike('name', name).eq('paid', true);
     await recalcBillAmounts(billId);
     res.json({ success: true, action: 'unclaimed' });
   } catch(e) { res.json({ success: false, error: e.message }); }
@@ -848,8 +855,8 @@ app.get('/bill/:billId', async (req, res) => {
         <div style="font-size:18px;font-weight:700;margin-bottom:4px">Pay <span id="pname"></span></div>
         <div style="font-size:40px;font-weight:800;color:#30D158;margin-bottom:20px" id="pamt">$0.00</div>
         <div id="pmethods" style="margin-bottom:12px"></div>
-        <button id="pmark" style="width:100%;padding:14px;background:transparent;border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:#9896A8;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:8px">✓ Mark as paid (other method)</button>
-        <button onclick="closePay()" style="width:100%;padding:12px;background:transparent;border:none;color:#6E6B80;font-family:inherit;font-size:13px;cursor:pointer">I'll pay later</button>
+        <button id="pmark" style="width:100%;padding:13px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:#9896A8;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:6px">✓ Paid via other method (cash, etc)</button>
+        <button onclick="closePay()" style="width:100%;padding:10px;background:transparent;border:none;color:#6E6B80;font-family:inherit;font-size:12px;cursor:pointer">I'll pay later</button>
       </div>
     </div>
   </div>
@@ -1002,7 +1009,7 @@ app.get('/bill/:billId', async (req, res) => {
       <div style="font-size:18px;font-weight:700;margin-bottom:4px">Pay <span id="pname"></span></div>
       <div style="font-size:40px;font-weight:800;color:#30D158;margin-bottom:20px" id="pamt">$0.00</div>
       <div id="pmethods" style="margin-bottom:12px"></div>
-      <button id="pmark" style="width:100%;padding:14px;background:transparent;border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:#9896A8;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:8px">✓ Mark as paid (other method)</button>
+      <button id="pmark" style="width:100%;padding:13px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:#9896A8;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:6px">✓ Paid via other method (cash, etc)</button>
       <button onclick="closePay()" style="width:100%;padding:12px;background:transparent;border:none;color:#6E6B80;font-family:inherit;font-size:13px;cursor:pointer">I'll pay later</button>
     </div>
   </div>
@@ -1056,7 +1063,7 @@ app.get('/bill/:billId', async (req, res) => {
       <div style="width:8px;height:8px;border-radius:50%;background:#30D158;animation:pulse 2s infinite;flex-shrink:0"></div>
       <div>
         <div style="font-size:13px;font-weight:700;color:#30D158">Live Mode</div>
-        <div style="font-size:11px;color:#6E6B80" id="live-lbl">Tap items to claim · auto-updates every 5s</div>
+        <div style="font-size:11px;color:#6E6B80" id="live-lbl">Live · auto-updates every 2s</div>
       </div>
     </div>
     <div id="you-badge" style="display:none;padding:5px 12px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.3);border-radius:20px;font-size:12px;font-weight:700;color:#30D158"></div>
@@ -1225,8 +1232,8 @@ async function toggleClaim(itemId, itemName) {
     const d = await r.json();
     if (d.success) {
       toast(isClaimed ? '✓ Removed ' + itemName : '✓ Claimed ' + itemName);
-      _lastStateHash = ''; // force re-render on next poll
-      refreshAll();
+      _lastStateHash = ''; // force immediate re-render
+      await refreshAll(); // await so UI updates before next interaction
     } else { toast('Error: ' + (d.error || 'try again')); }
   } catch(e) { toast('Network error'); }
 }
@@ -1249,6 +1256,10 @@ async function refreshAll() {
 function renderState(d) {
   const { items, selections, participants, bill } = d;
   const paidByLower = (bill.paid_by || '').toLowerCase();
+  // Hoist shared computed values — available to all sections
+  const tax = parseFloat(bill.tax || 0);
+  const tip = parseFloat(bill.tip || 0);
+  const billSubtotal = items.reduce((s, i) => s + parseFloat(i.price || 0), 0);
 
   // Build selection map: itemId -> [names] (preserving case)
   const selMap = {};
@@ -1299,10 +1310,6 @@ function renderState(d) {
     if (participants.length === 0) {
       owes.innerHTML = '<div style="padding:24px;text-align:center;color:#6E6B80;font-size:13px">No participants yet — scan the QR to join!</div>';
     } else {
-      const tax = parseFloat(bill.tax || 0);
-      const tip = parseFloat(bill.tip || 0);
-      const billSubtotal = items.reduce((s, i) => s + parseFloat(i.price || 0), 0);
-
       owes.innerHTML = participants.map(p => {
         const isBillPayer = paidByLower && p.name.toLowerCase() === paidByLower;
         const isMe = myName && p.name.toLowerCase() === (myName||'').toLowerCase();
@@ -1341,7 +1348,8 @@ function renderState(d) {
 
         const rowBorder = isMe ? 'border-left:3px solid #30D158;background:rgba(48,209,88,0.03);' : '';
         let statusColor = isBillPayer ? '#C084FC' : p.paid ? '#30D158' : liveAmt > 0 ? '#FF9A3C' : '#6E6B80';
-        let statusText = isBillPayer ? '💳 Paid the bill' : p.paid ? '✅ Paid' : liveAmt > 0 ? 'Owes $' + liveAmt.toFixed(2) : anySelections ? '⏳ Nothing claimed yet' : '✓ All settled';
+        const pmMethod = p.payment_method && p.payment_method !== 'Other' ? ' via ' + p.payment_method : '';
+        let statusText = isBillPayer ? '💳 Paid the bill' : p.paid ? '✅ Paid' + pmMethod : liveAmt > 0 ? 'Owes $' + liveAmt.toFixed(2) : anySelections ? '⏳ Nothing claimed yet' : '✓ All settled';
         let action = '';
         if (isBillPayer) action = '<div style="font-size:24px">💳</div>';
         else if (p.paid) action = '<div style="font-size:22px">✅</div>';
@@ -1487,7 +1495,13 @@ async function markPaid(pid, name, method) {
       body: JSON.stringify({ participantId: pid, name, payment_method: method||null })
     });
     const d = await r.json();
-    if (d.success) { closePay(); toast('✅ Marked as paid!'); refreshAll(); }
+    if (d.success) {
+      closePay();
+      const methodLabel = method && method !== 'Other' ? ' via ' + method : '';
+      toast('✅ ' + name + ' paid' + methodLabel + '!');
+      _lastStateHash = ''; // force immediate re-render
+      refreshAll();
+    }
   } catch(e) { toast('Error. Try again.'); }
 }
 
