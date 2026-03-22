@@ -1265,15 +1265,19 @@ async function toggleClaim(itemId, itemName) {
 
 // ── REFRESH / POLLING ──
 let _lastStateHash = '';
+let _firstRender = true;
 async function refreshAll() {
   try {
     const r = await fetch('/bill/' + BID + '/state');
     const d = await r.json();
     if (!d.success) return;
-    // Quick hash to detect changes
-    const hash = JSON.stringify({ sel: d.selections, parts: d.participants.map(p=>({id:p.id,amount:p.amount,paid:p.paid})), pcount: d.participants.length });
-    if (hash === _lastStateHash) return; // nothing changed
+    // Hash: include selections sorted by item+person, participants, paid status, and amounts
+    const selKey = d.selections.map(s => s.item_id + ':' + s.participant_name).sort().join('|');
+    const partsKey = d.participants.map(p => p.id + ':' + (p.paid?'1':'0') + ':' + (p.payment_method||'') + ':' + (p.amount||0)).sort().join('|');
+    const hash = selKey + '##' + partsKey + '##' + d.participants.length;
+    if (hash === _lastStateHash && !_firstRender) return; // nothing changed
     _lastStateHash = hash;
+    _firstRender = false;
     renderState(d);
   } catch(e) { console.error('Refresh error:', e); }
 }
@@ -1639,7 +1643,7 @@ pollTimer = setInterval(refreshAll, 2000);
 // Stop polling when tab hidden, resume when visible
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { clearInterval(pollTimer); }
-  else { _lastStateHash = ''; refreshAll(); pollTimer = setInterval(refreshAll, 2000); }
+  else { _lastStateHash = ''; _firstRender = true; refreshAll(); pollTimer = setInterval(refreshAll, 2000); }
 });
 
 // Enter key on name input
@@ -2661,6 +2665,32 @@ document.addEventListener('DOMContentLoaded', () => {
   // Build saved receipts photo gallery — runs after DOM ready so it works on mobile too
   try { buildSavedReceiptsGallery(); } catch(e) { console.error('Gallery error:', e); }
 
+  // Background poll — silently reload if receipts or settled state changed
+  let _tripHash = '';
+  const _tripId = ${JSON.stringify(tripId)};
+  const _tripToken = ${JSON.stringify(trip.share_token || '')};
+  async function pollTripChanges() {
+    try {
+      const r = await fetch('/trip-info/' + _tripId);
+      const d = await r.json();
+      if (!d) return;
+      const newHash = (d.receipt_count || 0) + ':' + (d.total || 0);
+      if (_tripHash && newHash !== _tripHash) {
+        // Data changed — reload to show fresh server-rendered state
+        location.reload();
+      }
+      _tripHash = newHash;
+    } catch(e) {}
+  }
+  // Poll every 8 seconds (less aggressive than bill page since it triggers reload)
+  setInterval(pollTripChanges, 8000);
+  // Also reload on tab focus if we've been away
+  let _tripHidden = false;
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { _tripHidden = true; }
+    else if (_tripHidden) { _tripHidden = false; pollTripChanges(); }
+  });
+
   // Wire up "Mark as Settled" buttons via event delegation — safe for any name
   document.addEventListener('click', function(e) {
     const btn = e.target.closest('.mark-settled-btn');
@@ -3451,7 +3481,7 @@ document.getElementById('close-invite-btn').addEventListener('click',  () => clo
 document.getElementById('open-add-members').addEventListener('click',  () => { newMembers=[]; renderNewMembers(); openModal('add-members-modal'); });
 document.getElementById('close-members-btn').addEventListener('click', () => closeModal('add-members-modal'));
 
-document.getElementById('open-receipt-btn').addEventListener('click',  () => { document.getElementById('receipt-form-wrap').style.display='block'; document.getElementById('open-receipt-btn').style.display='none'; setTimeout(()=>document.getElementById('receipt-form-wrap').scrollIntoView({behavior:'smooth',block:'start'}),50); });
+document.getElementById('open-receipt-btn').addEventListener('click',  () => { document.getElementById('receipt-form-wrap').style.display='block'; document.getElementById('open-receipt-btn').style.display='none'; setTimeout(()=>{ document.getElementById('receipt-form-wrap').scrollIntoView({behavior:'smooth',block:'start'}); updateEven(); },50); });
 document.getElementById('close-receipt-btn').addEventListener('click', () => { document.getElementById('receipt-form-wrap').style.display='none'; document.getElementById('open-receipt-btn').style.display='block'; });
 
 // ── COVER PHOTO ──
@@ -3625,6 +3655,8 @@ document.getElementById('post-comment-btn').addEventListener('click', async func
 document.getElementById('r-btn-e').addEventListener('click', () => setSplit('even'));
 document.getElementById('r-btn-i').addEventListener('click', () => setSplit('itemized'));
 document.getElementById('r-total').addEventListener('input', updateEven);
+document.getElementById('r-paidby').addEventListener('change', updateEven);
+document.getElementById('r-discount').addEventListener('input', updateEven);
 document.getElementById('r-add-item').addEventListener('click', addItem);
 document.getElementById('r-drop').addEventListener('click', () => document.getElementById('r-file').click());
 document.getElementById('r-file').addEventListener('change', function() { if(this.files[0]) tripPhoto(this.files[0]); });
@@ -3638,12 +3670,21 @@ function setSplit(t) {
   document.getElementById('r-btn-i').className = 'spl'+(t==='itemized'?' ai':'');
 }
 function updateEven() {
-  const v=parseFloat(document.getElementById('r-total').value)||0, per=v/PEOPLE.length;
-  document.getElementById('r-even-prev').style.display = v>0?'block':'none';
+  const v=parseFloat(document.getElementById('r-total').value)||0;
+  const discount=parseFloat((document.getElementById('r-discount')||{}).value)||0;
+  const net=Math.max(0,v-discount);
+  const paidBy=(document.getElementById('r-paidby')||{}).value||'';
+  const paidByL=paidBy.toLowerCase();
+  const debtors=PEOPLE.filter(p=>p.toLowerCase()!==paidByL);
+  const per=debtors.length>0?net/debtors.length:(PEOPLE.length>0?net/PEOPLE.length:0);
+  document.getElementById('r-even-prev').style.display = net>0?'block':'none';
   PEOPLE.forEach(p => {
     const id = 'ep-'+p.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');
     const el = document.getElementById(id);
-    if (el) el.textContent = '$'+per.toFixed(2);
+    if (!el) return;
+    const isPayer = paidBy && p.toLowerCase()===paidByL;
+    el.textContent = isPayer ? 'paid 💳' : '$'+per.toFixed(2);
+    el.style.color = isPayer ? '#A855F7' : '#30D158';
   });
 }
 function addItem() {
@@ -3888,7 +3929,10 @@ async function saveReceipt() {
     const discount=parseFloat((document.getElementById('r-discount')||{}).value)||0;
     if(total<=0){btn.textContent='Save Receipt';btn.disabled=false;toast('Enter a total amount',false);return;}
     const finalTotal = Math.max(0, total - discount);
-    const per=finalTotal/PEOPLE.length; PEOPLE.forEach(p=>{splits[p]=per;});
+    const paidByL=(paidBy||'').toLowerCase();
+    const debtors=paidBy?PEOPLE.filter(p=>p.toLowerCase()!==paidByL):PEOPLE;
+    const per=debtors.length>0?finalTotal/debtors.length:finalTotal/PEOPLE.length;
+    PEOPLE.forEach(p=>{splits[p]=(paidBy&&p.toLowerCase()===paidByL)?0:per;});
     total = finalTotal;
   } else {
     PEOPLE.forEach(p=>{splits[p]=0;});
