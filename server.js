@@ -1765,7 +1765,10 @@ async function computeOutstanding(tripId) {
       let sp = trip.settled_people;
       if (typeof sp === 'string') { try { sp = JSON.parse(sp); } catch(e){} }
       if (typeof sp === 'string') { try { sp = JSON.parse(sp); } catch(e){} }
-      if (sp && !Array.isArray(sp) && typeof sp === 'object') {
+      if (Array.isArray(sp)) {
+        // Old format: array of names — treat as 999999 (fully settled), capped per-person below
+        sp.forEach(name => { settledCreds[name.toLowerCase()] = 999999; });
+      } else if (sp && typeof sp === 'object') {
         Object.entries(sp).forEach(([k,v]) => { if (parseFloat(v)>0) settledCreds[k.toLowerCase()] = parseFloat(v); });
       }
     } catch(e) {}
@@ -1785,7 +1788,9 @@ async function computeOutstanding(tripId) {
     });
     let outstanding = 0;
     Object.entries(rawTotals).forEach(([pl, raw]) => {
-      outstanding += Math.max(0, raw - (settledCreds[pl] || 0));
+      const capped = Math.min(settledCreds[pl] || 0, raw); // cap so 999999 sentinel never over-reduces
+      const net = Math.round(Math.max(0, raw - capped) * 100) / 100;
+      outstanding += net <= 0.02 ? 0 : net; // ignore sub-2¢ rounding drift
     });
     return parseFloat(outstanding.toFixed(2));
   } catch(e) { return null; }
@@ -2071,10 +2076,10 @@ app.get('/trip/:tripId', async (req, res) => {
   }
 
   const owesRows = people.map((p, i) => {
-    const settledCredit = settledCredits[p.toLowerCase()] || 0;
     const rawOwed = totals[p] || 0;
+    const settledCredit = Math.min(settledCredits[p.toLowerCase()] || 0, rawOwed); // cap at rawOwed — prevents 999999 sentinel over-settling
     const amtOwed = Math.max(0, rawOwed - settledCredit);
-    const isSettled = rawOwed > 0 && amtOwed <= 0.02; // fully settled (allow up to 2¢ rounding drift)
+    const isSettled = rawOwed > 0.02 && amtOwed <= 0.02; // fully settled (allow up to 2¢ rounding drift)
     const isPartiallySettled = settledCredit > 0 && amtOwed > 0.02;
     const amtReceivable = owedTo[p] || 0;
     const isCreditor = amtReceivable > 0 && amtOwed === 0;
@@ -2226,7 +2231,7 @@ app.get('/trip/:tripId', async (req, res) => {
               <div style="height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;margin-bottom:${payer?'10px':'0'}">
                 <div style="height:100%;width:${pct}%;background:${color};border-radius:2px"></div>
               </div>
-              ${(payer && !(settledCredits[person.toLowerCase()]>0 && Math.max(0,(totals[person]||0)-(settledCredits[person.toLowerCase()]||0))<=0.005)) ? '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px;flex-wrap:wrap">' + payButtonsHtml(payer, amount) + '<button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" style="padding:7px 14px;background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.2);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✓ Mark as Paid</button></div>' : (payer && settledCredits[person.toLowerCase()]>0) ? '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px"><button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" data-settled="1" style="padding:7px 14px;background:rgba(48,209,88,0.15);border:1px solid rgba(48,209,88,0.4);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✅ Settled · tap to undo</button></div>' : ''}
+              ${(payer && (()=>{ const _r=totals[person]||0; const _c=Math.min(settledCredits[person.toLowerCase()]||0,_r); return !(_r>0.02 && Math.max(0,_r-_c)<=0.02); })()) ? '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px;flex-wrap:wrap">' + payButtonsHtml(payer, amount) + '<button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" style="padding:7px 14px;background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.2);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✓ Mark as Paid</button></div>' : (payer && (()=>{ const _raw=totals[person]||0; const _cred=Math.min(settledCredits[person.toLowerCase()]||0,_raw); return _raw>0.02 && Math.max(0,_raw-_cred)<=0.02; })()) ? '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px"><button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" data-settled="1" style="padding:7px 14px;background:rgba(48,209,88,0.15);border:1px solid rgba(48,209,88,0.4);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✅ Settled · tap to undo</button></div>' : ''}
             </div>`;
           }).join('')}
         </div>
