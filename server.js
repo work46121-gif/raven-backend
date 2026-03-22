@@ -3721,20 +3721,18 @@ function updateEven() {
   const paidByT = paidByEl ? paidByEl.value.trim() : '';
   const paidByL = paidByT.toLowerCase();
   // Exclude payer — all non-payers split evenly
-  const debtors = paidByT ? PEOPLE.filter(p => p.trim().toLowerCase() !== paidByL) : [...PEOPLE];
-  const per = debtors.length > 0 ? net / debtors.length : (PEOPLE.length > 0 ? net / PEOPLE.length : 0);
+  // Split evenly across ALL people — payer fronted their own share too
+  const per = PEOPLE.length > 0 ? net / PEOPLE.length : 0;
   const prevEl = document.getElementById('r-even-prev');
   if (!prevEl) return;
   prevEl.style.display = net > 0 ? 'block' : 'none';
-  // Rebuild per-person rows dynamically (avoids stale server-rendered span ID issues)
-  const container = prevEl.querySelector('.per-person-rows') || prevEl;
-  // Clear and rebuild
   let html = '<div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:8px">Per Person</div>';
   PEOPLE.forEach(p => {
     const isPayer = paidByT && p.trim().toLowerCase() === paidByL;
-    const amt = isPayer ? 'paid 💳' : '$' + per.toFixed(2);
+    const amt = '$' + per.toFixed(2);
     const color = isPayer ? '#A855F7' : '#30D158';
-    html += '<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px"><span style="color:#9896A8">' + p + '</span><span style="color:' + color + ';font-weight:600">' + amt + '</span></div>';
+    const label = isPayer ? amt + ' <span style="font-size:10px;opacity:0.7">(their share, pre-paid)</span>' : amt;
+    html += '<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px"><span style="color:#9896A8">' + p + '</span><span style="color:' + color + ';font-weight:600">' + label + '</span></div>';
   });
   prevEl.innerHTML = html;
 }
@@ -3982,8 +3980,8 @@ async function saveReceipt() {
     const finalTotal = Math.max(0, total - discount);
     const paidByT2=(paidBy||'').trim();
     const paidByL2=paidByT2.toLowerCase();
-    const debtors2=paidByT2?PEOPLE.filter(p=>p.trim().toLowerCase()!==paidByL2):PEOPLE;
-    const per=debtors2.length>0?finalTotal/debtors2.length:finalTotal/PEOPLE.length;
+    // Split evenly across ALL people — payer's share is $0 owed (they already fronted it)
+    const per=PEOPLE.length>0?finalTotal/PEOPLE.length:0;
     PEOPLE.forEach(p=>{splits[p]=(paidByT2&&p.trim().toLowerCase()===paidByL2)?0:per;});
     total = finalTotal;
   } else {
