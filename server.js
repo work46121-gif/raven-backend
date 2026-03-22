@@ -2131,6 +2131,8 @@ app.get('/trip/:tripId', async (req, res) => {
     }
     const payerEntries = isSettled ? [] : Object.entries(owesPerPayer);
 
+    const personId = 'person-' + p.replace(/[^a-z0-9]/gi,'_');
+
     // Build pay slot buttons for top-level "Who Owes What"
     // Each entry = one row: "Pay [payer] $X" button + "Mark as Paid" 
     const payBtnsHtml = payerEntries.map(([payerName, amt]) =>
@@ -2152,7 +2154,6 @@ app.get('/trip/:tripId', async (req, res) => {
         </div>`
       : '';
 
-    const personId = 'person-' + p.replace(/[^a-z0-9]/gi,'_');
     // data-is-settled used for accurate settled count
     return `<div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)" id="row-${personId}" data-is-settled="${isSettled?'1':'0'}" data-is-debtor="${rawOwed>0.02?'1':'0'}">
       <div style="display:flex;align-items:center;justify-content:space-between;${(payerEntries.length>0&&!isSettled)?'margin-bottom:4px':''}">
