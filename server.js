@@ -507,7 +507,7 @@ app.get('/bill/:billId/state', async (req, res) => {
       // Await the insert so we return a real DB id, not a ghost id
       let realRow = null;
       const { data: inserted, error: insErr } = await supabase.from('participants')
-        .insert({ bill_id: billId, name: ghostName, amount: 0, paid: false })
+        .insert({ bill_id: billId, name: ghostName, amount: 0, paid: false, phone: '' })
         .select().maybeSingle();
       if (inserted) {
         realRow = inserted;
@@ -607,7 +607,7 @@ app.post('/bill/:billId/join', async (req, res) => {
       if (count >= bill.live_people_count) maxReached = true;
     }
     try {
-      await supabase.from('participants').insert({ bill_id: billId, name: cleanName, amount: 0, paid: false });
+      await supabase.from('participants').insert({ bill_id: billId, name: cleanName, amount: 0, paid: false, phone: '' });
     } catch(insertErr) {
       console.warn('[join] insert warn (may be duplicate):', insertErr.message);
     }
@@ -703,7 +703,7 @@ app.get('/bill/:billId', async (req, res) => {
     });
     for (const ghostName of ghostNames) {
       const { data: inserted } = await supabase.from('participants')
-        .insert({ bill_id: billId, name: ghostName, amount: 0, paid: false })
+        .insert({ bill_id: billId, name: ghostName, amount: 0, paid: false, phone: '' })
         .select().maybeSingle();
       if (inserted) {
         participants.push(inserted);
@@ -1645,17 +1645,22 @@ async function markPaidByName(name, method) {
   toast('✅ ' + name + ' paid' + methodLabel + '!');
 
   // DB write — await it before resuming polling
+  const markPaidUrl = BACKEND_URL + '/bill/' + BID + '/mark-paid';
   const payload = { participantId: null, name, payment_method: method||null };
-  console.log('[markPaidByName] sending:', JSON.stringify(payload), 'to', BACKEND_URL + '/bill/' + BID + '/mark-paid');
+  console.log('[markPaidByName] POST', markPaidUrl, JSON.stringify(payload));
   try {
-    const r = await fetch(BACKEND_URL + '/bill/' + BID + '/mark-paid', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
+    const r = await fetch(markPaidUrl, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
       body: JSON.stringify(payload)
     });
-    const d = await r.json();
-    console.log('[markPaidByName] server response for', name, ':', JSON.stringify(d));
+    console.log('[markPaidByName] HTTP status:', r.status);
+    const text = await r.text();
+    console.log('[markPaidByName] raw response:', text.substring(0, 300));
+    let d;
+    try { d = JSON.parse(text); } catch(pe) { d = { success: false, error: 'Non-JSON response: ' + text.substring(0,100) }; }
+    console.log('[markPaidByName] parsed:', JSON.stringify(d));
     if (d.success) {
-      // DB confirmed — now resume polling (will show real DB state)
       _lastStateHash = '';
       if (!pollTimer) pollTimer = setInterval(refreshAll, 800);
       refreshAll();
@@ -1664,15 +1669,15 @@ async function markPaidByName(name, method) {
       _lastStateHash = '';
       if (!pollTimer) pollTimer = setInterval(refreshAll, 800);
       refreshAll();
-      toast('⚠️ Could not save payment. Try again.');
+      toast('⚠️ ' + (d.error || 'Could not save payment') + '. Check console.');
     }
   } catch(e) {
-    console.error('[markPaidByName] fetch error:', e);
+    console.error('[markPaidByName] fetch exception:', e.name, e.message);
     _clearOptimisticPaid(name);
     _lastStateHash = '';
     if (!pollTimer) pollTimer = setInterval(refreshAll, 800);
     refreshAll();
-    toast('⚠️ Network error. Try again.');
+    toast('⚠️ ' + e.message + '. Check console.');
   }
 }
 
@@ -5977,7 +5982,7 @@ app.post('/bill/:billId/mark-paid', async (req, res) => {
         // Insert new row already marked paid
         const { data: inserted, error: insErr } = await supabase
           .from('participants')
-          .insert({ bill_id: billId, name, amount: 0, paid: true, paid_at: new Date().toISOString(), ...(payment_method ? { payment_method } : {}) })
+          .insert({ bill_id: billId, name, amount: 0, paid: true, paid_at: new Date().toISOString(), phone: '', ...(payment_method ? { payment_method } : {}) })
           .select('id').single();
         console.log(`[mark-paid] inserted new row: id=${inserted?.id} err=${insErr?.message}`);
         if (insErr) return res.json({ success: false, error: insErr.message });
