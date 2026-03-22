@@ -4714,7 +4714,34 @@ app.post('/trip/:tripId/receipt', async (req, res) => {
     if (parseFloat(discount) > 0) tripReceiptRow.discount = parseFloat(discount);
     await supabase.from('trip_receipts').insert(tripReceiptRow);
     const { data: all } = await supabase.from('trip_receipts').select('total').eq('trip_id', tripId);
-    // Credits accumulate — no need to un-settle; new debt shows as new remaining balance
+
+    // ── UN-SETTLE: reduce each person's credit by their new share ──
+    // When a new receipt adds debt for previously-settled people, they should see the new balance
+    try {
+      const { data: tripForCredits } = await supabase.from('trips').select('settled_people').eq('id', tripId).single();
+      if (tripForCredits?.settled_people) {
+        let raw = tripForCredits.settled_people;
+        if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch(e) {} }
+        if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch(e) {} }
+        if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+          const updatedCredits = { ...raw };
+          const newSplits = splits || {};
+          // For each person in the new receipt splits, reduce their credit by their new share
+          Object.entries(newSplits).forEach(([person, share]) => {
+            const amt = parseFloat(share) || 0;
+            if (amt <= 0) return; // payer or zero share — no new debt
+            const key = person.toLowerCase();
+            if (updatedCredits[key] !== undefined) {
+              // Subtract new debt from their credit — credit can't go below 0
+              updatedCredits[key] = Math.max(0, (parseFloat(updatedCredits[key]) || 0) - amt);
+              if (updatedCredits[key] === 0) delete updatedCredits[key]; // clean up zero entries
+            }
+          });
+          await supabase.from('trips').update({ settled_people: updatedCredits }).eq('id', tripId);
+        }
+      }
+    } catch(creditErr) { console.warn('Could not update settled credits on new receipt:', creditErr.message); }
+
     const outstanding = await computeOutstanding(tripId);
     await supabase.from('trips').update({ total: outstanding !== null ? outstanding : 0, receipt_count: (all||[]).length }).eq('id', tripId);
     res.json({ success: true });
