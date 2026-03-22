@@ -489,11 +489,37 @@ app.get('/bill/:billId/state', async (req, res) => {
       supabase.from('item_selections').select('*').eq('bill_id', billId),
       supabase.from('participants').select('*').eq('bill_id', billId).order('name')
     ]);
+    // Safety net: anyone with item_selections but no participant row gets added
+    const dbParticipants = participantsRes.data || [];
+    const dbNames = new Set(dbParticipants.map(p => p.name.toLowerCase()));
+    const extraNames = new Set();
+    (selectionsRes.data || []).forEach(s => {
+      if (s.participant_name && !dbNames.has(s.participant_name.toLowerCase())) {
+        extraNames.add(s.participant_name);
+      }
+    });
+    for (const ghostName of extraNames) {
+      const { data: inserted, error: ghostErr } = await supabase.from('participants')
+        .insert({ bill_id: billId, name: ghostName, amount: 0, paid: false })
+        .select().single();
+      if (inserted) {
+        dbParticipants.push(inserted);
+        dbNames.add(ghostName.toLowerCase());
+      } else {
+        // Insert failed (maybe duplicate with different casing) — try to fetch
+        const { data: found } = await supabase.from('participants')
+          .select('*').eq('bill_id', billId).ilike('name', ghostName).maybeSingle();
+        if (found && !dbNames.has(found.name.toLowerCase())) {
+          dbParticipants.push(found);
+          dbNames.add(found.name.toLowerCase());
+        }
+      }
+    }
     res.json({
       success: true,
       items: itemsRes.data || [],
       selections: selectionsRes.data || [],
-      participants: participantsRes.data || [],
+      participants: dbParticipants,
       bill: { total: bill.total, tax: bill.tax, tip: bill.tip, paid_by: bill.paid_by, subtotal: bill.subtotal }
     });
   } catch(e) { res.json({ success: false, error: e.message }); }
@@ -557,7 +583,11 @@ app.post('/bill/:billId/join', async (req, res) => {
       const { count } = await supabase.from('participants').select('id', { count: 'exact', head: true }).eq('bill_id', billId);
       if (count >= bill.live_people_count) maxReached = true;
     }
-    await supabase.from('participants').insert({ bill_id: billId, name: cleanName, amount: 0, paid: false });
+    try {
+      await supabase.from('participants').insert({ bill_id: billId, name: cleanName, amount: 0, paid: false });
+    } catch(insertErr) {
+      console.warn('[join] insert warn (may be duplicate):', insertErr.message);
+    }
     res.json({ success: true, name: cleanName, maxReached, maxCount: bill.live_people_count });
   } catch(e) { res.json({ success: false, error: e.message }); }
 });
@@ -1218,7 +1248,9 @@ async function autoJoin(name, silent) {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ name })
     });
+    if (!r.ok) { console.error('[autoJoin] HTTP error:', r.status); return; }
     const d = await r.json();
+    console.log('[autoJoin] response for', name, ':', JSON.stringify(d));
     if (d.success) {
       myName = d.name;
       localStorage.setItem('raven_bill_name_' + BID, myName);
