@@ -1838,7 +1838,10 @@ app.post('/trip/create', async (req, res) => {
 
 app.get('/trip/:tripId', async (req, res) => {
   const { tripId } = req.params;
-  const token = req.query.t;
+  const token = req.query.t; // _nc is just a cache-buster, never affects auth
+  // Always serve fresh — never let Railway/proxy cache trip pages
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
 
   const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
   if (!trip) return res.status(404).send('<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center}</style></head><body><div><div style="font-size:52px">🪶</div><h2>Trip Not Found</h2></div></body></html>');
@@ -2805,7 +2808,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const newHash = (d.receipt_count || 0) + ':' + (d.total || 0) + ':' + (d.settled_hash || '');
       if (_tripHash && newHash !== _tripHash) {
         // Data changed — reload to show fresh server-rendered state
-        location.reload();
+        { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }
       }
       _tripHash = newHash;
     } catch(e) {}
@@ -3357,7 +3360,7 @@ function markReceiptItemPaid(personName, receiptId, amount, btn) {
           btn.disabled = false;
           btn.dataset.settled = '';
           toast(personName + ' unsettled ↩', true);
-          setTimeout(() => location.reload(), 600);
+          setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 600);
         } else {
           btn.disabled = false;
           btn.textContent = '✅ Settled · tap to undo';
@@ -3405,7 +3408,7 @@ function markReceiptItemPaid(personName, receiptId, amount, btn) {
         // Update outstanding display immediately
         const outEl = document.getElementById('outstanding-amt');
         if (outEl && d.outstanding !== undefined) { outEl.textContent = '$' + parseFloat(d.outstanding).toFixed(2); }
-        setTimeout(() => location.reload(), 1200);
+        setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 1200);
       } else {
         btn.disabled = false;
         btn.textContent = '✓ Mark as Paid';
@@ -3535,8 +3538,9 @@ function markTripPersonPaid(personName, personId, btn) {
         if (d.success) {
           toast(personName + ' unsettled ↩', true);
           setTimeout(() => {
+            // Reload preserving the t= token — just add a nocache param
             const url = new URL(window.location.href);
-            url.searchParams.set('_r', Date.now());
+            url.searchParams.set('_nc', Date.now());
             window.location.href = url.toString();
           }, 1500);
         } else {
@@ -3717,7 +3721,7 @@ function adminDeleteReceipt(btn) {
     const dist = e.changedTouches[0].clientY - startY;
     if (dist >= THRESHOLD) {
       if (indicator) { indicator.style.height = '60px'; const t = document.getElementById('ptr-text'); if (t) t.textContent = 'Refreshing…'; }
-      setTimeout(() => location.reload(), 150);
+      setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 150);
     } else {
       if (indicator) indicator.style.height = '0';
     }
@@ -3857,7 +3861,7 @@ async function saveEditReceipt() {
       body: JSON.stringify({ token: TRIP_TOKEN, name, paid_by: paidBy || null, total, splits })
     });
     const d = await r.json();
-    if (d.success) { closeEditReceipt(); toast('✅ Receipt updated!'); setTimeout(() => location.reload(), 900); }
+    if (d.success) { closeEditReceipt(); toast('✅ Receipt updated!'); setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 900); }
     else { toast(d.error || 'Error saving', false); btn.textContent = 'Save Changes'; btn.disabled = false; }
   } catch(e) { toast('Network error', false); btn.textContent = 'Save Changes'; btn.disabled = false; }
 }
@@ -3907,7 +3911,7 @@ document.getElementById('close-receipt-btn').addEventListener('click', () => { d
         if (existing) existing.src = resized;
         toast('Saving cover...');
         fetch(BACKEND+'/trip/'+TRIP_ID+'/cover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,image:resized.split(',')[1]})})
-          .then(r=>r.json()).then(d=>{ if(d.success){toast('🖼 Cover saved!');setTimeout(()=>location.reload(),1200);}else toast(d.error||'Error',false); })
+          .then(r=>r.json()).then(d=>{ if(d.success){toast('🖼 Cover saved!');setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 1200);}else toast(d.error||'Error',false); })
           .catch(()=>toast('Network error',false));
       };
       img.src = e.target.result;
@@ -3927,7 +3931,7 @@ document.getElementById('save-settings-btn').addEventListener('click', async fun
     const endDate = document.getElementById('settings-end-date')?.value || null;
     const r = await fetch(BACKEND+'/trip/'+TRIP_ID+'/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,name,trip_date:date||null,due_date:dueDate||null,end_date:endDate||null})});
     const d = await r.json();
-    if (d.success) { toast('✅ Trip updated!'); setTimeout(()=>location.reload(),1200); }
+    if (d.success) { toast('✅ Trip updated!'); setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 1200); }
     else toast(d.error||'Error',false);
   } catch(e) { toast('Network error',false); }
   this.textContent='💾 Save Changes'; this.disabled=false;
@@ -3980,7 +3984,7 @@ document.getElementById('save-members-btn').addEventListener('click', async func
   try {
     const r = await fetch(BACKEND+'/trip/'+TRIP_ID+'/add-members',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,members:newMembers})});
     const d = await r.json();
-    if (d.success) { toast('✅ Members added!'); setTimeout(()=>location.reload(),1200); }
+    if (d.success) { toast('✅ Members added!'); setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 1200); }
     else { toast(d.error||'Error',false); this.textContent='✓ Save'; this.disabled=false; }
   } catch(e) { toast('Network error',false); this.textContent='✓ Save'; this.disabled=false; }
 });
@@ -4044,7 +4048,7 @@ document.getElementById('post-comment-btn').addEventListener('click', async func
   try {
     const r = await fetch(BACKEND+'/trip/'+TRIP_ID+'/comment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,author_name:author,body,gif_url:gifUrl||null})});
     const d = await r.json();
-    if (d.success) { document.getElementById('comment-body').value=''; clearGif(); toast('✅ Posted!'); setTimeout(()=>location.reload(),900); }
+    if (d.success) { document.getElementById('comment-body').value=''; clearGif(); toast('✅ Posted!'); setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 900); }
     else toast(d.error||'Error',false);
   } catch(e) { toast('Network error',false); }
   this.textContent='💬 Post'; this.disabled=false;
@@ -4277,7 +4281,7 @@ function addPhotoToReceipt(receiptId) {
             body: JSON.stringify({ token: TRIP_TOKEN, photo_url: photoUrl })
           });
           const d = await r.json();
-          if (d.success) { toast('📎 Photo added!'); setTimeout(() => location.reload(), 900); }
+          if (d.success) { toast('📎 Photo added!'); setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 900); }
           else toast('Error: ' + (d.error || 'Could not save photo'), false);
         } catch(e) { toast('Network error', false); }
       };
@@ -4300,7 +4304,7 @@ async function toggleCoAdmin(btn, name) {
     const d = await r.json();
     if (d.success) {
       toast(isAdmin ? name+' removed as co-admin' : name+' is now a co-admin ⚙️');
-      setTimeout(() => location.reload(), 900);
+      setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 900);
     } else { toast(d.error || 'Error', false); btn.disabled = false; }
   } catch(e) { toast('Network error', false); btn.disabled = false; }
 }
@@ -4317,7 +4321,7 @@ async function removeMember(btn, name) {
     const d = await r.json();
     if (d.success) {
       toast(name + ' removed from trip');
-      setTimeout(() => location.reload(), 900);
+      setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 900);
     } else { toast(d.error || 'Error', false); btn.disabled = false; }
   } catch(e) { toast('Network error', false); btn.disabled = false; }
 }
@@ -4360,7 +4364,7 @@ async function saveReceipt() {
       const paidByEl=document.getElementById('r-paidby'); if(paidByEl) paidByEl.value='';
       tripItems=[]; imgBase64=null; splitType='even';
       setSplit('even'); renderItems();
-      setTimeout(()=>location.reload(),1200);
+      setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 1200);
     } else{btn.textContent='Save Receipt';btn.disabled=false;toast(d.error||'Error',false);}
   }catch(e){btn.textContent='Save Receipt';btn.disabled=false;toast('Network error',false);}
 }
@@ -4977,9 +4981,12 @@ app.post('/trip/:tripId/unsettle', async (req, res) => {
         raw.filter(n => n.toLowerCase() !== (name||'').toLowerCase())
            .forEach(n => { credits[n.toLowerCase()] = 999999; });
       } else if (raw && typeof raw === 'object') {
+        const nameLow = (name||'').toLowerCase();
         Object.entries(raw).forEach(([k, v]) => {
-          if (k.toLowerCase() !== (name||'').toLowerCase() && parseFloat(v) > 0)
-            credits[k.toLowerCase()] = parseFloat(v);
+          // Remove the person-level key AND any receipt-level keys for this person
+          const kLow = k.toLowerCase();
+          if (kLow === nameLow || kLow.startsWith(nameLow + '::')) return;
+          if (parseFloat(v) > 0) credits[kLow] = parseFloat(v);
         });
       }
     } catch(e) {}
