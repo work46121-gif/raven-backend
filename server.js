@@ -2151,10 +2151,8 @@ app.get('/trip/:tripId', async (req, res) => {
     // Entries excluding the payer (they don't owe themselves)
     const splitEntries = Object.entries(splits).filter(([p,a]) => parseFloat(a) > 0 && (!payer || p.toLowerCase() !== payer.toLowerCase()));
     const allEntries   = Object.entries(splits).filter(([,a]) => parseFloat(a) > 0);
-    // splitterCount includes the payer (their share may be $0 since they paid)
-    const splitterCount = payer
-      ? Math.max(allEntries.length + 1, Object.keys(splits).length)  // +1 for payer
-      : allEntries.length;
+    // splitterCount = everyone in splits (payer included, even if their share is $0)
+    const splitterCount = Object.keys(splits).length || allEntries.length;
     const total = parseFloat(r.total||0);
     const dateStr = new Date(r.created_at).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'America/New_York'});
     const receiptId = 'receipt-' + rIdx;
