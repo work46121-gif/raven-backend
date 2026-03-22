@@ -2125,7 +2125,7 @@ app.get('/trip/:tripId', async (req, res) => {
         const sp = typeof r.splits==='string' ? JSON.parse(r.splits) : (r.splits||{});
         const myShare = Object.entries(sp).find(([k]) => k.toLowerCase() === p.toLowerCase());
         if (myShare && parseFloat(myShare[1]) > 0) {
-          owesBreakdown.push({ payer: r.paid_by, amount: parseFloat(myShare[1]), receipt: r.name||'Receipt' });
+          owesBreakdown.push({ payer: r.paid_by, amount: Math.round((parseFloat(myShare[1])||0) * 100) / 100, receipt: r.name||'Receipt' });
         }
       } catch(e) {}
     });
@@ -5121,6 +5121,44 @@ app.post('/trip/:tripId/mark-settled', async (req, res) => {
         });
       }
     } catch(e) {}
+    // Store settled/debtor counts on the trip for dashboard display
+    try {
+      const { data: rcptsForCount } = await supabase.from('trip_receipts').select('splits,paid_by').eq('trip_id', tripId);
+      const { data: tripForCount } = await supabase.from('trips').select('settled_people,people').eq('id', tripId).single();
+      if (rcptsForCount && tripForCount) {
+        const ppl2 = Array.isArray(tripForCount.people) ? tripForCount.people : JSON.parse(tripForCount.people||'[]');
+        const rawT = {};
+        ppl2.forEach(p => { rawT[p.toLowerCase()] = 0; });
+        rcptsForCount.forEach(r => {
+          const sp2 = typeof r.splits==='string' ? JSON.parse(r.splits) : (r.splits||{});
+          const pyr = (r.paid_by||'').toLowerCase();
+          Object.entries(sp2).forEach(([per, amt]) => {
+            const pl = per.toLowerCase();
+            if (pl === pyr) return;
+            rawT[pl] = Math.round(((rawT[pl]||0) + (parseFloat(amt)||0)) * 100) / 100;
+          });
+        });
+        let spRaw = tripForCount.settled_people;
+        if (typeof spRaw==='string'){try{spRaw=JSON.parse(spRaw);}catch(e){}}
+        const hasRK = {};
+        Object.keys(spRaw||{}).forEach(k => { if (k.includes('::receipt::')) hasRK[k.split('::receipt::')[0].toLowerCase()] = true; });
+        const cr = {};
+        Object.entries(spRaw||{}).forEach(([k,v]) => {
+          const val = parseFloat(v)||0; if (val<=0) return;
+          if (k.includes('::receipt::')) { const pk = k.split('::receipt::')[0].toLowerCase(); cr[pk] = (cr[pk]||0)+val; }
+          else if (!hasRK[k.toLowerCase()]) { cr[k.toLowerCase()] = (cr[k.toLowerCase()]||0)+val; }
+        });
+        let debtors2 = 0, settled2 = 0;
+        ppl2.forEach(p => {
+          const raw2 = rawT[p.toLowerCase()]||0;
+          if (raw2 <= 0.02) return;
+          debtors2++;
+          const cred2 = Math.min(cr[p.toLowerCase()]||0, raw2);
+          if (Math.max(0, raw2 - cred2) <= 0.02) settled2++;
+        });
+        await supabase.from('trips').update({ settled_count: settled2, debtor_count: debtors2 }).eq('id', tripId).catch(() => {});
+      }
+    } catch(e) {}
     res.json({ success: true, outstanding: outstandingVal, personBalances });
   } catch(err) { res.json({ success: false, error: err.message }); }
 });
@@ -5165,6 +5203,44 @@ app.post('/trip/:tripId/partial-unsettle', async (req, res) => {
     await supabase.from('trips').update({ settled_people: credits }).eq('id', tripId);
     const outstanding = await computeOutstanding(tripId);
     if (outstanding !== null) await supabase.from('trips').update({ total: outstanding }).eq('id', tripId);
+    // Recompute settled_count for dashboard
+    try {
+      const { data: rcptsU } = await supabase.from('trip_receipts').select('splits,paid_by').eq('trip_id', tripId);
+      const { data: tripU } = await supabase.from('trips').select('settled_people,people').eq('id', tripId).single();
+      if (rcptsU && tripU) {
+        const pplU = Array.isArray(tripU.people) ? tripU.people : JSON.parse(tripU.people||'[]');
+        const rawTU = {};
+        pplU.forEach(p => { rawTU[p.toLowerCase()] = 0; });
+        rcptsU.forEach(r => {
+          const spU = typeof r.splits==='string' ? JSON.parse(r.splits) : (r.splits||{});
+          const pyrU = (r.paid_by||'').toLowerCase();
+          Object.entries(spU).forEach(([per, amt]) => {
+            const pl = per.toLowerCase();
+            if (pl === pyrU) return;
+            rawTU[pl] = Math.round(((rawTU[pl]||0) + (parseFloat(amt)||0)) * 100) / 100;
+          });
+        });
+        let spU2 = tripU.settled_people;
+        if (typeof spU2==='string'){try{spU2=JSON.parse(spU2);}catch(e){}}
+        const hasRKU = {};
+        Object.keys(spU2||{}).forEach(k => { if (k.includes('::receipt::')) hasRKU[k.split('::receipt::')[0].toLowerCase()] = true; });
+        const crU = {};
+        Object.entries(spU2||{}).forEach(([k,v]) => {
+          const val = parseFloat(v)||0; if (val<=0) return;
+          if (k.includes('::receipt::')) { const pk = k.split('::receipt::')[0].toLowerCase(); crU[pk] = (crU[pk]||0)+val; }
+          else if (!hasRKU[k.toLowerCase()]) { crU[k.toLowerCase()] = (crU[k.toLowerCase()]||0)+val; }
+        });
+        let debtorsU = 0, settledU = 0;
+        pplU.forEach(p => {
+          const raw2 = rawTU[p.toLowerCase()]||0;
+          if (raw2 <= 0.02) return;
+          debtorsU++;
+          const cred2 = Math.min(crU[p.toLowerCase()]||0, raw2);
+          if (Math.max(0, raw2 - cred2) <= 0.02) settledU++;
+        });
+        await supabase.from('trips').update({ settled_count: settledU, debtor_count: debtorsU }).eq('id', tripId).catch(() => {});
+      }
+    } catch(e) {}
     res.json({ success: true });
   } catch(err) { res.json({ success: false, error: err.message }); }
 });
