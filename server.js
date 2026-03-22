@@ -2033,6 +2033,9 @@ app.get('/trip/:tripId', async (req, res) => {
     return Math.max(0, raw - credit) <= 0.02;
   }).length;
 
+  // Backfill settled_count/debtor_count on the trip row — keeps dashboard in sync
+  supabase.from('trips').update({ settled_count: settledCount, debtor_count: debtorCount }).eq('id', tripId).then(() => {}).catch(() => {});
+
   const baseUrl   = process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : `https://raven-backend-production-fb1f.up.railway.app`;
   const frontendUrl = 'https://ravensplit.com';
   const tripUrl   = `${frontendUrl}/trip/${tripId}?t=${trip.share_token}`;
