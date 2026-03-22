@@ -1281,7 +1281,8 @@ async function refreshAll() {
     if (!d.success) return;
     // Hash: include selections sorted by item+person, participants, paid status, and amounts
     const selKey = d.selections.map(s => s.item_id + ':' + s.participant_name).sort().join('|');
-    const partsKey = d.participants.map(p => p.id + ':' + (p.paid?'1':'0') + ':' + (p.payment_method||'') + ':' + (p.amount||0)).sort().join('|');
+    // Don't include p.amount in hash — it lags behind DB writes and causes missed updates
+    const partsKey = d.participants.map(p => p.id + ':' + (p.paid?'1':'0') + ':' + (p.payment_method||'')).sort().join('|');
     const hash = selKey + '##' + partsKey + '##' + d.participants.length;
     if (hash === _lastStateHash && !_firstRender) return; // nothing changed
     _lastStateHash = hash;
@@ -1645,34 +1646,47 @@ initName();
 refreshAll();
 loadC();
 
-// ── DELEGATED CLAIM HANDLER — works on all devices (mobile + desktop) ──
-// Handles both click and touchend on the items container
+// ── DELEGATED CLAIM HANDLER — works on all devices, no double-fire ──
 (function() {
   const container = document.getElementById('items-list');
   if (!container) return;
+  let _lastClaimTime = 0;
+  let _touchStartY = 0;
+  let _didTouch = false;
 
-  function handleClaim(e) {
-    const row = e.target.closest('[data-item-id]');
-    if (!row) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const itemId = row.getAttribute('data-item-id');
-    const itemName = row.getAttribute('data-item-name') || '';
+  function fireClaim(itemId, itemName) {
+    const now = Date.now();
+    if (now - _lastClaimTime < 600) return; // debounce: ignore within 600ms
+    _lastClaimTime = now;
     toggleClaim(itemId, itemName);
   }
 
-  container.addEventListener('click', handleClaim);
-  container.addEventListener('touchend', function(e) {
-    // Only fire if not scrolling
-    const touch = e.changedTouches[0];
-    const startY = container._touchStartY || touch.clientY;
-    if (Math.abs(touch.clientY - startY) < 10) {
-      handleClaim(e);
-    }
-  }, { passive: false });
+  // Touch: primary handler on mobile
   container.addEventListener('touchstart', function(e) {
-    container._touchStartY = e.touches[0].clientY;
+    _touchStartY = e.touches[0].clientY;
+    _didTouch = true;
   }, { passive: true });
+
+  container.addEventListener('touchend', function(e) {
+    const touch = e.changedTouches[0];
+    if (Math.abs(touch.clientY - _touchStartY) > 12) return; // scrolling — ignore
+    const row = e.target.closest('[data-item-id]');
+    if (!row) return;
+    e.preventDefault(); // blocks the synthetic click that follows
+    const itemId = row.getAttribute('data-item-id');
+    const itemName = row.getAttribute('data-item-name') || '';
+    fireClaim(itemId, itemName);
+  }, { passive: false });
+
+  // Click: desktop only (skipped if touch already handled it)
+  container.addEventListener('click', function(e) {
+    if (_didTouch) { _didTouch = false; return; } // mobile already handled via touchend
+    const row = e.target.closest('[data-item-id]');
+    if (!row) return;
+    const itemId = row.getAttribute('data-item-id');
+    const itemName = row.getAttribute('data-item-name') || '';
+    fireClaim(itemId, itemName);
+  });
 })();
 
 // Auto-poll every 5 seconds
