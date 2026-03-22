@@ -893,32 +893,30 @@ app.get('/bill/:billId', async (req, res) => {
       if(p.cashapp){const t=p.cashapp.replace('$','');row('#00D632','$','Cash App','$'+t+' · $'+amt,'https://cash.app/$'+t+'/'+amt,null,'Cash App');}
       if(p.zelle){row('#6D1ED4','Z','Zelle',p.zelle+' · tap to copy',null,p.zelle,'Zelle');}
       if(n===0){
-        // No configured methods — show manual method picker
-        mc.innerHTML = '<div style="margin-bottom:8px">'
-          + '<div style="font-size:12px;color:#6E6B80;margin-bottom:10px;text-align:center">' + payeeName + ' hasn\'t set up payment methods.<br>How did you pay?</div>'
-          + ['Venmo','Cash App','Zelle','Apple Pay','Bank Transfer','Cash'].map(m =>
-              '<button onclick="markPaid(\'' + pid + '\',\'' + name.replace(/'/g,"\\'"") + '\',\'' + m + '\')" '
-              + 'style="display:block;width:100%;padding:10px 14px;margin-bottom:6px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#F0EEF8;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;text-align:left">'
-              + m + '</button>'
-            ).join('')
-          + '</div>';
+        // No configured methods — build method buttons using DOM (no inline onclick strings)
+        const noMethodDiv = document.createElement('div');
+        noMethodDiv.innerHTML = '<div style="font-size:12px;color:#6E6B80;margin-bottom:10px;text-align:center">' + payeeName + " hasn't set up payment methods.<br>How did you pay?</div>";
+        ['Venmo','Cash App','Zelle','Apple Pay','Bank Transfer','Cash'].forEach(function(m) {
+          const b = document.createElement('button');
+          b.textContent = m;
+          b.style.cssText = 'display:block;width:100%;padding:10px 14px;margin-bottom:6px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#F0EEF8;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;text-align:left';
+          b.addEventListener('click', (function(method){ return function(){ markPaid(pid, name, method); }; })(m));
+          noMethodDiv.appendChild(b);
+        });
+        mc.appendChild(noMethodDiv);
       }
-      // Replace pmark with a "paid via..." dropdown
       const pmEl = document.getElementById('pmark');
       if(pmEl) {
         pmEl.textContent = '✓ Paid via other method';
         pmEl.onclick = function() {
-          const sub = document.createElement('div');
-          sub.style.cssText = 'position:absolute;bottom:70px;left:20px;right:20px;background:#1A1A28;border:1px solid rgba(255,255,255,0.15);border-radius:14px;overflow:hidden;z-index:10';
-          ['Cash','Bank Transfer','Other'].forEach(m => {
+          ['Cash','Bank Transfer','Other'].forEach(function(m) {
             const b = document.createElement('button');
             b.textContent = m;
-            b.style.cssText = 'display:block;width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#F0EEF8;font-family:inherit;font-size:14px;cursor:pointer;text-align:left';
-            b.onclick = () => { sub.remove(); markPaid(pid, name, m); };
-            sub.appendChild(b);
+            b.style.cssText = 'display:block;width:100%;padding:10px 14px;margin-bottom:6px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#F0EEF8;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;text-align:left';
+            b.addEventListener('click', (function(method){ return function(){ markPaid(pid, name, method); }; })(m));
+            mc.appendChild(b);
           });
-          document.querySelector('#pmod .pm-row')?.parentElement?.appendChild(sub) || document.getElementById('pmod').appendChild(sub);
-          setTimeout(() => document.addEventListener('click', () => sub.remove(), {once:true}), 10);
+          pmEl.style.display = 'none';
         };
       }
       document.getElementById('pmod').style.display='block';
@@ -1468,21 +1466,22 @@ function showMyPayModal(amt) {
     } else { row('#222','Pay','Apple Pay',ap+' · tap to copy',null,ap,'Apple Pay'); }
   }
   if (n === 0) {
-    mc.innerHTML = '<div style="margin-bottom:8px">'
-      + '<div style="font-size:12px;color:#6E6B80;margin-bottom:10px;text-align:center">' + payeeName + ' hasn\'t set up payment methods.<br>How did you pay?</div>'
-      + ['Venmo','Cash App','Zelle','Apple Pay','Bank Transfer','Cash'].map(m =>
-          '<button onclick="_payMethod(\'' + m + '\')" '
-          + 'style="display:block;width:100%;padding:10px 14px;margin-bottom:6px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#F0EEF8;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;text-align:left">'
-          + m + '</button>'
-        ).join('')
-      + '</div>';
-  }
-  window._payMethod = function(method) {
-    fetch('/bill/' + BID + '/state').then(r=>r.json()).then(d => {
-      const me = (d.participants||[]).find(p => myName && p.name.toLowerCase() === myName.toLowerCase());
-      if (me) markPaid(me.id, me.name, method);
+    const noMethodDiv2 = document.createElement('div');
+    noMethodDiv2.innerHTML = '<div style="font-size:12px;color:#6E6B80;margin-bottom:10px;text-align:center">' + payeeName + " hasn't set up payment methods.<br>How did you pay?</div>";
+    ['Venmo','Cash App','Zelle','Apple Pay','Bank Transfer','Cash'].forEach(function(m) {
+      const b = document.createElement('button');
+      b.textContent = m;
+      b.style.cssText = 'display:block;width:100%;padding:10px 14px;margin-bottom:6px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#F0EEF8;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;text-align:left';
+      b.addEventListener('click', (function(method){ return function(){
+        fetch('/bill/' + BID + '/state').then(r=>r.json()).then(d => {
+          const me = (d.participants||[]).find(p => myName && p.name.toLowerCase() === myName.toLowerCase());
+          if (me) markPaid(me.id, me.name, method);
+        });
+      }; })(m));
+      noMethodDiv2.appendChild(b);
     });
-  };
+    mc.appendChild(noMethodDiv2);
+  }
   document.getElementById('pmark').onclick = () => {
     fetch('/bill/' + BID + '/state').then(r=>r.json()).then(d => {
       const me = (d.participants||[]).find(p => myName && p.name.toLowerCase() === myName.toLowerCase());
