@@ -1937,10 +1937,10 @@ app.get('/trip/:tripId', async (req, res) => {
       Object.entries(splits).forEach(([person, amt]) => {
         const key = Object.keys(totals).find(k => k.toLowerCase() === person.toLowerCase());
         if (key === undefined) return;
-        const amtNum = parseFloat(amt) || 0;
+        const amtNum = Math.round((parseFloat(amt) || 0) * 100) / 100;
         // If this person IS the payer, they don't owe themselves — skip
         if (payer && key.toLowerCase() === payer.toLowerCase()) return;
-        totals[key] += amtNum;
+        totals[key] = Math.round((totals[key] + amtNum) * 100) / 100;
         // Track who they owe it to
         if (payer) {
           const payerKey = Object.keys(owedTo).find(k => k.toLowerCase() === payer.toLowerCase());
@@ -1979,7 +1979,8 @@ app.get('/trip/:tripId', async (req, res) => {
   // grandTotal = outstanding (after settled credits)
   const grandTotal = Math.round(Object.entries(totals).reduce((s, [person, raw]) => {
     const credit = settledCredits[person.toLowerCase()] || 0;
-    return s + Math.round(Math.max(0, raw - credit) * 100) / 100;
+    const net = Math.round(Math.max(0, raw - credit) * 100) / 100;
+    return s + (net <= 0.02 ? 0 : net); // ignore sub-2¢ rounding drift
   }, 0) * 100) / 100;
   // Total spend = sum of all receipt totals (what was actually spent)
   const totalSpend = (receipts||[]).reduce((s, r) => s + parseFloat(r.total||0), 0);
@@ -2062,8 +2063,8 @@ app.get('/trip/:tripId', async (req, res) => {
     const settledCredit = settledCredits[p.toLowerCase()] || 0;
     const rawOwed = totals[p] || 0;
     const amtOwed = Math.max(0, rawOwed - settledCredit);
-    const isSettled = rawOwed > 0 && amtOwed <= 0.005; // fully settled (allow rounding)
-    const isPartiallySettled = settledCredit > 0 && amtOwed > 0.005;
+    const isSettled = rawOwed > 0 && amtOwed <= 0.02; // fully settled (allow up to 2¢ rounding drift)
+    const isPartiallySettled = settledCredit > 0 && amtOwed > 0.02;
     const amtReceivable = owedTo[p] || 0;
     const isCreditor = amtReceivable > 0 && amtOwed === 0;
     const isBoth = amtOwed > 0 && amtReceivable > 0;
@@ -2429,9 +2430,12 @@ ${coverHTML}
   <div class="sec-lbl">Who Owes What</div>
   <div class="card">
     ${owesRows}
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:${grandTotal>0?'rgba(255,107,53,0.04)':'rgba(48,209,88,0.04)'};border-top:1px solid ${grandTotal>0?'rgba(255,107,53,0.15)':'rgba(48,209,88,0.12)'}">
+    <div id="outstanding-footer" data-total-spend="${totalSpend.toFixed(2)}" style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:${grandTotal>0?'rgba(255,107,53,0.04)':'rgba(48,209,88,0.04)'};border-top:1px solid ${grandTotal>0?'rgba(255,107,53,0.15)':'rgba(48,209,88,0.12)'}">
       <div>
-        <div id="outstanding-sublabel" style="font-size:10px;color:#6E6B80">${grandTotal===0&&totalSpend>0?'✅ Everyone settled up':'$'+totalSpend.toFixed(2)+' total spend'}</div>
+        ${grandTotal===0&&totalSpend>0
+          ? `<div style='display:flex;align-items:center;gap:6px'><span style='font-size:13px'>✅</span><div><div id='outstanding-sublabel' style='font-size:12px;font-weight:700;color:#30D158'>Everyone settled up</div><div style='font-size:10px;color:#6E6B80;margin-top:1px'>Total spent on trip: <span style='color:#F0EEF8;font-weight:600'>$${totalSpend.toFixed(2)}</span></div></div></div>`
+          : `<div id="outstanding-sublabel" style="font-size:10px;color:#6E6B80">$${totalSpend.toFixed(2)} total spend</div>`
+        }
       </div>
       <div style="text-align:right">
         <div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:${grandTotal>0?'#FF9A3C':'#9896A8'};margin-bottom:2px" id="outstanding-label">Outstanding</div>
@@ -3394,20 +3398,20 @@ function updatePersonBalanceDisplay(personName) {
   const amtEl = row.querySelector('[data-raw-owed]');
   const rawOwed = amtEl ? parseFloat(amtEl.getAttribute('data-raw-owed')) : 0;
   const remaining = Math.max(0, rawOwed - paidSoFar);
-  const fullySettled = rawOwed > 0 && remaining <= 0.005;
+  const fullySettled = rawOwed > 0 && remaining <= 0.02;
 
   // ── Update balance number ──
   const displayEl = row.querySelector('.person-balance-display');
   if (displayEl) {
-    displayEl.textContent = remaining > 0.005 ? '-$' + remaining.toFixed(2) : '$0.00';
-    displayEl.style.color = remaining > 0.005 ? '#FF9A3C' : '#9896A8';
+    displayEl.textContent = remaining > 0.02 ? '-$' + remaining.toFixed(2) : '$0.00';
+    displayEl.style.color = remaining > 0.02 ? '#FF9A3C' : '#9896A8';
   }
 
   // ── Update status text ──
   const statusEl = row.querySelector('.person-status-display');
   if (statusEl) {
-    statusEl.textContent = remaining > 0.005 ? 'owes $' + remaining.toFixed(2) : 'all settled ✓';
-    statusEl.style.color = remaining > 0.005 ? '#FF9A3C' : '#30D158';
+    statusEl.textContent = remaining > 0.02 ? 'owes $' + remaining.toFixed(2) : 'all settled ✓';
+    statusEl.style.color = remaining > 0.02 ? '#FF9A3C' : '#30D158';
   }
 
   // ── Show/hide the settled badge vs pay-buttons block ──
@@ -3443,7 +3447,21 @@ function updatePersonBalanceDisplay(personName) {
     outAmt.style.color = grandOutstanding > 0.005 ? '#FF9A3C' : '#30D158';
   }
   if (outLabel) outLabel.style.color = grandOutstanding > 0.005 ? '#FF9A3C' : '#9896A8';
-  if (outSub && grandOutstanding <= 0.005) outSub.textContent = '✅ Everyone settled up';
+  const footerEl = document.getElementById('outstanding-footer');
+  const ts = footerEl ? footerEl.getAttribute('data-total-spend') : '';
+  if (outSub && grandOutstanding <= 0.02) {
+    outSub.style.color = '#30D158';
+    outSub.style.fontSize = '12px';
+    outSub.style.fontWeight = '700';
+    outSub.textContent = 'Everyone settled up';
+    if (!outSub.parentElement.querySelector('.settled-spend-line') && ts) {
+      const line = document.createElement('div');
+      line.className = 'settled-spend-line';
+      line.style.cssText = 'font-size:10px;color:#6E6B80;margin-top:1px';
+      line.innerHTML = 'Total spent on trip: <span style="color:#F0EEF8;font-weight:600">$' + ts + '</span>';
+      outSub.after(line);
+    }
+  }
 }
 
 // Restore per-receipt paid states on load
