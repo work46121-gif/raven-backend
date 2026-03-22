@@ -3480,9 +3480,48 @@ function markReceiptItemPaid(personName, receiptId, amount, btn) {
       btn.disabled = false;
       btn.dataset.settled = '1';
       toast(personName + ' paid $' + parseFloat(amount).toFixed(2) + ' ✓', true);
-      const outEl = document.getElementById('outstanding-amt');
-      if (outEl && d.outstanding !== undefined) { outEl.textContent = '$' + parseFloat(d.outstanding).toFixed(2); }
-      setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 1500);
+      // Update outstanding footer immediately
+      if (d.outstanding !== undefined) {
+        const outEl = document.getElementById('outstanding-amt');
+        if (outEl) { outEl.textContent = '$' + parseFloat(d.outstanding).toFixed(2); outEl.style.color = parseFloat(d.outstanding) > 0 ? '#FF9A3C' : '#30D158'; }
+      }
+      // Update "Who Owes What" rows immediately using personBalances from server
+      if (d.personBalances) {
+        Object.entries(d.personBalances).forEach(([name, remaining]) => {
+          const pid = 'person-' + name.replace(/[^a-z0-9]/gi, '_');
+          const row = document.getElementById('row-' + pid);
+          if (!row) return;
+          const balEl = row.querySelector('.person-balance-display');
+          const statusEl = row.querySelector('.person-status-display');
+          const isFullySettled = remaining <= 0.02;
+          if (balEl) {
+            balEl.textContent = isFullySettled ? '✅' : '-$' + remaining.toFixed(2);
+            balEl.style.color = isFullySettled ? '#30D158' : '#FF9A3C';
+          }
+          if (statusEl) {
+            statusEl.textContent = isFullySettled ? '✅ all settled' : 'owes $' + remaining.toFixed(2);
+            statusEl.style.color = isFullySettled ? '#30D158' : '#FF9A3C';
+          }
+          if (isFullySettled) {
+            row.setAttribute('data-is-settled', '1');
+            const payBlock = row.querySelector('.client-pay-block');
+            if (payBlock) payBlock.style.display = 'none';
+          }
+        });
+        // Recount settled
+        let debtors = 0, settled = 0;
+        document.querySelectorAll('[data-is-debtor="1"]').forEach(r => {
+          debtors++;
+          if (r.getAttribute('data-is-settled') === '1') settled++;
+        });
+        const sublabel = document.getElementById('outstanding-sublabel');
+        if (sublabel) {
+          const lbl = sublabel.querySelector('div:first-child');
+          if (lbl) { lbl.textContent = settled + '/' + debtors + ' settled'; lbl.style.color = settled===debtors ? '#30D158' : '#9896A8'; }
+        }
+      }
+      // Realtime will handle the full page refresh; small delay as backup
+      setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 2000);
     } else {
       btn.disabled = false;
       btn.textContent = '✓ Mark as Paid';
@@ -4966,7 +5005,43 @@ app.post('/trip/:tripId/mark-settled', async (req, res) => {
       outstandingVal = await computeOutstanding(tripId);
       if (outstandingVal !== null) await supabase.from('trips').update({ total: outstandingVal }).eq('id', tripId);
     } catch(e) { console.error('Outstanding recalc error:', e); }
-    res.json({ success: true, outstanding: outstandingVal });
+    // Also compute per-person remaining balances for immediate client update
+    let personBalances = null;
+    try {
+      const { data: rcpts } = await supabase.from('trip_receipts').select('splits,paid_by').eq('trip_id', tripId);
+      const { data: tripFresh } = await supabase.from('trips').select('settled_people,people').eq('id', tripId).single();
+      if (rcpts && tripFresh) {
+        const ppl = Array.isArray(tripFresh.people) ? tripFresh.people : JSON.parse(tripFresh.people || '[]');
+        const rawTotals = {};
+        ppl.forEach(p => { rawTotals[p.toLowerCase()] = 0; });
+        rcpts.forEach(r => {
+          const sp = typeof r.splits==='string' ? JSON.parse(r.splits) : (r.splits||{});
+          const payer = (r.paid_by||'').toLowerCase();
+          Object.entries(sp).forEach(([person, amt]) => {
+            const pl = person.toLowerCase();
+            if (pl === payer) return;
+            rawTotals[pl] = (rawTotals[pl]||0) + (parseFloat(amt)||0);
+          });
+        });
+        let sp2 = tripFresh.settled_people;
+        if (typeof sp2==='string'){try{sp2=JSON.parse(sp2);}catch(e){}}
+        const creds = {};
+        if (sp2 && typeof sp2==='object' && !Array.isArray(sp2)) {
+          Object.entries(sp2).forEach(([k,v]) => {
+            const val = parseFloat(v)||0; if(val<=0) return;
+            const pk = k.includes('::receipt::') ? k.split('::receipt::')[0] : k.toLowerCase();
+            creds[pk] = (creds[pk]||0)+val;
+          });
+        }
+        personBalances = {};
+        ppl.forEach(p => {
+          const raw = rawTotals[p.toLowerCase()]||0;
+          const credit = Math.min(creds[p.toLowerCase()]||0, raw);
+          personBalances[p] = Math.max(0, Math.round((raw-credit)*100)/100);
+        });
+      }
+    } catch(e) {}
+    res.json({ success: true, outstanding: outstandingVal, personBalances });
   } catch(err) { res.json({ success: false, error: err.message }); }
 });
 
