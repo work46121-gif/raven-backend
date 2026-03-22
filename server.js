@@ -4715,8 +4715,9 @@ app.post('/trip/:tripId/receipt', async (req, res) => {
     await supabase.from('trip_receipts').insert(tripReceiptRow);
     const { data: all } = await supabase.from('trip_receipts').select('total').eq('trip_id', tripId);
 
-    // ── UN-SETTLE: reduce each person's credit by their new share ──
-    // When a new receipt adds debt for previously-settled people, they should see the new balance
+    // ── UN-SETTLE: expose only the NEW debt for previously-settled people ──
+    // Strategy: compute each person's rawOwed BEFORE this new receipt, then set their
+    // credit = rawOwed_before so that only the new $share shows as outstanding.
     try {
       const { data: tripForCredits } = await supabase.from('trips').select('settled_people').eq('id', tripId).single();
       if (tripForCredits?.settled_people) {
@@ -4724,17 +4725,38 @@ app.post('/trip/:tripId/receipt', async (req, res) => {
         if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch(e) {} }
         if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch(e) {} }
         if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+          // Get ALL receipts EXCEPT the one just added (it's already inserted above)
+          const { data: allReceipts } = await supabase.from('trip_receipts')
+            .select('splits,paid_by').eq('trip_id', tripId).order('created_at', { ascending: true });
+          // The last receipt is the one just inserted — exclude it
+          const previousReceipts = (allReceipts || []).slice(0, -1);
+          // Compute rawOwed_before for each person
+          const rawOwedBefore = {};
+          previousReceipts.forEach(r => {
+            try {
+              const sp = typeof r.splits === 'string' ? JSON.parse(r.splits) : (r.splits || {});
+              const payer = (r.paid_by || '').toLowerCase();
+              Object.entries(sp).forEach(([person, amt]) => {
+                const a = parseFloat(amt) || 0;
+                if (a <= 0) return;
+                const k = person.toLowerCase();
+                if (k === payer) return; // payer doesn't owe themselves
+                rawOwedBefore[k] = (rawOwedBefore[k] || 0) + a;
+              });
+            } catch(e) {}
+          });
+
           const updatedCredits = { ...raw };
           const newSplits = splits || {};
-          // For each person in the new receipt splits, reduce their credit by their new share
           Object.entries(newSplits).forEach(([person, share]) => {
-            const amt = parseFloat(share) || 0;
-            if (amt <= 0) return; // payer or zero share — no new debt
+            const newDebt = parseFloat(share) || 0;
+            if (newDebt <= 0) return; // payer or zero share
             const key = person.toLowerCase();
             if (updatedCredits[key] !== undefined) {
-              // Subtract new debt from their credit — credit can't go below 0
-              updatedCredits[key] = Math.max(0, (parseFloat(updatedCredits[key]) || 0) - amt);
-              if (updatedCredits[key] === 0) delete updatedCredits[key]; // clean up zero entries
+              // Set credit = rawOwed_before so only the new $share shows as owed
+              const owedBefore = rawOwedBefore[key] || 0;
+              updatedCredits[key] = owedBefore; // credit covers exactly what was settled
+              if (updatedCredits[key] <= 0) delete updatedCredits[key];
             }
           });
           await supabase.from('trips').update({ settled_people: updatedCredits }).eq('id', tripId);
