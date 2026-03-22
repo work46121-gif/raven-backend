@@ -1204,6 +1204,7 @@ ${bill.receipt_image ? `
 const BID = ${JSON.stringify(billId)};
 const BILL_TOKEN = ${JSON.stringify(bill.share_token || '')};
 const BILL_URL = ${JSON.stringify(billUrl)};
+const BACKEND_URL = ${JSON.stringify(baseUrl)};
 // Init myName from localStorage OR URL param
 let myName = localStorage.getItem('raven_bill_name_' + BID) || '';
 if (!myName) {
@@ -1244,7 +1245,7 @@ async function submitName() {
 
 async function autoJoin(name, silent) {
   try {
-    const r = await fetch('/bill/' + BID + '/join', {
+    const r = await fetch(BACKEND_URL + '/bill/' + BID + '/join', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ name })
     });
@@ -1292,7 +1293,7 @@ async function toggleClaim(itemId, itemName) {
   const isClaimed = check && check.classList.contains('claimed');
   const endpoint = isClaimed ? 'unclaim' : 'claim';
   try {
-    const r = await fetch('/bill/' + BID + '/' + endpoint, {
+    const r = await fetch(BACKEND_URL + '/bill/' + BID + '/' + endpoint, {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ item_id: itemId, participant_name: myName })
     });
@@ -1310,7 +1311,7 @@ let _lastStateHash = '';
 let _firstRender = true;
 async function refreshAll() {
   try {
-    const r = await fetch('/bill/' + BID + '/state');
+    const r = await fetch(BACKEND_URL + '/bill/' + BID + '/state');
     const d = await r.json();
     if (!d.success) return;
     // Hash: include selections sorted by item+person, participants, paid status, and amounts
@@ -1493,7 +1494,7 @@ function showMyPayModal(amt) {
     el.addEventListener('click', () => {
       setTimeout(() => {
         // Find me in the owes list and mark paid
-        fetch('/bill/' + BID + '/state').then(r=>r.json()).then(d => {
+        fetch(BACKEND_URL + '/bill/' + BID + '/state').then(r=>r.json()).then(d => {
           const me = (d.participants||[]).find(p => myName && p.name.toLowerCase() === myName.toLowerCase());
           if (me) markPaid(me.id, me.name, method);
         });
@@ -1520,7 +1521,7 @@ function showMyPayModal(amt) {
       b.textContent = m;
       b.style.cssText = 'display:block;width:100%;padding:10px 14px;margin-bottom:6px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#F0EEF8;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;text-align:left';
       b.addEventListener('click', (function(method){ return function(){
-        fetch('/bill/' + BID + '/state').then(r=>r.json()).then(d => {
+        fetch(BACKEND_URL + '/bill/' + BID + '/state').then(r=>r.json()).then(d => {
           const me = (d.participants||[]).find(p => myName && p.name.toLowerCase() === myName.toLowerCase());
           if (me) markPaid(me.id, me.name, method);
         });
@@ -1530,7 +1531,7 @@ function showMyPayModal(amt) {
     mc.appendChild(noMethodDiv2);
   }
   document.getElementById('pmark').onclick = () => {
-    fetch('/bill/' + BID + '/state').then(r=>r.json()).then(d => {
+    fetch(BACKEND_URL + '/bill/' + BID + '/state').then(r=>r.json()).then(d => {
       const me = (d.participants||[]).find(p => myName && p.name.toLowerCase() === myName.toLowerCase());
       if (me) markPaid(me.id, me.name, 'Other');
     });
@@ -1578,7 +1579,7 @@ function closePay() { document.getElementById('pmod').style.display = 'none'; }
 
 async function markPaid(pid, name, method) {
   try {
-    const r = await fetch('/bill/' + BID + '/mark-paid', {
+    const r = await fetch(BACKEND_URL + '/bill/' + BID + '/mark-paid', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ participantId: pid, name, payment_method: method||null })
     });
@@ -1596,7 +1597,7 @@ async function markPaid(pid, name, method) {
 // ── COMMENTS ──
 async function loadC() {
   try {
-    const r = await fetch('/bill/' + BID + '/comments');
+    const r = await fetch(BACKEND_URL + '/bill/' + BID + '/comments');
     const d = await r.json();
     const comments = d.comments || [];
     const list = document.getElementById('clist');
@@ -1621,7 +1622,7 @@ async function postC() {
   const btn = document.querySelector('[onclick="postC()"]');
   if (btn) { btn.textContent = 'Posting...'; btn.disabled = true; }
   try {
-    const r = await fetch('/bill/' + BID + '/comments', {
+    const r = await fetch(BACKEND_URL + '/bill/' + BID + '/comments', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ name: name || 'Anonymous', body, gif_url: null })
     });
