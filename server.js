@@ -1112,7 +1112,7 @@ app.get('/bill/:billId', async (req, res) => {
       <div style="font-size:40px;font-weight:800;color:#30D158;margin-bottom:20px" id="pamt">$0.00</div>
       <div id="pmethods" style="margin-bottom:12px"></div>
       <button id="pmark" style="width:100%;padding:13px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:#9896A8;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:6px">✓ Paid via method ›</button>
-      <button onclick="closePay()" style="width:100%;padding:12px;background:transparent;border:none;color:#6E6B80;font-family:inherit;font-size:13px;cursor:pointer">I'll pay later</button>
+      <button onclick="closePay(true)" style="width:100%;padding:12px;background:transparent;border:none;color:#6E6B80;font-family:inherit;font-size:13px;cursor:pointer">I'll pay later</button>
     </div>
   </div>
 </div>
@@ -1630,14 +1630,21 @@ function showMyPayModal(amt) {
 // Mark paid by name — no stale /state fetch needed, server handles ghost IDs by name
 async function markPaidByName(name, method) {
   if (!name) { toast('Could not identify your name. Try refreshing.'); return; }
-  // Optimistically mark immediately — polling is paused so this won't get overwritten
-  _setOptimisticPaid(name, method);
-  closePay(); // closes modal and resumes polling
   const methodLabel = method && method !== 'Other' ? ' via ' + method : '';
-  toast('✅ ' + name + ' paid' + methodLabel + '!');
+
+  // Close modal first (stops polling) but DON'T resume polling yet
+  document.getElementById('pmod').style.display = 'none';
+  const list = document.getElementById('method-select-list');
+  if (list) list.remove();
+  // Keep polling paused until DB write confirmed
+
+  // Show optimistic UI immediately
+  _setOptimisticPaid(name, method);
   _lastStateHash = '';
-  refreshAll(); // re-render immediately with optimistic state
-  // Fire the actual DB write in the background
+  renderOptimisticPaid(name, method); // instant UI update without a fetch
+  toast('✅ ' + name + ' paid' + methodLabel + '!');
+
+  // DB write — await it before resuming polling
   try {
     const r = await fetch(BACKEND_URL + '/bill/' + BID + '/mark-paid', {
       method: 'POST', headers: {'Content-Type':'application/json'},
@@ -1645,21 +1652,44 @@ async function markPaidByName(name, method) {
     });
     const d = await r.json();
     console.log('[markPaidByName] server response for', name, ':', JSON.stringify(d));
-    if (!d.success) {
-      // DB write failed — remove optimistic override and show error
+    if (d.success) {
+      // DB confirmed — now resume polling (will show real DB state)
+      _lastStateHash = '';
+      if (!pollTimer) pollTimer = setInterval(refreshAll, 800);
+      refreshAll();
+    } else {
       _clearOptimisticPaid(name);
       _lastStateHash = '';
+      if (!pollTimer) pollTimer = setInterval(refreshAll, 800);
       refreshAll();
       toast('⚠️ Could not save payment. Try again.');
     }
-    // On success: _optimisticPaid stays until poll confirms p.paid=true from DB
   } catch(e) {
     console.error('[markPaidByName] fetch error:', e);
     _clearOptimisticPaid(name);
     _lastStateHash = '';
+    if (!pollTimer) pollTimer = setInterval(refreshAll, 800);
     refreshAll();
     toast('⚠️ Network error. Try again.');
   }
+}
+
+// Instantly update the owes list UI for a paid participant without waiting for a poll
+function renderOptimisticPaid(name, method) {
+  const methodLabel = method && method !== 'Other' ? ' via ' + method : '';
+  const owes = document.getElementById('owes-list');
+  if (!owes) return;
+  owes.querySelectorAll('[id^="prow-"]').forEach(row => {
+    const nameEl = row.querySelector('[style*="font-size:15px"]');
+    if (nameEl && nameEl.textContent.trim().toLowerCase().startsWith(name.toLowerCase())) {
+      // Update status text
+      const statusEl = row.querySelector('[id^="pstatus-"]') || row.querySelector('[style*="font-size:12px"]');
+      if (statusEl) { statusEl.textContent = '✅ Paid' + methodLabel; statusEl.style.color = '#30D158'; }
+      // Replace Pay button with checkmark
+      const btn = row.querySelector('button[data-pid], button[onclick*="showPay"], button[onclick*="showMyPay"]');
+      if (btn) { const ck = document.createElement('div'); ck.textContent = '✅'; ck.style.fontSize = '22px'; btn.replaceWith(ck); }
+    }
+  });
 }
 
 // ── QR CODE ──
@@ -1698,13 +1728,11 @@ function showPay(btn) {
   document.getElementById('pmod').style.display = 'block';
 }
 
-function closePay() {
+function closePay(resumePoll = true) {
   document.getElementById('pmod').style.display = 'none';
-  // Remove method select list if open
   const list = document.getElementById('method-select-list');
   if (list) list.remove();
-  // Resume polling
-  if (!pollTimer) { pollTimer = setInterval(refreshAll, 800); }
+  if (resumePoll && !pollTimer) { pollTimer = setInterval(refreshAll, 800); }
 }
 
 async function markPaid(pid, name, method) {
