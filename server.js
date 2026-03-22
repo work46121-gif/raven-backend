@@ -507,7 +507,7 @@ app.get('/bill/:billId/state', async (req, res) => {
       // Await the insert so we return a real DB id, not a ghost id
       let realRow = null;
       const { data: inserted, error: insErr } = await supabase.from('participants')
-        .insert({ bill_id: billId, name: ghostName, amount: 0, paid: false, phone: '' })
+        .insert({ bill_id: billId, name: ghostName, amount: 0, paid: false, phone: 'guest:' + ghostName })
         .select().maybeSingle();
       if (inserted) {
         realRow = inserted;
@@ -607,7 +607,9 @@ app.post('/bill/:billId/join', async (req, res) => {
       if (count >= bill.live_people_count) maxReached = true;
     }
     try {
-      await supabase.from('participants').insert({ bill_id: billId, name: cleanName, amount: 0, paid: false, phone: '' });
+      await supabase.from('participants')
+        .upsert({ bill_id: billId, name: cleanName, amount: 0, paid: false, phone: 'guest:' + cleanName },
+                 { onConflict: 'bill_id,phone', ignoreDuplicates: true });
     } catch(insertErr) {
       console.warn('[join] insert warn (may be duplicate):', insertErr.message);
     }
@@ -703,7 +705,7 @@ app.get('/bill/:billId', async (req, res) => {
     });
     for (const ghostName of ghostNames) {
       const { data: inserted } = await supabase.from('participants')
-        .insert({ bill_id: billId, name: ghostName, amount: 0, paid: false, phone: '' })
+        .insert({ bill_id: billId, name: ghostName, amount: 0, paid: false, phone: 'guest:' + ghostName })
         .select().maybeSingle();
       if (inserted) {
         participants.push(inserted);
@@ -5982,7 +5984,7 @@ app.post('/bill/:billId/mark-paid', async (req, res) => {
         // Insert new row already marked paid
         const { data: inserted, error: insErr } = await supabase
           .from('participants')
-          .insert({ bill_id: billId, name, amount: 0, paid: true, paid_at: new Date().toISOString(), phone: '', ...(payment_method ? { payment_method } : {}) })
+          .insert({ bill_id: billId, name, amount: 0, paid: true, paid_at: new Date().toISOString(), phone: 'guest:' + name, ...(payment_method ? { payment_method } : {}) })
           .select('id').single();
         console.log(`[mark-paid] inserted new row: id=${inserted?.id} err=${insErr?.message}`);
         if (insErr) return res.json({ success: false, error: insErr.message });
