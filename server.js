@@ -4855,10 +4855,22 @@ app.post('/trip/:tripId/mark-settled', async (req, res) => {
       return res.json({ success: false, error: 'Amount is 0 — button text parsing failed' });
     }
     if (receiptKey) {
-      // Per-receipt settle: store with receipt-level key
+      // Per-receipt settle: store receipt-level key
       credits[receiptKey] = settleAmount;
+      // Also update person-level key = sum of all receipt-level credits for this person
+      let personTotal = 0;
+      Object.entries(credits).forEach(([k, v]) => {
+        if (k === nameLower || k.startsWith(nameLower + '::receipt::')) personTotal += parseFloat(v) || 0;
+      });
+      // But only count receipt-level keys (not the person-level one itself)
+      let receiptTotal = 0;
+      Object.entries(credits).forEach(([k, v]) => {
+        if (k.startsWith(nameLower + '::receipt::')) receiptTotal += parseFloat(v) || 0;
+      });
+      credits[nameLower] = Math.round(receiptTotal * 100) / 100;
     } else {
-      // Full person settle: store person-level key
+      // Full person settle: store person-level key, clear any stale receipt-level keys
+      Object.keys(credits).forEach(k => { if (k.startsWith(nameLower + '::')) delete credits[k]; });
       credits[nameLower] = Math.max(credits[nameLower] || 0, settleAmount);
     }
     console.log('[mark-settled] writing credits:', JSON.stringify(credits), 'tripId:', tripId, 'name:', name, 'amount:', settleAmount);
@@ -4902,14 +4914,22 @@ app.post('/trip/:tripId/partial-unsettle', async (req, res) => {
     const nameLower = (name || '').toLowerCase();
     const receiptKey = req.body.receipt_id ? nameLower + '::receipt::' + req.body.receipt_id : null;
     if (receiptKey) {
-      // Per-receipt unsettle: delete that specific key
+      // Per-receipt unsettle: delete that specific receipt key
       delete credits[receiptKey];
+      // Also delete the person-level key — it will be recomputed from remaining receipt keys
+      // This prevents stale person-level credits from keeping someone "settled" after undo
+      delete credits[nameLower];
+      // Re-add person-level credit = sum of remaining receipt-level credits for this person
+      let remaining = 0;
+      Object.entries(credits).forEach(([k, v]) => {
+        if (k.startsWith(nameLower + '::receipt::')) remaining += parseFloat(v) || 0;
+      });
+      if (remaining > 0.02) credits[nameLower] = Math.round(remaining * 100) / 100;
     } else {
-      const reduceBy = parseFloat(amount) || 0;
-      const current = Math.min(credits[nameLower] || 0, 999998);
-      const newCredit = Math.max(0, current - reduceBy);
-      if (newCredit <= 0.02) { delete credits[nameLower]; }
-      else { credits[nameLower] = Math.round(newCredit * 100) / 100; }
+      // Full person unsettle: remove all keys for this person
+      Object.keys(credits).forEach(k => {
+        if (k === nameLower || k.startsWith(nameLower + '::')) delete credits[k];
+      });
     }
     await supabase.from('trips').update({ settled_people: credits }).eq('id', tripId);
     const outstanding = await computeOutstanding(tripId);
