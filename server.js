@@ -1984,12 +1984,14 @@ app.get('/trip/:tripId', async (req, res) => {
   }, 0) * 100) / 100;
   // Total spend = sum of all receipt totals (what was actually spent)
   const totalSpend = (receipts||[]).reduce((s, r) => s + parseFloat(r.total||0), 0);
-  // Count people who actually owe money (rawOwed > 0) and how many of those are settled
+  // Count debtors (people who owe money) and how many of those are settled.
+  // Cap credit at rawOwed so 999999 sentinel values don't over-count.
   const debtorCount  = people.filter(p => (totals[p] || 0) > 0.02).length;
   const settledCount = people.filter(p => {
-    const raw = totals[p] || 0;
-    const credit = settledCredits[p.toLowerCase()] || 0;
-    return raw > 0.02 && Math.max(0, raw - credit) <= 0.02;
+    const raw    = totals[p] || 0;
+    if (raw <= 0.02) return false; // not a debtor
+    const credit = Math.min(settledCredits[p.toLowerCase()] || 0, raw); // cap at rawOwed
+    return Math.max(0, raw - credit) <= 0.02;
   }).length;
 
   const baseUrl   = process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : `https://raven-backend-production-fb1f.up.railway.app`;
@@ -2442,15 +2444,9 @@ ${coverHTML}
     ${owesRows}
     <div id="outstanding-footer" data-total-spend="${totalSpend.toFixed(2)}" style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:${grandTotal>0?'rgba(255,107,53,0.04)':'rgba(48,209,88,0.04)'};border-top:1px solid ${grandTotal>0?'rgba(255,107,53,0.15)':'rgba(48,209,88,0.12)'}">
       <div>
-        <div id='outstanding-sublabel' style='display:flex;align-items:center;gap:7px'>
-          ${settledCount > 0 && debtorCount > 0
-            ? `<div style='width:18px;height:18px;border-radius:50%;background:${settledCount===debtorCount?'rgba(48,209,88,0.2)':'rgba(255,107,53,0.15)'};display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0'>${settledCount===debtorCount?'✓':'!'}</div>`
-            : `<div style='width:18px;height:18px;border-radius:50%;background:rgba(110,107,128,0.15);display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;color:#6E6B80'>—</div>`
-          }
-          <div>
-            <div style='font-size:12px;font-weight:700;color:${settledCount===debtorCount&&debtorCount>0?"#30D158":"#9896A8"}'>${settledCount}/${debtorCount} Member${debtorCount!==1?'s':''} settled up</div>
-            <div style='font-size:10px;color:#6E6B80;margin-top:1px'>$${totalSpend.toFixed(2)} total spent on trip</div>
-          </div>
+        <div id='outstanding-sublabel'>
+          <div style='font-size:12px;font-weight:700;color:${settledCount===debtorCount&&debtorCount>0?"#30D158":"#9896A8"}'>${settledCount}/${debtorCount} settled</div>
+          <div style='font-size:10px;color:#6E6B80;margin-top:2px'>$${totalSpend.toFixed(2)} total spent</div>
         </div>
       </div>
       <div style="text-align:right">
@@ -3487,7 +3483,7 @@ function updatePersonBalanceDisplay(personName) {
       iconEl.textContent = allSettled ? '✓' : '!';
     }
     const labelEl = outSub.querySelector('div:first-child');
-    const label = clientDebtors > 0 ? clientSettled + '/' + clientDebtors + ' Member' + (clientDebtors !== 1 ? 's' : '') + ' settled up' : '0/0 Members settled up';
+    const label = clientDebtors > 0 ? clientSettled + '/' + clientDebtors + ' settled' : '0/0 settled';
     if (labelEl) { labelEl.textContent = label; labelEl.style.color = allSettled ? '#30D158' : '#9896A8'; }
     else outSub.textContent = label;
   }
