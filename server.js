@@ -2333,7 +2333,7 @@ ${coverHTML}
     ${owesRows}
     <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:${grandTotal>0?'rgba(255,107,53,0.04)':'rgba(48,209,88,0.04)'};border-top:1px solid ${grandTotal>0?'rgba(255,107,53,0.15)':'rgba(48,209,88,0.12)'}">
       <div>
-        <div style="font-size:10px;color:#6E6B80">${grandTotal===0&&totalSpend>0?'✅ Everyone settled up':'$${totalSpend.toFixed(2)} total spend'}</div>
+        <div style="font-size:10px;color:#6E6B80">${grandTotal===0&&totalSpend>0?'✅ Everyone settled up':'$'+totalSpend.toFixed(2)+' total spend'}</div>
       </div>
       <div style="text-align:right">
         <div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:${grandTotal>0?'#FF9A3C':'#9896A8'};margin-bottom:2px">Outstanding</div>
