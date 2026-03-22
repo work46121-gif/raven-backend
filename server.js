@@ -3871,20 +3871,23 @@ function updatePersonBalanceDisplay(personName) {
   if (outLabel) outLabel.style.color = grandOutstanding > 0.005 ? '#FF9A3C' : '#9896A8';
   // Update X/Y Members settled up footer
   if (outSub) {
-    // Count settled vs debtor using server-rendered data attributes (reliable)
-    let clientDebtors = 0, clientSettled = 0;
-    document.querySelectorAll('[data-is-debtor="1"]').forEach(rowEl => {
-      clientDebtors++;
-      if (rowEl.getAttribute('data-is-settled') === '1') clientSettled++;
+    // Count ALL people: non-debtors (payers) count as settled automatically
+    const allRows = document.querySelectorAll('[data-is-debtor]');
+    const totalPeople = allRows.length;
+    let settledPeople = 0;
+    allRows.forEach(rowEl => {
+      const isDebtor = rowEl.getAttribute('data-is-debtor') === '1';
+      const isSettled = rowEl.getAttribute('data-is-settled') === '1';
+      if (!isDebtor || isSettled) settledPeople++; // payer (non-debtor) counts as settled
     });
-    const allSettled = clientDebtors > 0 && clientSettled === clientDebtors;
+    const allSettled = totalPeople > 0 && settledPeople === totalPeople;
     const iconEl = outSub.previousElementSibling;
     if (iconEl) {
       iconEl.style.background = allSettled ? 'rgba(48,209,88,0.2)' : 'rgba(255,107,53,0.15)';
       iconEl.textContent = allSettled ? '✓' : '!';
     }
     const labelEl = outSub.querySelector('div:first-child');
-    const label = clientDebtors > 0 ? clientSettled + '/' + clientDebtors + ' settled' : '0/0 settled';
+    const label = totalPeople > 0 ? settledPeople + '/' + totalPeople + ' people settled' : '';
     if (labelEl) { labelEl.textContent = label; labelEl.style.color = allSettled ? '#30D158' : '#9896A8'; }
     else outSub.textContent = label;
   }
