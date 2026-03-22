@@ -3056,6 +3056,30 @@ function applyNameAndAvatar(firstName, avatarUrl) {
   }
 }
 
+// Fetch and apply profile pictures for ALL trip members
+async function applyAllMemberAvatars() {
+  try {
+    if (!PEOPLE || PEOPLE.length === 0) return;
+    // PostgREST in.() filter: first_name=in.(Will,Mel,daddy,Arsalan)
+    const nameList = PEOPLE.join(',');
+    const res = await fetch(
+      SUPA_URL + '/rest/v1/profiles?select=first_name,avatar_url&first_name=in.(' + nameList + ')',
+      { headers: { 'apikey': SUPA_KEY, 'Accept': 'application/json' } }
+    );
+    if (!res.ok) return;
+    const profiles = await res.json();
+    (profiles || []).forEach(prof => {
+      if (!prof.first_name || !prof.avatar_url) return;
+      document.querySelectorAll('[data-person-avatar]').forEach(el => {
+        if (el.getAttribute('data-person-avatar').toLowerCase() === prof.first_name.toLowerCase()) {
+          el.innerHTML = '<img src="' + prof.avatar_url + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%">';
+          el.style.background = 'transparent';
+        }
+      });
+    });
+  } catch(e) { /* best effort */ }
+}
+
 (async function(){
   try {
     const urlName   = new URLSearchParams(window.location.search).get('name');
@@ -3096,6 +3120,9 @@ function applyNameAndAvatar(firstName, avatarUrl) {
     } catch(e) { /* best effort */ }
   } catch(e) {}
 })();
+
+// Apply all trip members' profile pictures to avatar circles
+applyAllMemberAvatars();
 
 // ── AUTO-OPEN receipt form ──
 if (new URLSearchParams(window.location.search).get('action') === 'receipt') {
