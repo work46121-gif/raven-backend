@@ -2123,13 +2123,13 @@ app.get('/trip/:tripId', async (req, res) => {
           </div>
         </div>
         <div style="text-align:right">
-          <div class="person-balance-display" data-original-owed="${amtOwed.toFixed(2)}" style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${isSettled?'#9896A8':amtOwed>0?'#FF9A3C':amtReceivable>0?'#A855F7':'#9896A8'}">
+          <div class="person-balance-display" data-original-owed="${rawOwed.toFixed(2)}" data-raw-owed="${rawOwed.toFixed(2)}" style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${isSettled?'#9896A8':amtOwed>0?'#FF9A3C':amtReceivable>0?'#A855F7':'#9896A8'}">
             ${isSettled ? '$0.00' : amtOwed>0 ? '-$'+amtOwed.toFixed(2) : amtReceivable>0 ? '+$'+amtReceivable.toFixed(2) : '$0.00'}
           </div>
         </div>
       </div>
-      ${isSettled ? `<div style="background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.15);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:8px"><span style="font-size:16px">✅</span><span style="font-size:13px;color:#30D158;font-weight:600">Settled</span></div>` :
-        payerEntries.length>0 ? `<div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px 12px">
+      ${isSettled ? `<div class="client-settled-block" style="background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.15);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:8px"><span style="font-size:16px">✅</span><span style="font-size:13px;color:#30D158;font-weight:600">Settled</span></div>` :
+        payerEntries.length>0 ? `<div class="client-settled-block" style="display:none;background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.15);border-radius:8px;padding:10px 14px;margin-bottom:8px;align-items:center;gap:8px"><span style="font-size:16px">✅</span><span style="font-size:13px;color:#30D158;font-weight:600">Settled</span></div><div class="client-pay-block" style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px 12px">
         ${payBtnsHtml}
         <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)">
           <button class="mark-settled-btn" data-person="${personId}" data-name="${esc(p)}" id="markpaid-${personId}" style="display:inline-flex;align-items:center;gap:7px;padding:8px 16px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:9px;color:#30D158;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer" title="Mark ${esc(p)} as fully settled up" data-settle-amount="${amtOwed.toFixed(2)}">✓ All Paid · $${amtOwed.toFixed(2)}</button>
@@ -2433,11 +2433,11 @@ ${coverHTML}
     ${owesRows}
     <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:${grandTotal>0?'rgba(255,107,53,0.04)':'rgba(48,209,88,0.04)'};border-top:1px solid ${grandTotal>0?'rgba(255,107,53,0.15)':'rgba(48,209,88,0.12)'}">
       <div>
-        <div style="font-size:10px;color:#6E6B80">${grandTotal===0&&totalSpend>0?'✅ Everyone settled up':'$'+totalSpend.toFixed(2)+' total spend'}</div>
+        <div id="outstanding-sublabel" style="font-size:10px;color:#6E6B80">${grandTotal===0&&totalSpend>0?'✅ Everyone settled up':'$'+totalSpend.toFixed(2)+' total spend'}</div>
       </div>
       <div style="text-align:right">
-        <div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:${grandTotal>0?'#FF9A3C':'#9896A8'};margin-bottom:2px">Outstanding</div>
-        <span style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:800;color:${grandTotal>0?'#FF9A3C':'#30D158'}">$${grandTotal.toFixed(2)}</span>
+        <div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:${grandTotal>0?'#FF9A3C':'#9896A8'};margin-bottom:2px" id="outstanding-label">Outstanding</div>
+        <span id="outstanding-amt" style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:800;color:${grandTotal>0?'#FF9A3C':'#30D158'}">$${grandTotal.toFixed(2)}</span>
       </div>
     </div>
   </div>
@@ -3385,29 +3385,67 @@ function updatePersonBalanceDisplay(personName) {
   const row = document.getElementById('row-' + personId);
   if (!row) return;
 
-  // Sum all paid receipt amounts for this person
+  // Sum all per-receipt paid amounts for this person (client-side localStorage)
   const map = getReceiptPaidMap();
   let paidSoFar = 0;
   Object.entries(map).forEach(([key, amt]) => {
     if (key.startsWith(personName + '::')) paidSoFar += amt;
   });
 
-  // Find original owed amount from DOM
-  const amtEl = row.querySelector('[data-original-owed]');
-  const originalOwed = amtEl ? parseFloat(amtEl.getAttribute('data-original-owed')) : 0;
-  const remaining = Math.max(0, originalOwed - paidSoFar);
+  // rawOwed = what this person truly owes across all receipts (before any client-side settlement)
+  const amtEl = row.querySelector('[data-raw-owed]');
+  const rawOwed = amtEl ? parseFloat(amtEl.getAttribute('data-raw-owed')) : 0;
+  const remaining = Math.max(0, rawOwed - paidSoFar);
+  const fullySettled = rawOwed > 0 && remaining <= 0.005;
 
-  // Update displayed balance
+  // ── Update balance number ──
   const displayEl = row.querySelector('.person-balance-display');
-  const statusEl  = row.querySelector('.person-status-display');
   if (displayEl) {
-    displayEl.textContent = remaining > 0 ? '-$' + remaining.toFixed(2) : '$0.00';
-    displayEl.style.color = remaining > 0 ? '#FF9A3C' : '#9896A8';
+    displayEl.textContent = remaining > 0.005 ? '-$' + remaining.toFixed(2) : '$0.00';
+    displayEl.style.color = remaining > 0.005 ? '#FF9A3C' : '#9896A8';
   }
+
+  // ── Update status text ──
+  const statusEl = row.querySelector('.person-status-display');
   if (statusEl) {
-    statusEl.textContent = remaining > 0 ? 'owes $' + remaining.toFixed(2) : 'all settled ✓';
-    statusEl.style.color = remaining > 0 ? '#FF9A3C' : '#30D158';
+    statusEl.textContent = remaining > 0.005 ? 'owes $' + remaining.toFixed(2) : 'all settled ✓';
+    statusEl.style.color = remaining > 0.005 ? '#FF9A3C' : '#30D158';
   }
+
+  // ── Show/hide the settled badge vs pay-buttons block ──
+  // The server renders either a settled-block OR a pay-buttons block.
+  // After client-side unsettling we need to toggle between them.
+  const settledBlock = row.querySelector('.client-settled-block');
+  const payBlock = row.querySelector('.client-pay-block');
+  if (settledBlock) settledBlock.style.display = fullySettled ? '' : 'none';
+  if (payBlock)    payBlock.style.display    = fullySettled ? 'none' : '';
+
+  // ── Recompute grand outstanding across ALL rows and update footer ──
+  let grandOutstanding = 0;
+  document.querySelectorAll('[data-raw-owed]').forEach(el => {
+    const rName = el.closest('[id^="row-"]');
+    if (!rName) return;
+    const rw = parseFloat(el.getAttribute('data-raw-owed')) || 0;
+    if (rw <= 0) return;
+    // Sum paid for this person from map
+    // We need person name — get it from the status element's parent text
+    const nameEl = rName.querySelector('[data-open-profile]');
+    const pName = nameEl ? nameEl.getAttribute('data-open-profile') : null;
+    if (!pName) return;
+    let paid = 0;
+    Object.entries(map).forEach(([k, v]) => { if (k.startsWith(pName + '::')) paid += v; });
+    grandOutstanding += Math.max(0, rw - paid);
+  });
+
+  const outAmt = document.getElementById('outstanding-amt');
+  const outLabel = document.getElementById('outstanding-label');
+  const outSub = document.getElementById('outstanding-sublabel');
+  if (outAmt) {
+    outAmt.textContent = '$' + grandOutstanding.toFixed(2);
+    outAmt.style.color = grandOutstanding > 0.005 ? '#FF9A3C' : '#30D158';
+  }
+  if (outLabel) outLabel.style.color = grandOutstanding > 0.005 ? '#FF9A3C' : '#9896A8';
+  if (outSub && grandOutstanding <= 0.005) outSub.textContent = '✅ Everyone settled up';
 }
 
 // Restore per-receipt paid states on load
