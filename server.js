@@ -1259,7 +1259,20 @@ if (!myName) {
 }
 let pollTimer = null;
 let lastState = null;
-let _optimisticPaid = {}; // name.toLowerCase() -> { method }
+// Persist optimistic paid state across refreshes for this bill session
+let _optimisticPaid = {};
+try {
+  const stored = sessionStorage.getItem('_optimisticPaid_' + BID);
+  if (stored) _optimisticPaid = JSON.parse(stored);
+} catch(e) {}
+function _setOptimisticPaid(name, method) {
+  _optimisticPaid[name.toLowerCase()] = { method: method || null };
+  try { sessionStorage.setItem('_optimisticPaid_' + BID, JSON.stringify(_optimisticPaid)); } catch(e) {}
+}
+function _clearOptimisticPaid(name) {
+  delete _optimisticPaid[name.toLowerCase()];
+  try { sessionStorage.setItem('_optimisticPaid_' + BID, JSON.stringify(_optimisticPaid)); } catch(e) {}
+}
 
 // ── NAME SETUP ──
 function initName() {
@@ -1374,7 +1387,7 @@ async function refreshAll() {
         if (_optimisticPaid[key]) {
           if (p.paid) {
             // Server now confirms paid — safe to remove optimistic override
-            delete _optimisticPaid[key];
+            _clearOptimisticPaid(p.name);
           } else {
             // Server hasn't caught up yet — keep overriding
             p.paid = true;
@@ -1605,6 +1618,9 @@ function showMyPayModal(amt) {
       });
       pmBtn.insertAdjacentElement('afterend', list);
       pmBtn.textContent = '✓ Paid via method ▴';
+      // Scroll modal to show the list
+      const sheet = document.querySelector('#pmod > div > div');
+      if (sheet) { sheet.style.overflowY = 'auto'; sheet.style.maxHeight = '90vh'; setTimeout(() => list.scrollIntoView({behavior:'smooth',block:'nearest'}), 50); }
     };
   }
 
@@ -1617,7 +1633,7 @@ function showMyPayModal(amt) {
 async function markPaidByName(name, method) {
   if (!name) { toast('Could not identify your name. Try refreshing.'); return; }
   // Optimistically mark immediately — polling is paused so this won't get overwritten
-  _optimisticPaid[name.toLowerCase()] = { method: method || null };
+  _setOptimisticPaid(name, method);
   closePay(); // closes modal and resumes polling
   const methodLabel = method && method !== 'Other' ? ' via ' + method : '';
   toast('✅ ' + name + ' paid' + methodLabel + '!');
@@ -1630,15 +1646,18 @@ async function markPaidByName(name, method) {
       body: JSON.stringify({ participantId: null, name, payment_method: method||null })
     });
     const d = await r.json();
+    console.log('[markPaidByName] server response for', name, ':', JSON.stringify(d));
     if (!d.success) {
       // DB write failed — remove optimistic override and show error
-      delete _optimisticPaid[name.toLowerCase()];
+      _clearOptimisticPaid(name);
       _lastStateHash = '';
       refreshAll();
       toast('⚠️ Could not save payment. Try again.');
     }
+    // On success: _optimisticPaid stays until poll confirms p.paid=true from DB
   } catch(e) {
-    delete _optimisticPaid[name.toLowerCase()];
+    console.error('[markPaidByName] fetch error:', e);
+    _clearOptimisticPaid(name);
     _lastStateHash = '';
     refreshAll();
     toast('⚠️ Network error. Try again.');
@@ -5933,7 +5952,8 @@ app.post('/bill/:billId/mark-paid', async (req, res) => {
         ...(payment_method ? { payment_method } : {})
       }).eq('id', participantId);
     }
-    await updateQuery;
+    const updateResult = await updateQuery;
+    console.log('[mark-paid] update result for', name, ':', JSON.stringify(updateResult?.error || 'ok'), '| participantId:', participantId, '| useNameLookup:', useNameLookup);
     // Check if all non-payer participants are now paid — update bill status
     const { data: allParts } = await supabase.from('participants').select('paid,name').eq('bill_id', billId);
     const paidByLower = (bill.paid_by || '').toLowerCase();
