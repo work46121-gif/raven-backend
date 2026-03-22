@@ -2425,7 +2425,7 @@ ${coverHTML}
     <span style="width:3px;height:3px;border-radius:50%;background:rgba(255,255,255,0.12)"></span>
     ${grandTotal > 0
       ? `<span style='color:#FF9A3C;font-weight:600'>$${grandTotal.toFixed(2)} outstanding</span>`
-      : `<span style='color:#30D158;font-weight:600'>All settled ✓</span>`
+      : `<span style='color:#30D158;font-weight:600'>$${totalSpend.toFixed(2)} total spent</span>`
     }
   </div>
   <div style="display:flex;align-items:center;margin-top:14px;margin-bottom:6px;position:relative">
@@ -5076,10 +5076,11 @@ app.post('/trip/:tripId/receipt/:receiptId/edit', async (req, res) => {
     if (total   !== undefined) updates.total   = parseFloat(total) || 0;
     if (splits  !== undefined) updates.splits  = JSON.stringify(splits);
     await supabase.from('trip_receipts').update(updates).eq('id', receiptId).eq('trip_id', tripId);
-    // Recalculate trip total — credits accumulate, no un-settle needed
-    const { data: all } = await supabase.from('trip_receipts').select('total').eq('trip_id', tripId);
-    const newTotal = (all||[]).reduce((s,r) => s + parseFloat(r.total||0), 0);
-    await supabase.from('trips').update({ total: newTotal }).eq('id', tripId);
+    // Recalculate trip total = outstanding (not total spend)
+    const { data: allR } = await supabase.from('trip_receipts').select('total').eq('trip_id', tripId);
+    const rcptCount = (allR||[]).length;
+    const outstandingAfterEdit = await computeOutstanding(tripId);
+    await supabase.from('trips').update({ total: outstandingAfterEdit !== null ? outstandingAfterEdit : 0, receipt_count: rcptCount }).eq('id', tripId);
     res.json({ success: true });
   } catch(err) { console.error('Edit receipt error:', err); res.json({ success: false, error: err.message }); }
 });
