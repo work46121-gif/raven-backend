@@ -1645,10 +1645,12 @@ async function markPaidByName(name, method) {
   toast('✅ ' + name + ' paid' + methodLabel + '!');
 
   // DB write — await it before resuming polling
+  const payload = { participantId: null, name, payment_method: method||null };
+  console.log('[markPaidByName] sending:', JSON.stringify(payload), 'to', BACKEND_URL + '/bill/' + BID + '/mark-paid');
   try {
     const r = await fetch(BACKEND_URL + '/bill/' + BID + '/mark-paid', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ participantId: null, name, payment_method: method||null })
+      body: JSON.stringify(payload)
     });
     const d = await r.json();
     console.log('[markPaidByName] server response for', name, ':', JSON.stringify(d));
@@ -5951,62 +5953,70 @@ app.post('/bill/:billId/comments', async (req, res) => {
 });
 
 app.post('/bill/:billId/mark-paid', async (req, res) => {
+  const { billId } = req.params;
+  const { participantId, name, payment_method } = req.body;
+  console.log(`[mark-paid] START billId=${billId} name=${name} participantId=${participantId} method=${payment_method}`);
   try {
-    const { billId } = req.params;
-    const { participantId, name, payment_method } = req.body;
-    const { data: bill } = await supabase.from('bills').select('*').eq('id', billId).single();
-    if (!bill) return res.json({ success: false, error: 'Bill not found' });
-    // Resolve participant: null id or ghost-* id → look up by name
-    // This handles QR guests who may not have a stable DB id on the client yet
-    let updateQuery;
+    const { data: bill, error: billErr } = await supabase.from('bills').select('*').eq('id', billId).single();
+    if (billErr) { console.log('[mark-paid] bill fetch error:', billErr.message); return res.json({ success: false, error: billErr.message }); }
+    if (!bill) { console.log('[mark-paid] bill not found'); return res.json({ success: false, error: 'Bill not found' }); }
+
+    // Step 1: Find or create the participant row
+    let participantRowId = null;
     const useNameLookup = !participantId || String(participantId).startsWith('ghost-');
+
     if (useNameLookup) {
-      // Find the participant row first to get exact id and name
-      const { data: existing } = await supabase.from('participants').select('id,name').eq('bill_id', billId).ilike('name', name).maybeSingle();
-      if (!existing) {
-        // Insert fresh row then update it
-        const { data: inserted } = await supabase.from('participants')
+      // Look up by name
+      const { data: existing, error: findErr } = await supabase
+        .from('participants').select('id,name,paid').eq('bill_id', billId).ilike('name', name).maybeSingle();
+      console.log(`[mark-paid] name lookup result: id=${existing?.id} paid=${existing?.paid} err=${findErr?.message}`);
+
+      if (existing) {
+        participantRowId = existing.id;
+      } else {
+        // Insert new row already marked paid
+        const { data: inserted, error: insErr } = await supabase
+          .from('participants')
           .insert({ bill_id: billId, name, amount: 0, paid: true, paid_at: new Date().toISOString(), ...(payment_method ? { payment_method } : {}) })
-          .select().maybeSingle();
-        console.log('[mark-paid] inserted+paid new row for', name, ':', inserted?.id || 'failed');
-        // Skip the update below — already inserted as paid
-        const { data: allParts2 } = await supabase.from('participants').select('paid,name').eq('bill_id', billId);
-        const paidByLower2 = (bill.paid_by || '').toLowerCase();
-        const nonPayers2 = (allParts2 || []).filter(p => p.name.toLowerCase() !== paidByLower2);
-        const allPaid2 = nonPayers2.length > 0 && nonPayers2.every(p => p.paid);
-        if (allPaid2) await supabase.from('bills').update({ status: 'completed' }).eq('id', billId);
-        return res.json({ success: true, allPaid: allPaid2 });
+          .select('id').single();
+        console.log(`[mark-paid] inserted new row: id=${inserted?.id} err=${insErr?.message}`);
+        if (insErr) return res.json({ success: false, error: insErr.message });
+        // Already inserted as paid — return success
+        return res.json({ success: true, allPaid: false });
       }
-      // Use exact id for the update — more reliable than ilike name match
-      updateQuery = supabase.from('participants').update({
-        paid: true,
-        paid_at: new Date().toISOString(),
-        ...(payment_method ? { payment_method } : {})
-      }).eq('id', existing.id);
     } else {
-      updateQuery = supabase.from('participants').update({
-        paid: true,
-        paid_at: new Date().toISOString(),
-        ...(payment_method ? { payment_method } : {})
-      }).eq('id', participantId);
+      participantRowId = participantId;
     }
-    const updateResult = await updateQuery;
-    console.log('[mark-paid] update result for', name, ':', JSON.stringify(updateResult?.error || 'ok'), '| rows affected — useNameLookup:', useNameLookup);
-    // Check if all non-payer participants are now paid — update bill status
+
+    // Step 2: Update the row to paid=true
+    console.log(`[mark-paid] updating id=${participantRowId} to paid=true`);
+    const { data: updated, error: updateErr } = await supabase
+      .from('participants')
+      .update({ paid: true, paid_at: new Date().toISOString(), ...(payment_method ? { payment_method } : {}) })
+      .eq('id', participantRowId)
+      .select('id,paid,payment_method');
+    console.log(`[mark-paid] update done: updated=${JSON.stringify(updated)} err=${updateErr?.message}`);
+    if (updateErr) return res.json({ success: false, error: updateErr.message });
+
+    // Step 3: Check if all settled
     const { data: allParts } = await supabase.from('participants').select('paid,name').eq('bill_id', billId);
     const paidByLower = (bill.paid_by || '').toLowerCase();
     const nonPayers = (allParts || []).filter(p => p.name.toLowerCase() !== paidByLower);
     const allPaid = nonPayers.length > 0 && nonPayers.every(p => p.paid);
-    if (allPaid) {
-      await supabase.from('bills').update({ status: 'completed' }).eq('id', billId);
-    }
+    if (allPaid) await supabase.from('bills').update({ status: 'completed' }).eq('id', billId);
+
     if (bill.creator_phone && !bill.creator_phone.includes('@')) {
       const methodStr = payment_method ? ` via ${payment_method}` : '';
       const allPaidNote = allPaid ? ' — Bill fully settled! 🎉' : '';
       await sendSMS(bill.creator_phone, `🪶 RAVEN — ${name} marked as paid${methodStr} for ${bill.name}!${allPaidNote}`);
     }
+
+    console.log(`[mark-paid] SUCCESS name=${name} allPaid=${allPaid}`);
     res.json({ success: true, allPaid });
-  } catch(err) { res.json({ success: false, error: err.message }); }
+  } catch(err) {
+    console.error('[mark-paid] EXCEPTION:', err.message, err.stack);
+    res.json({ success: false, error: err.message });
+  }
 });
 
 app.get('/test-bill/:billId', async (req, res) => {
