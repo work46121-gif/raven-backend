@@ -1976,13 +1976,13 @@ app.get('/trip/:tripId', async (req, res) => {
   })();
 
 
-  // grandTotal = outstanding (after settled credits)
+  // grandTotal = outstanding (after settled credits, capped so 999999 sentinel never over-reduces)
   const grandTotal = Math.round(Object.entries(totals).reduce((s, [person, raw]) => {
-    const credit = settledCredits[person.toLowerCase()] || 0;
+    const credit = Math.min(settledCredits[person.toLowerCase()] || 0, raw); // cap at rawOwed
     const net = Math.round(Math.max(0, raw - credit) * 100) / 100;
     return s + (net <= 0.02 ? 0 : net); // ignore sub-2¢ rounding drift
   }, 0) * 100) / 100;
-  // Keep trips.total in sync with the live outstanding so dashboard card is always correct
+  // Keep trips.total in sync — fire-and-forget so dashboard card always shows correct outstanding
   supabase.from('trips').update({ total: grandTotal }).eq('id', tripId).then(() => {}).catch(() => {});
   // Total spend = sum of all receipt totals (what was actually spent)
   const totalSpend = (receipts||[]).reduce((s, r) => s + parseFloat(r.total||0), 0);
