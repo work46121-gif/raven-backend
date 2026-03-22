@@ -2131,41 +2131,51 @@ app.get('/trip/:tripId', async (req, res) => {
     }
     const payerEntries = isSettled ? [] : Object.entries(owesPerPayer);
 
-    // Render pay slots with data attributes — filled client-side using PAY_PROFILES
+    // Build pay slot buttons for top-level "Who Owes What"
+    // Each entry = one row: "Pay [payer] $X" button + "Mark as Paid" 
     const payBtnsHtml = payerEntries.map(([payerName, amt]) =>
-      `<div class="pay-slot" data-payer="${esc(payerName)}" data-amount="${amt.toFixed(2)}" style="margin-top:4px">
-        <div style="font-size:10px;color:#6E6B80;margin-bottom:4px">Pay ${esc(payerName)} <b style="color:#FF9A3C">$${amt.toFixed(2)}</b></div>
-        <div class="pay-btns" style="display:flex;flex-wrap:wrap;gap:6px">
-          <span style="font-size:11px;color:#6E6B80;font-style:italic">Loading payment options...</span>
+      `<div class="pay-slot" data-payer="${esc(payerName)}" data-amount="${amt.toFixed(2)}" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;padding:8px 10px;background:rgba(255,255,255,0.03);border-radius:8px">
+        <div>
+          <div style="font-size:11px;color:#6E6B80">Owes <b style="color:#F0EEF8">${esc(payerName)}</b></div>
+          <div style="font-size:16px;font-weight:800;font-family:monospace;color:#FF9A3C">$${amt.toFixed(2)}</div>
+        </div>
+        <div class="pay-btns" style="display:flex;gap:6px;align-items:center">
+          <span style="font-size:11px;color:#6E6B80;font-style:italic">Loading...</span>
         </div>
       </div>`
     ).join('');
 
+    // "Mark as Paid" button for the whole person (settles all their debt at once)
+    const markPaidBtnHtml = payerEntries.length > 0
+      ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.06)">
+          <button class="mark-settled-btn" data-person="${personId}" data-name="${esc(p)}" id="markpaid-${personId}" data-settle-amount="${amtOwed.toFixed(2)}" style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:9px;color:#30D158;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer">✓ Mark as Paid · $${amtOwed.toFixed(2)}</button>
+        </div>`
+      : '';
+
     const personId = 'person-' + p.replace(/[^a-z0-9]/gi,'_');
-    return `<div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)" id="row-${personId}">
-      <div style="display:flex;align-items:center;justify-content:space-between;${payerEntries.length>0?'margin-bottom:12px':''}">
+    // data-is-settled used for accurate settled count
+    return `<div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)" id="row-${personId}" data-is-settled="${isSettled?'1':'0'}" data-is-debtor="${rawOwed>0.02?'1':'0'}">
+      <div style="display:flex;align-items:center;justify-content:space-between;${(payerEntries.length>0&&!isSettled)?'margin-bottom:4px':''}">
         <div style="display:flex;align-items:center;gap:10px;cursor:pointer" data-open-profile="${esc(p)}" title="View ${esc(p)}'s profile">
           <div data-person-avatar="${esc(p)}" style="width:34px;height:34px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;overflow:hidden">${esc(p[0].toUpperCase())}</div>
           <div>
             <div style="font-weight:600;font-size:14px;display:flex;align-items:center;gap:6px">${esc(p)} <span style="font-size:11px;color:#6E6B80;font-weight:400">›</span></div>
-            <div class="person-status-display" style="font-size:11px;color:${amtOwed>0?'#FF9A3C':amtReceivable>0?'#A855F7':'#30D158'}">
-              ${amtOwed>0 ? (isPartiallySettled ? "owes $" + amtOwed.toFixed(2) + ' <span style="color:#30D158">(+$' + settledCredit.toFixed(2) + ' settled)</span>' : "owes $" + amtOwed.toFixed(2)) : amtReceivable>0 ? "collecting $" + amtReceivable.toFixed(2) : 'all settled ✓'}
+            <div class="person-status-display" style="font-size:11px;color:${isSettled?'#30D158':amtOwed>0?'#FF9A3C':amtReceivable>0?'#A855F7':'#30D158'}">
+              ${isSettled ? '✅ all settled' : amtOwed>0 ? 'owes $' + amtOwed.toFixed(2) : amtReceivable>0 ? 'collecting $' + amtReceivable.toFixed(2) : 'all settled ✓'}
             </div>
           </div>
         </div>
         <div style="text-align:right">
-          <div class="person-balance-display" data-original-owed="${rawOwed.toFixed(2)}" data-raw-owed="${rawOwed.toFixed(2)}" style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${isSettled?'#9896A8':amtOwed>0?'#FF9A3C':amtReceivable>0?'#A855F7':'#9896A8'}">
-            ${isSettled ? '$0.00' : amtOwed>0 ? '-$'+amtOwed.toFixed(2) : amtReceivable>0 ? '+$'+amtReceivable.toFixed(2) : '$0.00'}
+          <div class="person-balance-display" data-original-owed="${rawOwed.toFixed(2)}" data-raw-owed="${rawOwed.toFixed(2)}" style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${isSettled?'#30D158':amtOwed>0?'#FF9A3C':amtReceivable>0?'#A855F7':'#9896A8'}">
+            ${isSettled ? '✅' : amtOwed>0 ? '-$'+amtOwed.toFixed(2) : amtReceivable>0 ? '+$'+amtReceivable.toFixed(2) : '$0.00'}
           </div>
         </div>
       </div>
-      ${isSettled ? '<button class="mark-settled-btn" data-person="' + personId + '" data-name="' + esc(p) + '" id="markpaid-' + personId + '" data-settled="1" data-settle-amount="' + rawOwed.toFixed(2) + '" style="display:inline-flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:9px;color:#30D158;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;width:100%">✅ Settled · tap to undo</button>' :
-        payerEntries.length>0 ? `<div class="client-settled-block" style="display:none;background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.15);border-radius:8px;padding:10px 14px;margin-bottom:8px;align-items:center;gap:8px"><span style="font-size:16px">✅</span><span style="font-size:13px;color:#30D158;font-weight:600">Settled</span></div><div class="client-pay-block" style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px 12px">
-        ${payBtnsHtml}
-        <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)">
-          <button class="mark-settled-btn" data-person="${personId}" data-name="${esc(p)}" id="markpaid-${personId}" style="display:inline-flex;align-items:center;gap:7px;padding:8px 16px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:9px;color:#30D158;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer" title="Mark ${esc(p)} as fully settled up" data-settle-amount="${amtOwed.toFixed(2)}">✓ All Paid · $${amtOwed.toFixed(2)}</button>
-        </div>
-      </div>` : ''}
+      ${isSettled
+        ? `<div style="margin-top:6px;display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(48,209,88,0.07);border:1px solid rgba(48,209,88,0.2);border-radius:8px"><span style="font-size:13px;color:#30D158;font-weight:600">✅ Fully Settled</span></div>`
+        : payerEntries.length>0
+          ? `<div class="client-pay-block">${payBtnsHtml}${markPaidBtnHtml}</div>`
+          : ''}
     </div>`;
   }).join('');
 
@@ -2806,14 +2816,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function doLiveReload() {
     if (_reloadPending) return; // debounce
+    // Don't reload if a button is currently in mid-action (confirming state)
+    if (document.querySelector('[data-confirming="1"],[data-confirming="unsettle"],[disabled]')) return;
     _reloadPending = true;
-    // Show a subtle live-update toast before reloading
-    toast('🔄 Updating...', true);
+    toast('🔄 Live update...', true);
     setTimeout(() => {
       const _u = new URL(window.location.href);
       _u.searchParams.set('_nc', Date.now());
       window.location.href = _u.toString();
-    }, 600);
+    }, 800);
   }
 
   async function initRealtime() {
@@ -3420,58 +3431,11 @@ document.addEventListener('click', function(e) {
 function markReceiptItemPaid(personName, receiptId, amount, btn) {
   if (!btn) return;
 
-  // ── UNSETTLE path ──
+  // ── UNSETTLE path — single tap ──
   if (btn.dataset.settled === '1') {
-    if (btn.dataset.confirming === 'unsettle') {
-      btn.disabled = true;
-      btn.textContent = '⏳ Saving…';
-      btn.dataset.confirming = '';
-      fetch(BACKEND + '/trip/' + TRIP_ID + '/partial-unsettle', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ token: TRIP_TOKEN, name: personName, amount: parseFloat(amount) || 0, receipt_id: btn.getAttribute('data-receipt-id') || '' })
-      })
-      .then(r => r.json())
-      .then(d => {
-        if (d.success) {
-          btn.textContent = '✓ Mark as Paid';
-          btn.style.background = 'rgba(48,209,88,0.06)';
-          btn.style.borderColor = 'rgba(48,209,88,0.2)';
-          btn.style.color = '#30D158';
-          btn.disabled = false;
-          btn.dataset.settled = '';
-          toast(personName + ' unsettled ↩', true);
-          setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 600);
-        } else {
-          btn.disabled = false;
-          btn.textContent = '✅ Settled · tap to undo';
-          toast('Error: ' + (d.error || 'Could not unsettle'), false);
-        }
-      })
-      .catch(() => { btn.disabled = false; btn.textContent = '✅ Settled · tap to undo'; toast('Network error', false); });
-      return;
-    }
-    btn.dataset.confirming = 'unsettle';
-    btn.textContent = '⚠️ Tap again to unsettle';
-    btn.style.borderColor = 'rgba(255,107,53,0.5)';
-    btn.style.color = '#FF6B35';
-    setTimeout(() => {
-      if (btn.dataset.confirming === 'unsettle') {
-        btn.dataset.confirming = '';
-        btn.textContent = '✅ Settled · tap to undo';
-        btn.style.borderColor = 'rgba(48,209,88,0.4)';
-        btn.style.color = '#30D158';
-      }
-    }, 3000);
-    return;
-  }
-
-  // ── SETTLE path ──
-  if (btn.dataset.confirming === '1') {
     btn.disabled = true;
     btn.textContent = '⏳ Saving…';
-    btn.dataset.confirming = '';
-    fetch(BACKEND + '/trip/' + TRIP_ID + '/mark-settled', {
+    fetch(BACKEND + '/trip/' + TRIP_ID + '/partial-unsettle', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ token: TRIP_TOKEN, name: personName, amount: parseFloat(amount) || 0, receipt_id: btn.getAttribute('data-receipt-id') || '' })
@@ -3479,36 +3443,52 @@ function markReceiptItemPaid(personName, receiptId, amount, btn) {
     .then(r => r.json())
     .then(d => {
       if (d.success) {
-        btn.textContent = '✅ Settled · tap to undo';
-        btn.style.background = 'rgba(48,209,88,0.15)';
-        btn.style.borderColor = 'rgba(48,209,88,0.4)';
+        btn.textContent = '✓ Mark as Paid';
+        btn.style.background = 'rgba(48,209,88,0.06)';
+        btn.style.borderColor = 'rgba(48,209,88,0.2)';
         btn.style.color = '#30D158';
         btn.disabled = false;
-        btn.dataset.settled = '1';
-        toast(personName + ' paid $' + parseFloat(amount).toFixed(2) + ' ✓', true);
-        // Update outstanding display immediately
-        const outEl = document.getElementById('outstanding-amt');
-        if (outEl && d.outstanding !== undefined) { outEl.textContent = '$' + parseFloat(d.outstanding).toFixed(2); }
-        setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 1200);
+        btn.dataset.settled = '';
+        toast(personName + ' unsettled ↩', true);
+        setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 1500);
       } else {
         btn.disabled = false;
-        btn.textContent = '✓ Mark as Paid';
-        toast('Error: ' + (d.error || 'Could not save'), false);
+        btn.textContent = '✅ Settled · tap to undo';
+        toast('Error: ' + (d.error || 'Could not unsettle'), false);
       }
     })
-    .catch(() => { btn.disabled = false; btn.textContent = '✓ Mark as Paid'; toast('Network error', false); });
+    .catch(() => { btn.disabled = false; btn.textContent = '✅ Settled · tap to undo'; toast('Network error', false); });
     return;
   }
-  btn.dataset.confirming = '1';
-  btn.textContent = '⚠️ Tap again to confirm';
-  btn.style.borderColor = 'rgba(48,209,88,0.5)';
-  setTimeout(() => {
-    if (btn.dataset.confirming === '1') {
-      btn.dataset.confirming = '';
+
+  // ── SETTLE path — single tap, no confirm needed ──
+  btn.disabled = true;
+  btn.textContent = '⏳ Saving…';
+  fetch(BACKEND + '/trip/' + TRIP_ID + '/mark-settled', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ token: TRIP_TOKEN, name: personName, amount: parseFloat(amount) || 0, receipt_id: btn.getAttribute('data-receipt-id') || '' })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) {
+      btn.textContent = '✅ Settled · tap to undo';
+      btn.style.background = 'rgba(48,209,88,0.15)';
+      btn.style.borderColor = 'rgba(48,209,88,0.4)';
+      btn.style.color = '#30D158';
+      btn.disabled = false;
+      btn.dataset.settled = '1';
+      toast(personName + ' paid $' + parseFloat(amount).toFixed(2) + ' ✓', true);
+      const outEl = document.getElementById('outstanding-amt');
+      if (outEl && d.outstanding !== undefined) { outEl.textContent = '$' + parseFloat(d.outstanding).toFixed(2); }
+      setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 1500);
+    } else {
+      btn.disabled = false;
       btn.textContent = '✓ Mark as Paid';
-      btn.style.borderColor = 'rgba(48,209,88,0.2)';
+      toast('Error: ' + (d.error || 'Could not save'), false);
     }
-  }, 3000);
+  })
+  .catch(() => { btn.disabled = false; btn.textContent = '✓ Mark as Paid'; toast('Network error', false); });
 }
 
 function updatePersonBalanceDisplay(personName) {
@@ -3568,16 +3548,11 @@ function updatePersonBalanceDisplay(personName) {
   if (outLabel) outLabel.style.color = grandOutstanding > 0.005 ? '#FF9A3C' : '#9896A8';
   // Update X/Y Members settled up footer
   if (outSub) {
-    // Recount settled vs debtor from DOM
+    // Count settled vs debtor using server-rendered data attributes (reliable)
     let clientDebtors = 0, clientSettled = 0;
-    document.querySelectorAll('[data-raw-owed]').forEach(el => {
-      const rw = parseFloat(el.getAttribute('data-raw-owed')) || 0;
-      if (rw <= 0.02) return; // not a debtor
+    document.querySelectorAll('[data-is-debtor="1"]').forEach(rowEl => {
       clientDebtors++;
-      const rowEl = el.closest('[id^="row-"]');
-      if (!rowEl) return;
-      const sb = rowEl.querySelector('.client-settled-block');
-      if (sb && sb.style.display !== 'none') clientSettled++;
+      if (rowEl.getAttribute('data-is-settled') === '1') clientSettled++;
     });
     const allSettled = clientDebtors > 0 && clientSettled === clientDebtors;
     const iconEl = outSub.previousElementSibling;
@@ -3657,58 +3632,44 @@ function markTripPersonPaid(personName, personId, btn) {
     return;
   }
 
-  // ── SETTLE path ──
-  if (btn.dataset.confirming === '1') {
-    const settleAmt = parseFloat(btn.getAttribute('data-settle-amount') || '0') || 0;
-    btn.disabled = true;
-    btn.textContent = '⏳ Saving…';
-    btn.dataset.confirming = '';
-    fetch(BACKEND+'/trip/'+TRIP_ID+'/mark-settled', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ token: TRIP_TOKEN, name: personName, amount: settleAmt })
-    })
-    .then(r => r.json())
-    .then(d => {
-      if (d.success) {
-        btn.textContent = '✅ Settled';
-        btn.dataset.settled = '1';
-        btn.style.background = 'rgba(48,209,88,0.15)';
-        btn.style.borderColor = 'rgba(48,209,88,0.4)';
-        btn.style.color = '#30D158';
-        btn.disabled = false;
-        const row = document.getElementById('row-' + personId);
-        if (row) {
-          const statusEl = row.querySelector('.person-status-display');
-          if (statusEl) { statusEl.textContent = 'all settled ✓'; statusEl.style.color = '#30D158'; }
-          row.querySelectorAll('.pay-slot').forEach(s => s.style.display = 'none');
-        }
-        toast(personName + ' marked as settled ✓', true);
-      } else {
-        btn.disabled = false;
-        btn.textContent = '✓ Mark as Settled';
-        toast('Error: ' + (d.error || 'Could not save'), false);
-      }
-    })
-    .catch(() => {
+  // ── SETTLE path — single tap ──
+  // Single-tap settle for top-level "Who Owes What"
+  const settleAmt2 = parseFloat(btn.getAttribute('data-settle-amount') || '0') || 0;
+  btn.disabled = true;
+  btn.textContent = '⏳ Saving…';
+  fetch(BACKEND+'/trip/'+TRIP_ID+'/mark-settled', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ token: TRIP_TOKEN, name: personName, amount: settleAmt2 })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) {
+      btn.textContent = '✅ Paid';
+      btn.dataset.settled = '1';
+      btn.style.background = 'rgba(48,209,88,0.15)';
+      btn.style.borderColor = 'rgba(48,209,88,0.4)';
+      btn.style.color = '#30D158';
       btn.disabled = false;
-      btn.textContent = '✓ Mark as Settled';
-      toast('Network error', false);
-    });
-    return;
-  }
-  btn.dataset.confirming = '1';
-  btn.textContent = '⚠️ Tap again to confirm';
-  btn.style.background = 'rgba(48,209,88,0.15)';
-  btn.style.borderColor = 'rgba(48,209,88,0.5)';
-  setTimeout(() => {
-    if (btn.dataset.confirming === '1') {
-      btn.dataset.confirming = '';
-      btn.textContent = '✓ Mark as Settled';
-      btn.style.background = 'rgba(48,209,88,0.08)';
-      btn.style.borderColor = 'rgba(48,209,88,0.2)';
+      const row = document.getElementById('row-' + personId);
+      if (row) {
+        row.setAttribute('data-is-settled', '1');
+        const statusEl = row.querySelector('.person-status-display');
+        if (statusEl) { statusEl.textContent = '✅ all settled'; statusEl.style.color = '#30D158'; }
+        const balEl = row.querySelector('.person-balance-display');
+        if (balEl) { balEl.textContent = '✅'; balEl.style.color = '#30D158'; }
+        const payBlock = row.querySelector('.client-pay-block');
+        if (payBlock) payBlock.style.display = 'none';
+      }
+      toast(personName + ' marked as paid ✓', true);
+      updatePersonBalanceDisplay(personName);
+    } else {
+      btn.disabled = false;
+      btn.textContent = '✓ Mark as Paid';
+      toast('Error: ' + (d.error || 'Could not save'), false);
     }
-  }, 3000);
+  })
+  .catch(() => { btn.disabled = false; btn.textContent = '✓ Mark as Paid'; toast('Network error', false); });
 }
 
 // ── DELETE RECEIPT (admin only) ──
