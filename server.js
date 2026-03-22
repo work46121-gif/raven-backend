@@ -86,7 +86,7 @@ function parseMentions(text) {
 }
 
 function formatMoney(amount) {
-  return `$${parseFloat(amount).toFixed(2)}`;
+  return `$${(totals[person]||0).toFixed(2)}`;
 }
 
 async function sendSMS(to, body) {
@@ -907,8 +907,8 @@ app.get('/bill/:billId', async (req, res) => {
       const paidByName = document.getElementById('paid-by-name')?.value || '';
       const payeeName = paidByName || p.first_name || 'Bill Creator';
       document.getElementById('pname').textContent = payeeName;
-      document.getElementById('pamt').textContent = '$' + parseFloat(amount).toFixed(2);
-      const amt = parseFloat(amount).toFixed(2);
+      document.getElementById('pamt').textContent = '$' + (totals[person]||0).toFixed(2);
+      const amt = (totals[person]||0).toFixed(2);
       const mc = document.getElementById('pmethods'); mc.innerHTML = ''; let n = 0;
       function row(bg, icon, title, sub, href, copy, method) {
         const el = document.createElement(href?'a':'button'); el.className = 'pm-row';
@@ -1552,8 +1552,8 @@ function showPay(btn) {
   const paidByName = document.getElementById('paid-by-name')?.value || '';
   const payeeName = paidByName || p.first_name || 'Bill Creator';
   document.getElementById('pname').textContent = payeeName;
-  document.getElementById('pamt').textContent = '$' + parseFloat(amount).toFixed(2);
-  const amt = parseFloat(amount).toFixed(2);
+  document.getElementById('pamt').textContent = '$' + (totals[person]||0).toFixed(2);
+  const amt = (totals[person]||0).toFixed(2);
   const mc = document.getElementById('pmethods');
   mc.innerHTML = '';
   let n = 0;
@@ -2224,14 +2224,14 @@ app.get('/trip/:tripId', async (req, res) => {
                   <span style="font-size:14px;font-weight:600">${esc(person)}</span>
                 </div>
                 <div style="text-align:right">
-                  <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:#30D158;letter-spacing:0.03em;line-height:1">$${parseFloat(amount).toFixed(2)}</div>
+                  <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:#30D158;letter-spacing:0.03em;line-height:1">$${(totals[person]||0).toFixed(2)}</div>
                   <div style="font-size:10px;color:#6E6B80">${pct}% of bill</div>
                 </div>
               </div>
               <div style="height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;margin-bottom:${payer?'10px':'0'}">
                 <div style="height:100%;width:${pct}%;background:${color};border-radius:2px"></div>
               </div>
-              ${(payer && (()=>{ const _r=totals[person]||0; const _c=Math.min(settledCredits[person.toLowerCase()]||0,_r); return !(_r>0.02 && Math.max(0,_r-_c)<=0.02); })()) ? '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px;flex-wrap:wrap">' + payButtonsHtml(payer, amount) + '<button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" style="padding:7px 14px;background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.2);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✓ Mark as Paid</button></div>' : (payer && (()=>{ const _raw=totals[person]||0; const _cred=Math.min(settledCredits[person.toLowerCase()]||0,_raw); return _raw>0.02 && Math.max(0,_raw-_cred)<=0.02; })()) ? '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px"><button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" data-settled="1" style="padding:7px 14px;background:rgba(48,209,88,0.15);border:1px solid rgba(48,209,88,0.4);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✅ Settled · tap to undo</button></div>' : ''}
+              ${(payer && (()=>{ const _r=totals[person]||0; const _c=Math.min(settledCredits[person.toLowerCase()]||0,_r); return !(_r>0.02 && Math.max(0,_r-_c)<=0.02); })()) ? '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px;flex-wrap:wrap">' + payButtonsHtml(payer, amount) + '<button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + (totals[person]||0).toFixed(2) + '" style="padding:7px 14px;background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.2);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✓ Mark as Paid</button></div>' : (payer && (()=>{ const _raw=totals[person]||0; const _cred=Math.min(settledCredits[person.toLowerCase()]||0,_raw); return _raw>0.02 && Math.max(0,_raw-_cred)<=0.02; })()) ? '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px"><button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + (totals[person]||0).toFixed(2) + '" data-settled="1" style="padding:7px 14px;background:rgba(48,209,88,0.15);border:1px solid rgba(48,209,88,0.4);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✅ Settled · tap to undo</button></div>' : ''}
             </div>`;
           }).join('')}
         </div>
@@ -3390,7 +3390,7 @@ function markReceiptItemPaid(personName, receiptId, amount, btn) {
         btn.style.color = '#30D158';
         btn.disabled = false;
         btn.dataset.settled = '1';
-        toast(personName + ' paid $' + parseFloat(amount).toFixed(2) + ' ✓', true);
+        toast(personName + ' paid $' + (totals[person]||0).toFixed(2) + ' ✓', true);
         setTimeout(() => location.reload(), 600);
       } else {
         btn.disabled = false;
