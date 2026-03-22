@@ -1515,16 +1515,8 @@ function showMyPayModal(amt) {
     el.className = 'pm-row';
     if (href) { el.href = href; el.target = '_blank'; el.rel = 'noopener'; }
     if (copy) { el.addEventListener('click', e => { e.preventDefault(); navigator.clipboard.writeText(copy).catch(()=>{}); toast('Copied: '+copy); }); }
-    // Find my participant ID
-    el.addEventListener('click', () => {
-      setTimeout(() => {
-        // Find me in the owes list and mark paid
-        fetch(BACKEND_URL + '/bill/' + BID + '/state').then(r=>r.json()).then(d => {
-          const me = (d.participants||[]).find(p => myName && p.name.toLowerCase() === myName.toLowerCase());
-          if (me) markPaid(me.id, me.name, method);
-        });
-      }, 400);
-    });
+    // Mark paid directly by name — avoids stale state race condition
+    el.addEventListener('click', () => setTimeout(() => markPaidByName(myName, method), 300));
     el.innerHTML = '<div class="pm-icon" style="background:'+bg+'">'+icon+'</div><div class="pm-info"><b>'+title+'</b><span>'+sub+'</span></div><span style="color:#6E6B80;font-size:16px">→</span>';
     mc.appendChild(el); n++;
   }
@@ -1546,22 +1538,35 @@ function showMyPayModal(amt) {
       b.textContent = m;
       b.style.cssText = 'display:block;width:100%;padding:10px 14px;margin-bottom:6px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#F0EEF8;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;text-align:left';
       b.addEventListener('click', (function(method){ return function(){
-        fetch(BACKEND_URL + '/bill/' + BID + '/state').then(r=>r.json()).then(d => {
-          const me = (d.participants||[]).find(p => myName && p.name.toLowerCase() === myName.toLowerCase());
-          if (me) markPaid(me.id, me.name, method);
-        });
+        markPaidByName(myName, method);
       }; })(m));
       noMethodDiv2.appendChild(b);
     });
     mc.appendChild(noMethodDiv2);
   }
-  document.getElementById('pmark').onclick = () => {
-    fetch(BACKEND_URL + '/bill/' + BID + '/state').then(r=>r.json()).then(d => {
-      const me = (d.participants||[]).find(p => myName && p.name.toLowerCase() === myName.toLowerCase());
-      if (me) markPaid(me.id, me.name, 'Other');
-    });
-  };
+  document.getElementById('pmark').onclick = () => markPaidByName(myName, 'Other');
   document.getElementById('pmod').style.display = 'block';
+}
+
+// Mark paid by name — no stale /state fetch needed, server handles ghost IDs by name
+async function markPaidByName(name, method) {
+  if (!name) { toast('Could not identify your name. Try refreshing.'); return; }
+  try {
+    const r = await fetch(BACKEND_URL + '/bill/' + BID + '/mark-paid', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ participantId: null, name, payment_method: method||null })
+    });
+    const d = await r.json();
+    if (d.success) {
+      closePay();
+      const methodLabel = method && method !== 'Other' ? ' via ' + method : '';
+      toast('✅ ' + name + ' paid' + methodLabel + '!');
+      _lastStateHash = '';
+      refreshAll();
+    } else {
+      toast('Error marking paid. Try again.');
+    }
+  } catch(e) { toast('Error. Try again.'); }
 }
 
 // ── QR CODE ──
@@ -5837,11 +5842,12 @@ app.post('/bill/:billId/mark-paid', async (req, res) => {
     const { participantId, name, payment_method } = req.body;
     const { data: bill } = await supabase.from('bills').select('*').eq('id', billId).single();
     if (!bill) return res.json({ success: false, error: 'Bill not found' });
-    // Ghost participants (QR joiners whose DB row may not exist yet) have id like "ghost-Name"
-    // In that case, look them up by name instead
+    // Resolve participant: null id or ghost-* id → look up by name
+    // This handles QR guests who may not have a stable DB id on the client yet
     let updateQuery;
-    if (String(participantId).startsWith('ghost-')) {
-      // Ensure they have a real row first
+    const useNameLookup = !participantId || String(participantId).startsWith('ghost-');
+    if (useNameLookup) {
+      // Ensure a real row exists first
       const { data: existing } = await supabase.from('participants').select('id').eq('bill_id', billId).ilike('name', name).maybeSingle();
       if (!existing) {
         await supabase.from('participants').insert({ bill_id: billId, name, amount: 0, paid: false });
