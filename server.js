@@ -4999,8 +4999,28 @@ app.post('/trip/:tripId/mark-settled', async (req, res) => {
       // Per-receipt settle: store with receipt-level key
       credits[receiptKey] = settleAmount;
     } else {
-      // Full person settle: store person-level key
-      credits[nameLower] = Math.max(credits[nameLower] || 0, settleAmount);
+      // Full person settle via top-level button:
+      // Store receipt-level keys for EVERY receipt this person owes on
+      // This way per-receipt unsettle works correctly later
+      try {
+        const { data: allRcpts } = await supabase.from('trip_receipts').select('id,splits,paid_by').eq('trip_id', tripId);
+        let storedAny = false;
+        (allRcpts || []).forEach(r => {
+          const payer = (r.paid_by || '').toLowerCase();
+          if (payer === nameLower) return; // they paid, don't owe
+          const sp = typeof r.splits === 'string' ? JSON.parse(r.splits) : (r.splits || {});
+          const share = Object.entries(sp).find(([k]) => k.toLowerCase() === nameLower);
+          if (share && parseFloat(share[1]) > 0) {
+            credits[nameLower + '::receipt::' + r.id] = Math.round(parseFloat(share[1]) * 100) / 100;
+            storedAny = true;
+          }
+        });
+        // Also keep a person-level key as fallback sentinel
+        if (storedAny) credits[nameLower] = settleAmount;
+      } catch(e) {
+        // Fallback: just store person-level key
+        credits[nameLower] = Math.max(credits[nameLower] || 0, settleAmount);
+      }
     }
     console.log('[mark-settled] writing credits:', JSON.stringify(credits), 'tripId:', tripId, 'name:', name, 'amount:', settleAmount);
     const { error: dbErr } = await supabase.from('trips').update({ settled_people: credits }).eq('id', tripId);
@@ -5078,16 +5098,28 @@ app.post('/trip/:tripId/partial-unsettle', async (req, res) => {
     } catch(e) {}
     const nameLower = (name || '').toLowerCase();
     const receiptKey = req.body.receipt_id ? nameLower + '::receipt::' + req.body.receipt_id : null;
+    const reduceBy = parseFloat(amount) || 0;
+
     if (receiptKey) {
-      // Per-receipt unsettle: delete that specific key
+      // Delete the receipt-level key if it exists
       delete credits[receiptKey];
+      // ALSO reduce the person-level key if it exists
+      // (person may have been settled via "Mark as Paid" top-level button which
+      //  stores a person-level key, not per-receipt keys)
+      if (credits[nameLower] !== undefined && reduceBy > 0) {
+        const current = Math.min(credits[nameLower], 999998);
+        const newCredit = Math.max(0, Math.round((current - reduceBy) * 100) / 100);
+        if (newCredit <= 0.02) { delete credits[nameLower]; }
+        else { credits[nameLower] = newCredit; }
+      }
     } else {
-      const reduceBy = parseFloat(amount) || 0;
       const current = Math.min(credits[nameLower] || 0, 999998);
       const newCredit = Math.max(0, current - reduceBy);
       if (newCredit <= 0.02) { delete credits[nameLower]; }
       else { credits[nameLower] = Math.round(newCredit * 100) / 100; }
     }
+
+    console.log('[partial-unsettle] credits after:', JSON.stringify(credits), 'receipt:', receiptKey, 'reduceBy:', reduceBy);
     await supabase.from('trips').update({ settled_people: credits }).eq('id', tripId);
     const outstanding = await computeOutstanding(tripId);
     if (outstanding !== null) await supabase.from('trips').update({ total: outstanding }).eq('id', tripId);
