@@ -1676,16 +1676,16 @@ loadC();
 })();
 
 // Auto-poll every 5 seconds
-pollTimer = setInterval(refreshAll, 2000);
+pollTimer = setInterval(refreshAll, 800); // fast poll for live feel
 
 // Stop polling when tab hidden, resume when visible
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { clearInterval(pollTimer); pollTimer = null; }
-  else { _lastStateHash = ''; _firstRender = true; refreshAll(); clearInterval(pollTimer); pollTimer = setInterval(refreshAll, 2000); }
+  else { _lastStateHash = ''; _firstRender = true; refreshAll(); clearInterval(pollTimer); pollTimer = setInterval(refreshAll, 800); }
 });
 // Watchdog: if poll timer dies, restart it
 setInterval(function() {
-  if (!pollTimer) { _lastStateHash = ''; _firstRender = true; pollTimer = setInterval(refreshAll, 2000); refreshAll(); }
+  if (!pollTimer) { _lastStateHash = ''; _firstRender = true; pollTimer = setInterval(refreshAll, 800); refreshAll(); }
 }, 5000);
 // Also refresh when window gets focus (user switches back to tab)
 window.addEventListener('focus', function() { _lastStateHash = ''; _firstRender = true; refreshAll(); });
@@ -1929,10 +1929,10 @@ app.get('/trip/:tripId', async (req, res) => {
 
 
   // grandTotal = outstanding (after settled credits)
-  const grandTotal = Object.entries(totals).reduce((s, [person, raw]) => {
+  const grandTotal = Math.round(Object.entries(totals).reduce((s, [person, raw]) => {
     const credit = settledCredits[person.toLowerCase()] || 0;
-    return s + Math.max(0, raw - credit);
-  }, 0);
+    return s + Math.round(Math.max(0, raw - credit) * 100) / 100;
+  }, 0) * 100) / 100;
   // Total spend = sum of all receipt totals (what was actually spent)
   const totalSpend = (receipts||[]).reduce((s, r) => s + parseFloat(r.total||0), 0);
 
@@ -3717,21 +3717,26 @@ function updateEven() {
   const v=parseFloat(document.getElementById('r-total').value)||0;
   const discount=parseFloat((document.getElementById('r-discount')||{}).value)||0;
   const net=Math.max(0,v-discount);
-  const paidBy=(document.getElementById('r-paidby')||{}).value||'';
-  const paidByT = (paidBy||'').trim();
+  const paidByEl = document.getElementById('r-paidby');
+  const paidByT = paidByEl ? paidByEl.value.trim() : '';
   const paidByL = paidByT.toLowerCase();
   // Exclude payer — all non-payers split evenly
   const debtors = paidByT ? PEOPLE.filter(p => p.trim().toLowerCase() !== paidByL) : [...PEOPLE];
   const per = debtors.length > 0 ? net / debtors.length : (PEOPLE.length > 0 ? net / PEOPLE.length : 0);
-  document.getElementById('r-even-prev').style.display = net > 0 ? 'block' : 'none';
+  const prevEl = document.getElementById('r-even-prev');
+  if (!prevEl) return;
+  prevEl.style.display = net > 0 ? 'block' : 'none';
+  // Rebuild per-person rows dynamically (avoids stale server-rendered span ID issues)
+  const container = prevEl.querySelector('.per-person-rows') || prevEl;
+  // Clear and rebuild
+  let html = '<div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:8px">Per Person</div>';
   PEOPLE.forEach(p => {
-    const id = 'ep-'+p.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');
-    const el = document.getElementById(id);
-    if (!el) return;
     const isPayer = paidByT && p.trim().toLowerCase() === paidByL;
-    el.textContent = isPayer ? 'paid 💳' : '$' + per.toFixed(2);
-    el.style.color = isPayer ? '#A855F7' : '#30D158';
+    const amt = isPayer ? 'paid 💳' : '$' + per.toFixed(2);
+    const color = isPayer ? '#A855F7' : '#30D158';
+    html += '<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px"><span style="color:#9896A8">' + p + '</span><span style="color:' + color + ';font-weight:600">' + amt + '</span></div>';
   });
+  prevEl.innerHTML = html;
 }
 function addItem() {
   const n=document.getElementById('r-iname').value.trim(), p=parseFloat(document.getElementById('r-iprice').value);
