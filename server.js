@@ -500,19 +500,21 @@ app.get('/bill/:billId/state', async (req, res) => {
     });
     for (const ghostName of extraNames) {
       // Always add to response so they appear in "Who Owes What" immediately
-      const ghostRow = { id: 'ghost-' + ghostName, bill_id: billId, name: ghostName, amount: 0, paid: false };
+      // Await the insert so we return a real DB id, not a ghost id
+      let realRow = null;
+      const { data: inserted, error: insErr } = await supabase.from('participants')
+        .insert({ bill_id: billId, name: ghostName, amount: 0, paid: false })
+        .select().maybeSingle();
+      if (inserted) {
+        realRow = inserted;
+      } else {
+        // Already exists (duplicate) — fetch the real row
+        const { data: found } = await supabase.from('participants').select('*').eq('bill_id', billId).ilike('name', ghostName).maybeSingle();
+        realRow = found;
+      }
+      const ghostRow = realRow || { id: 'ghost-' + ghostName, bill_id: billId, name: ghostName, amount: 0, paid: false };
       dbParticipants.push(ghostRow);
       dbNames.add(ghostName.toLowerCase());
-      // Best-effort DB insert (may fail due to RLS or duplicates — that's OK)
-      supabase.from('participants')
-        .insert({ bill_id: billId, name: ghostName, amount: 0, paid: false })
-        .then(({ data, error }) => {
-          if (error) {
-            // Try fetch in case they exist already
-            supabase.from('participants').select('*').eq('bill_id', billId).ilike('name', ghostName).maybeSingle()
-              .then(({ data: found }) => { /* already in dbParticipants */ });
-          }
-        });
     }
     res.json({
       success: true,
@@ -1611,8 +1613,26 @@ async function markPaid(pid, name, method) {
       closePay();
       const methodLabel = method && method !== 'Other' ? ' via ' + method : '';
       toast('✅ ' + name + ' paid' + methodLabel + '!');
-      _lastStateHash = ''; // force immediate re-render
+      // Optimistically update the UI immediately — don't wait for poll
+      // Find all participant rows in the owes list and update the matching one
+      const owes = document.getElementById('owes-list');
+      if (owes) {
+        owes.querySelectorAll('[data-pid]').forEach(el => {
+          if (el.dataset.pid === String(pid) || el.dataset.name?.toLowerCase() === name.toLowerCase()) {
+            el.style.display = 'none';
+          }
+        });
+        // Also update any pay buttons referencing this participant
+        owes.querySelectorAll('button[data-pid]').forEach(btn => {
+          if (btn.dataset.pid === String(pid) || btn.dataset.name?.toLowerCase() === name.toLowerCase()) {
+            btn.replaceWith(document.createTextNode('✅'));
+          }
+        });
+      }
+      _lastStateHash = ''; // force immediate re-render on next poll
       refreshAll();
+    } else {
+      toast('Error marking paid. Try again.');
     }
   } catch(e) { toast('Error. Try again.'); }
 }
