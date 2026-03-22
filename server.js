@@ -3782,7 +3782,7 @@ function adminDeleteReceipt(btn) {
   if (btn.dataset.confirming === '1') {
     btn.dataset.confirming = '';
     btn.disabled = true;
-    btn.textContent = '⏳';
+    btn.textContent = '...';
     fetch(BACKEND+'/trip/'+TRIP_ID+'/receipt/'+receiptId+'/delete', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
@@ -3794,6 +3794,7 @@ function adminDeleteReceipt(btn) {
         const wrap = document.getElementById(receiptId + '-wrap');
         if (wrap) wrap.remove();
         toast('🗑 ' + receiptName + ' deleted', true);
+        setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 600);
       } else {
         btn.disabled = false;
         btn.textContent = '🗑';
@@ -3968,15 +3969,23 @@ function openEditReceipt(id) {
 function updateEditSplitPreview() {
   const total = parseFloat(document.getElementById('edit-r-total').value) || 0;
   const checked = [...document.querySelectorAll('input[name="edit-person"]:checked')].map(cb => cb.value);
+  const paidBy = (document.getElementById('edit-r-paidby').value || '').toLowerCase();
   const preview = document.getElementById('edit-r-split-preview');
   const rows    = document.getElementById('edit-r-split-rows');
   if (!preview || !rows) return;
   if (checked.length === 0 || total === 0) { preview.style.display = 'none'; return; }
-  const per = total / checked.length;
+  // Non-payers split the total; payer owes $0
+  const nonPayers = checked.filter(p => p.toLowerCase() !== paidBy);
+  const per = nonPayers.length > 0 ? total / nonPayers.length : 0;
   preview.style.display = 'block';
-  rows.innerHTML = checked.map(p =>
-    '<div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:#9896A8">' + p + '</span><span style="color:#30D158;font-weight:600">$' + per.toFixed(2) + '</span></div>'
-  ).join('');
+  rows.innerHTML = checked.map(p => {
+    const isPayer = p.toLowerCase() === paidBy;
+    const amt = isPayer ? '0.00' : per.toFixed(2);
+    const color = isPayer ? '#6E6B80' : '#30D158';
+    return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:13px">' +
+      '<span style="color:#9896A8">' + p + (isPayer ? ' <span style="font-size:11px;color:#6E6B80">(paid)</span>' : '') + '</span>' +
+      '<span style="color:' + color + ';font-weight:600">$' + amt + '</span></div>';
+  }).join('');
 }
 
 function closeEditReceipt() {
