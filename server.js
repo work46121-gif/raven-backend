@@ -766,8 +766,16 @@ app.get('/bill/:billId', async (req, res) => {
   const billUrl = `https://ravensplit.com/bill/${billId}?t=${bill.share_token || ''}`;
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=10&color=30D158&bgcolor=06060A&qzone=1&data=${encodeURIComponent(billUrl)}`;
 
-  // ── CLASSIC MODE (no live_mode) — original read-only bill page ───────────────
-  if (!bill.live_mode) {
+  // ── LIVE MODE CHECK: also detect via item_selections as fallback
+  // (bills created before the live_mode column was added may have selections but no flag)
+  let isLiveBill = !!bill.live_mode;
+  if (!isLiveBill && items.length > 0) {
+    // If bill has items in receipt_items table, it was created with the live/itemized flow
+    isLiveBill = true;
+  }
+
+  // ── CLASSIC MODE (no live_mode and no items) — original read-only bill page ──
+  if (!isLiveBill) {
     const classicHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -929,6 +937,7 @@ app.get('/bill/:billId', async (req, res) => {
   }
 
   // ── LIVE MODE — interactive item-claiming page ───────────────────────────────
+  // (isLiveBill = true from either bill.live_mode flag or having items in receipt_items)
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -5068,5 +5077,11 @@ app.listen(PORT, async () => {
   } catch(e) {}
   try {
     await supabase.rpc('exec_sql', { sql: "ALTER TABLE trip_receipts ADD COLUMN IF NOT EXISTS photo_url TEXT" });
+  } catch(e) {}
+  try {
+    await supabase.rpc('exec_sql', { sql: "ALTER TABLE bills ADD COLUMN IF NOT EXISTS live_mode BOOLEAN DEFAULT false" });
+  } catch(e) {}
+  try {
+    await supabase.rpc('exec_sql', { sql: "ALTER TABLE bills ADD COLUMN IF NOT EXISTS live_people_count INT DEFAULT 2" });
   } catch(e) {}
 });
