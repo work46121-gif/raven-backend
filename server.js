@@ -4896,7 +4896,6 @@ app.post('/trip/:tripId/partial-unsettle', async (req, res) => {
       if (newCredit <= 0.02) { delete credits[nameLower]; }
       else { credits[nameLower] = Math.round(newCredit * 100) / 100; }
     }
-    }
     await supabase.from('trips').update({ settled_people: credits }).eq('id', tripId);
     const outstanding = await computeOutstanding(tripId);
     if (outstanding !== null) await supabase.from('trips').update({ total: outstanding }).eq('id', tripId);
