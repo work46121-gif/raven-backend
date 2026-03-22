@@ -3321,38 +3321,41 @@ document.addEventListener('click', function(e) {
   }
 });
 
-// ── PER-RECEIPT MARK AS PAID — subtracts from running balance ──
-// Tracks paid amounts per person client-side keyed by TRIP_ID
-function getReceiptPaidMap() {
-  try { return JSON.parse(localStorage.getItem('raven_rcpt_paid_' + TRIP_ID) || '{}'); } catch(e) { return {}; }
-}
-function saveReceiptPaidMap(map) {
-  try { localStorage.setItem('raven_rcpt_paid_' + TRIP_ID, JSON.stringify(map)); } catch(e) {}
-}
-
+// ── PER-RECEIPT MARK AS PAID — server-side, shared across all users ──────────
 function markReceiptItemPaid(personName, receiptId, amount, btn) {
   if (!btn) return;
 
-  // ── UNSETTLE path: button is currently showing "✅ Settled · tap to undo" ──
+  // ── UNSETTLE path ──
   if (btn.dataset.settled === '1') {
     if (btn.dataset.confirming === 'unsettle') {
-      // Confirmed unsettle — remove from paid map
-      const map = getReceiptPaidMap();
-      const key = personName + '::' + receiptId;
-      delete map[key];
-      saveReceiptPaidMap(map);
-      // Revert button to "Mark as Paid" state
-      btn.textContent = '✓ Mark as Paid';
-      btn.style.background = 'rgba(48,209,88,0.06)';
-      btn.style.borderColor = 'rgba(48,209,88,0.2)';
-      btn.disabled = false;
-      btn.dataset.settled = '';
+      btn.disabled = true;
+      btn.textContent = '⏳ Saving…';
       btn.dataset.confirming = '';
-      updatePersonBalanceDisplay(personName);
-      toast(personName + ' unsettled ↩', true);
+      fetch(BACKEND + '/trip/' + TRIP_ID + '/unsettle', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ token: TRIP_TOKEN, name: personName })
+      })
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) {
+          btn.textContent = '✓ Mark as Paid';
+          btn.style.background = 'rgba(48,209,88,0.06)';
+          btn.style.borderColor = 'rgba(48,209,88,0.2)';
+          btn.style.color = '#30D158';
+          btn.disabled = false;
+          btn.dataset.settled = '';
+          toast(personName + ' unsettled ↩', true);
+          setTimeout(() => location.reload(), 600);
+        } else {
+          btn.disabled = false;
+          btn.textContent = '✅ Settled · tap to undo';
+          toast('Error: ' + (d.error || 'Could not unsettle'), false);
+        }
+      })
+      .catch(() => { btn.disabled = false; btn.textContent = '✅ Settled · tap to undo'; toast('Network error', false); });
       return;
     }
-    // First tap — ask to confirm
     btn.dataset.confirming = 'unsettle';
     btn.textContent = '⚠️ Tap again to unsettle';
     btn.style.borderColor = 'rgba(255,107,53,0.5)';
@@ -3368,25 +3371,34 @@ function markReceiptItemPaid(personName, receiptId, amount, btn) {
     return;
   }
 
-  // ── SETTLE path: normal "Mark as Paid" confirm flow ──
+  // ── SETTLE path ──
   if (btn.dataset.confirming === '1') {
-    // Confirmed — mark this receipt as paid for this person
-    const map = getReceiptPaidMap();
-    const key = personName + '::' + receiptId;
-    if (!map[key]) {
-      map[key] = parseFloat(amount) || 0;
-      saveReceiptPaidMap(map);
-    }
-    // Update button to settled state
-    btn.textContent = '✅ Settled · tap to undo';
-    btn.style.background = 'rgba(48,209,88,0.15)';
-    btn.style.borderColor = 'rgba(48,209,88,0.4)';
-    btn.style.color = '#30D158';
-    btn.disabled = false;
-    btn.dataset.settled = '1';
+    btn.disabled = true;
+    btn.textContent = '⏳ Saving…';
     btn.dataset.confirming = '';
-    updatePersonBalanceDisplay(personName);
-    toast(personName + ' paid $' + parseFloat(amount).toFixed(2) + ' ✓', true);
+    fetch(BACKEND + '/trip/' + TRIP_ID + '/mark-settled', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ token: TRIP_TOKEN, name: personName, amount: parseFloat(amount) || 0 })
+    })
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) {
+        btn.textContent = '✅ Settled · tap to undo';
+        btn.style.background = 'rgba(48,209,88,0.15)';
+        btn.style.borderColor = 'rgba(48,209,88,0.4)';
+        btn.style.color = '#30D158';
+        btn.disabled = false;
+        btn.dataset.settled = '1';
+        toast(personName + ' paid $' + parseFloat(amount).toFixed(2) + ' ✓', true);
+        setTimeout(() => location.reload(), 600);
+      } else {
+        btn.disabled = false;
+        btn.textContent = '✓ Mark as Paid';
+        toast('Error: ' + (d.error || 'Could not save'), false);
+      }
+    })
+    .catch(() => { btn.disabled = false; btn.textContent = '✓ Mark as Paid'; toast('Network error', false); });
     return;
   }
   btn.dataset.confirming = '1';
@@ -3406,18 +3418,12 @@ function updatePersonBalanceDisplay(personName) {
   const row = document.getElementById('row-' + personId);
   if (!row) return;
 
-  // Sum all per-receipt paid amounts for this person (client-side localStorage)
-  const map = getReceiptPaidMap();
-  let paidSoFar = 0;
-  Object.entries(map).forEach(([key, amt]) => {
-    if (key.startsWith(personName + '::')) paidSoFar += amt;
-  });
-
-  // rawOwed = what this person truly owes across all receipts (before any client-side settlement)
+  // rawOwed is server-rendered; settled state shown via .client-settled-block visibility
   const amtEl = row.querySelector('[data-raw-owed]');
   const rawOwed = amtEl ? parseFloat(amtEl.getAttribute('data-raw-owed')) : 0;
-  const remaining = Math.max(0, rawOwed - paidSoFar);
-  const fullySettled = rawOwed > 0 && remaining <= 0.02;
+  const sb = row.querySelector('.client-settled-block');
+  const fullySettled = sb && sb.style.display !== 'none';
+  const remaining = fullySettled ? 0 : rawOwed;
 
   // ── Update balance number ──
   const displayEl = row.querySelector('.person-balance-display');
@@ -3441,21 +3447,17 @@ function updatePersonBalanceDisplay(personName) {
   if (settledBlock) settledBlock.style.display = fullySettled ? '' : 'none';
   if (payBlock)    payBlock.style.display    = fullySettled ? 'none' : '';
 
-  // ── Recompute grand outstanding across ALL rows and update footer ──
+  // ── Recompute grand outstanding + settled counts from server-rendered DOM ──
   let grandOutstanding = 0;
   document.querySelectorAll('[data-raw-owed]').forEach(el => {
-    const rName = el.closest('[id^="row-"]');
-    if (!rName) return;
+    const rowEl = el.closest('[id^="row-"]');
+    if (!rowEl) return;
     const rw = parseFloat(el.getAttribute('data-raw-owed')) || 0;
-    if (rw <= 0) return;
-    // Sum paid for this person from map
-    // We need person name — get it from the status element's parent text
-    const nameEl = rName.querySelector('[data-open-profile]');
-    const pName = nameEl ? nameEl.getAttribute('data-open-profile') : null;
-    if (!pName) return;
-    let paid = 0;
-    Object.entries(map).forEach(([k, v]) => { if (k.startsWith(pName + '::')) paid += v; });
-    grandOutstanding += Math.max(0, rw - paid);
+    if (rw <= 0.02) return;
+    // Check if the settled block is visible (server-rendered isSettled=true)
+    const sb = rowEl.querySelector('.client-settled-block');
+    const isSettledNow = sb && sb.style.display !== 'none';
+    if (!isSettledNow) grandOutstanding += rw;
   });
 
   const outAmt = document.getElementById('outstanding-amt');
@@ -3476,12 +3478,8 @@ function updatePersonBalanceDisplay(personName) {
       clientDebtors++;
       const rowEl = el.closest('[id^="row-"]');
       if (!rowEl) return;
-      const nameEl = rowEl.querySelector('[data-open-profile]');
-      const pName = nameEl ? nameEl.getAttribute('data-open-profile') : null;
-      if (!pName) return;
-      let paid = 0;
-      Object.entries(map).forEach(([k, v]) => { if (k.startsWith(pName + '::')) paid += v; });
-      if (Math.max(0, rw - paid) <= 0.02) clientSettled++;
+      const sb = rowEl.querySelector('.client-settled-block');
+      if (sb && sb.style.display !== 'none') clientSettled++;
     });
     const allSettled = clientDebtors > 0 && clientSettled === clientDebtors;
     const iconEl = outSub.previousElementSibling;
@@ -3496,22 +3494,8 @@ function updatePersonBalanceDisplay(personName) {
   }
 }
 
-// Restore per-receipt paid states on load
-(function restoreReceiptPaidStates() {
-  const map = getReceiptPaidMap();
-  Object.keys(map).forEach(key => {
-    const btn = document.querySelector('[data-receipt-paid-key="' + key + '"]');
-    if (btn) {
-      // Restore as "Settled · tap to undo" — clickable so they can unsettle
-      btn.textContent = '✅ Settled · tap to undo';
-      btn.style.background = 'rgba(48,209,88,0.15)';
-      btn.style.borderColor = 'rgba(48,209,88,0.4)';
-      btn.style.color = '#30D158';
-      btn.disabled = false;
-      btn.dataset.settled = '1';
-    }
-  });
-  // Update all person balances
+// State is fully server-rendered — just sync footer display
+(function initBalanceDisplays() {
   const people = D.people || [];
   people.forEach(p => updatePersonBalanceDisplay(p));
 })();
@@ -4857,6 +4841,37 @@ app.post('/trip/:tripId/mark-settled', async (req, res) => {
       const outstanding = await computeOutstanding(tripId);
       if (outstanding !== null) await supabase.from('trips').update({ total: outstanding }).eq('id', tripId);
     } catch(e) { console.error('Outstanding recalc error:', e); }
+    res.json({ success: true });
+  } catch(err) { res.json({ success: false, error: err.message }); }
+});
+
+// ── UNSETTLE PERSON ──────────────────────────────────────────────────────────
+app.post('/trip/:tripId/unsettle', async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const { token, name } = req.body;
+    const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
+    if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
+    let credits = {};
+    try {
+      let raw = trip.settled_people;
+      if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch(e) {} }
+      if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch(e) {} }
+      if (Array.isArray(raw)) {
+        // Migrate old array format — but exclude the person being unsettled
+        raw.filter(n => n.toLowerCase() !== (name||'').toLowerCase())
+           .forEach(n => { credits[n.toLowerCase()] = 999999; });
+      } else if (raw && typeof raw === 'object') {
+        Object.entries(raw).forEach(([k, v]) => {
+          if (k.toLowerCase() !== (name||'').toLowerCase() && parseFloat(v) > 0)
+            credits[k.toLowerCase()] = parseFloat(v);
+        });
+      }
+    } catch(e) {}
+    // credits now has everyone EXCEPT the unsettled person
+    await supabase.from('trips').update({ settled_people: credits }).eq('id', tripId);
+    const outstanding = await computeOutstanding(tripId);
+    if (outstanding !== null) await supabase.from('trips').update({ total: outstanding }).eq('id', tripId);
     res.json({ success: true });
   } catch(err) { res.json({ success: false, error: err.message }); }
 });
