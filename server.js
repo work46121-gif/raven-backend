@@ -668,6 +668,30 @@ app.get('/bill/:billId', async (req, res) => {
   const selections = selectionsRes.data || [];
   const participants = participantsRes.data || [];
 
+  // Flush any ghost participants (QR joiners with item_selections but no participant row)
+  {
+    const existingNames = new Set(participants.map(p => p.name.toLowerCase()));
+    const ghostNames = new Set();
+    (selections || []).forEach(s => {
+      if (s.participant_name && !existingNames.has(s.participant_name.toLowerCase())) {
+        ghostNames.add(s.participant_name);
+      }
+    });
+    for (const ghostName of ghostNames) {
+      const { data: inserted } = await supabase.from('participants')
+        .insert({ bill_id: billId, name: ghostName, amount: 0, paid: false })
+        .select().maybeSingle();
+      if (inserted) {
+        participants.push(inserted);
+        existingNames.add(ghostName.toLowerCase());
+      } else {
+        // May already exist (race condition) — fetch it
+        const { data: found } = await supabase.from('participants').select('*').eq('bill_id', billId).ilike('name', ghostName).maybeSingle();
+        if (found) { participants.push(found); existingNames.add(ghostName.toLowerCase()); }
+      }
+    }
+  }
+
   let creatorProfile = null;
   const emailTry = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle,applepay').eq('email', bill.creator_phone).maybeSingle();
   creatorProfile = emailTry.data;
@@ -884,7 +908,7 @@ app.get('/bill/:billId', async (req, res) => {
         <div style="font-size:18px;font-weight:700;margin-bottom:4px">Pay <span id="pname"></span></div>
         <div style="font-size:40px;font-weight:800;color:#30D158;margin-bottom:20px" id="pamt">$0.00</div>
         <div id="pmethods" style="margin-bottom:12px"></div>
-        <button id="pmark" style="width:100%;padding:13px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:#9896A8;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:6px">✓ Paid via other method (cash, etc)</button>
+        <button id="pmark" style="width:100%;padding:13px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:#9896A8;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:6px">✓ Paid via method ›</button>
         <button onclick="closePay()" style="width:100%;padding:10px;background:transparent;border:none;color:#6E6B80;font-family:inherit;font-size:12px;cursor:pointer">I'll pay later</button>
       </div>
     </div>
@@ -936,7 +960,7 @@ app.get('/bill/:billId', async (req, res) => {
       }
       const pmEl = document.getElementById('pmark');
       if(pmEl) {
-        pmEl.textContent = '✓ Paid via other method';
+        pmEl.textContent = '✓ Paid via method ›';
         pmEl.onclick = function() {
           ['Cash','Bank Transfer','Other'].forEach(function(m) {
             const b = document.createElement('button');
@@ -1063,7 +1087,7 @@ app.get('/bill/:billId', async (req, res) => {
       <div style="font-size:18px;font-weight:700;margin-bottom:4px">Pay <span id="pname"></span></div>
       <div style="font-size:40px;font-weight:800;color:#30D158;margin-bottom:20px" id="pamt">$0.00</div>
       <div id="pmethods" style="margin-bottom:12px"></div>
-      <button id="pmark" style="width:100%;padding:13px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:#9896A8;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:6px">✓ Paid via other method (cash, etc)</button>
+      <button id="pmark" style="width:100%;padding:13px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:#9896A8;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:6px">✓ Paid via method ›</button>
       <button onclick="closePay()" style="width:100%;padding:12px;background:transparent;border:none;color:#6E6B80;font-family:inherit;font-size:13px;cursor:pointer">I'll pay later</button>
     </div>
   </div>
@@ -5777,11 +5801,28 @@ app.post('/bill/:billId/mark-paid', async (req, res) => {
     const { participantId, name, payment_method } = req.body;
     const { data: bill } = await supabase.from('bills').select('*').eq('id', billId).single();
     if (!bill) return res.json({ success: false, error: 'Bill not found' });
-    await supabase.from('participants').update({
-      paid: true,
-      paid_at: new Date().toISOString(),
-      ...(payment_method ? { payment_method } : {})
-    }).eq('id', participantId);
+    // Ghost participants (QR joiners whose DB row may not exist yet) have id like "ghost-Name"
+    // In that case, look them up by name instead
+    let updateQuery;
+    if (String(participantId).startsWith('ghost-')) {
+      // Ensure they have a real row first
+      const { data: existing } = await supabase.from('participants').select('id').eq('bill_id', billId).ilike('name', name).maybeSingle();
+      if (!existing) {
+        await supabase.from('participants').insert({ bill_id: billId, name, amount: 0, paid: false });
+      }
+      updateQuery = supabase.from('participants').update({
+        paid: true,
+        paid_at: new Date().toISOString(),
+        ...(payment_method ? { payment_method } : {})
+      }).eq('bill_id', billId).ilike('name', name);
+    } else {
+      updateQuery = supabase.from('participants').update({
+        paid: true,
+        paid_at: new Date().toISOString(),
+        ...(payment_method ? { payment_method } : {})
+      }).eq('id', participantId);
+    }
+    await updateQuery;
     // Check if all non-payer participants are now paid — update bill status
     const { data: allParts } = await supabase.from('participants').select('paid,name').eq('bill_id', billId);
     const paidByLower = (bill.paid_by || '').toLowerCase();
