@@ -498,6 +498,7 @@ app.get('/bill/:billId/state', async (req, res) => {
         extraNames.add(s.participant_name);
       }
     });
+    let needsRecalc = false;
     for (const ghostName of extraNames) {
       // Always add to response so they appear in "Who Owes What" immediately
       // Await the insert so we return a real DB id, not a ghost id
@@ -515,6 +516,23 @@ app.get('/bill/:billId/state', async (req, res) => {
       const ghostRow = realRow || { id: 'ghost-' + ghostName, bill_id: billId, name: ghostName, amount: 0, paid: false };
       dbParticipants.push(ghostRow);
       dbNames.add(ghostName.toLowerCase());
+      // Recalculate amounts so this new participant gets the right DB amount
+      needsRecalc = true;
+    }
+    // Recalc amounts for new ghost participants so their DB amount is correct
+    if (needsRecalc) { recalcBillAmounts(billId).catch(e => {}); }
+    // Re-fetch participants after recalc to get updated amounts
+    if (needsRecalc) {
+      const { data: fresh } = await supabase.from('participants').select('*').eq('bill_id', billId).order('name');
+      if (fresh) {
+        // Merge: keep any ghost rows that aren't in DB yet, update real rows
+        const freshMap = {};
+        fresh.forEach(p => { freshMap[p.name.toLowerCase()] = p; });
+        for (let i = 0; i < dbParticipants.length; i++) {
+          const key = dbParticipants[i].name.toLowerCase();
+          if (freshMap[key]) dbParticipants[i] = freshMap[key];
+        }
+      }
     }
     res.json({
       success: true,
@@ -1561,6 +1579,11 @@ async function markPaidByName(name, method) {
       closePay();
       const methodLabel = method && method !== 'Other' ? ' via ' + method : '';
       toast('✅ ' + name + ' paid' + methodLabel + '!');
+      // Optimistically update lastState so re-render shows ✅ immediately
+      if (lastState && lastState.participants) {
+        const match = lastState.participants.find(p => p.name.toLowerCase() === name.toLowerCase());
+        if (match) { match.paid = true; match.payment_method = method || null; }
+      }
       _lastStateHash = '';
       refreshAll();
     } else {
@@ -1618,23 +1641,14 @@ async function markPaid(pid, name, method) {
       closePay();
       const methodLabel = method && method !== 'Other' ? ' via ' + method : '';
       toast('✅ ' + name + ' paid' + methodLabel + '!');
-      // Optimistically update the UI immediately — don't wait for poll
-      // Find all participant rows in the owes list and update the matching one
-      const owes = document.getElementById('owes-list');
-      if (owes) {
-        owes.querySelectorAll('[data-pid]').forEach(el => {
-          if (el.dataset.pid === String(pid) || el.dataset.name?.toLowerCase() === name.toLowerCase()) {
-            el.style.display = 'none';
-          }
-        });
-        // Also update any pay buttons referencing this participant
-        owes.querySelectorAll('button[data-pid]').forEach(btn => {
-          if (btn.dataset.pid === String(pid) || btn.dataset.name?.toLowerCase() === name.toLowerCase()) {
-            btn.replaceWith(document.createTextNode('✅'));
-          }
-        });
+      // Optimistically update lastState so next re-render shows ✅ immediately
+      if (lastState && lastState.participants) {
+        const match = lastState.participants.find(p =>
+          String(p.id) === String(pid) || p.name.toLowerCase() === name.toLowerCase()
+        );
+        if (match) { match.paid = true; match.payment_method = method || null; }
       }
-      _lastStateHash = ''; // force immediate re-render on next poll
+      _lastStateHash = '';
       refreshAll();
     } else {
       toast('Error marking paid. Try again.');
