@@ -1185,6 +1185,7 @@ async function autoJoin(name) {
       setNameUI(myName);
       const cn = document.getElementById('cname');
       if (cn) cn.value = myName;
+      _lastStateHash = ''; // force immediate re-render to show self in owes section
       refreshAll();
     } else if (d.error === 'max_reached') {
       // Show max members reached UI
@@ -1224,17 +1225,24 @@ async function toggleClaim(itemId, itemName) {
     const d = await r.json();
     if (d.success) {
       toast(isClaimed ? '✓ Removed ' + itemName : '✓ Claimed ' + itemName);
+      _lastStateHash = ''; // force re-render on next poll
       refreshAll();
     } else { toast('Error: ' + (d.error || 'try again')); }
   } catch(e) { toast('Network error'); }
 }
 
 // ── REFRESH / POLLING ──
+let _lastStateHash = '';
 async function refreshAll() {
   try {
     const r = await fetch('/bill/' + BID + '/state');
     const d = await r.json();
-    if (d.success) { renderState(d); }
+    if (!d.success) return;
+    // Quick hash to detect changes
+    const hash = JSON.stringify({ sel: d.selections, parts: d.participants.map(p=>({id:p.id,amount:p.amount,paid:p.paid})), pcount: d.participants.length });
+    if (hash === _lastStateHash) return; // nothing changed
+    _lastStateHash = hash;
+    renderState(d);
   } catch(e) { console.error('Refresh error:', e); }
 }
 
@@ -1554,12 +1562,12 @@ refreshAll();
 loadC();
 
 // Auto-poll every 5 seconds
-pollTimer = setInterval(refreshAll, 5000);
+pollTimer = setInterval(refreshAll, 2000);
 
 // Stop polling when tab hidden, resume when visible
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { clearInterval(pollTimer); }
-  else { refreshAll(); pollTimer = setInterval(refreshAll, 5000); }
+  else { _lastStateHash = ''; refreshAll(); pollTimer = setInterval(refreshAll, 2000); }
 });
 
 // Enter key on name input
@@ -2251,13 +2259,14 @@ ${coverHTML}
   <div class="sec-lbl">Who Owes What</div>
   <div class="card">
     ${owesRows}
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:rgba(48,209,88,0.04);border-top:1px solid rgba(48,209,88,0.12)">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:${grandTotal>0?'rgba(255,107,53,0.04)':'rgba(48,209,88,0.04)'};border-top:1px solid ${grandTotal>0?'rgba(255,107,53,0.15)':'rgba(48,209,88,0.12)'}">
       <div>
-        <div style="font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#9896A8">Outstanding</div>
-        <div style="font-size:10px;color:#6E6B80;margin-top:2px">$${totalSpend.toFixed(2)} total spend</div>
-        ${grandTotal===0&&totalSpend>0?'<div style="font-size:10px;color:#30D158;margin-top:2px">✅ Everyone settled up</div>':''}
+        <div style="font-size:10px;color:#6E6B80">${grandTotal===0&&totalSpend>0?'✅ Everyone settled up':'$${totalSpend.toFixed(2)} total spend'}</div>
       </div>
-      <span style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${grandTotal>0?'#FF9A3C':'#30D158'}">$${grandTotal.toFixed(2)}</span>
+      <div style="text-align:right">
+        <div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:${grandTotal>0?'#FF9A3C':'#9896A8'};margin-bottom:2px">Outstanding</div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:800;color:${grandTotal>0?'#FF9A3C':'#30D158'}">$${grandTotal.toFixed(2)}</span>
+      </div>
     </div>
   </div>
 </div>
