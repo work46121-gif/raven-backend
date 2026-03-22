@@ -2276,7 +2276,7 @@ app.get('/trip/:tripId', async (req, res) => {
       </div>
       <div id="${receiptId}" style="display:none;padding:0 16px 20px;margin-top:-4px">
         <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:0">
-          ${r.photo_url ? `<div style="margin-bottom:14px"><img src="${esc(r.photo_url)}" onclick="(function(src){const ov=document.createElement('div');ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.96);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;cursor:zoom-out';const img=document.createElement('img');img.src=src;img.style.cssText='max-width:100%;max-height:80vh;border-radius:12px;object-fit:contain';const btn=document.createElement('button');btn.textContent='✕';btn.style.cssText='position:absolute;top:16px;right:16px;background:rgba(255,255,255,0.1);border:none;color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:18px';btn.onclick=function(){ov.remove()};ov.onclick=function(){ov.remove()};ov.appendChild(btn);ov.appendChild(img);document.body.appendChild(ov)})('${esc(r.photo_url)}')" style="width:100%;max-height:200px;object-fit:cover;border-radius:10px;cursor:zoom-in;border:1px solid rgba(255,255,255,0.1);display:block"></div>` : ''}
+          ${r.photo_url ? `<div style="margin-bottom:14px"><img src="${esc(r.photo_url)}" onclick="openReceiptPhoto('${esc(r.photo_url)}','${esc(r.name)}')" style="width:100%;max-height:200px;object-fit:cover;border-radius:10px;cursor:zoom-in;border:1px solid rgba(255,255,255,0.1);display:block"></div>` : ''}
           ${itemsHtml}
           ${personBreakdownHtml}
           ${totalsHtml}
@@ -2907,6 +2907,141 @@ if (new URLSearchParams(window.location.search).get('action') === 'receipt') {
   setTimeout(() => { document.getElementById('receipt-form-wrap').style.display='block'; document.getElementById('open-receipt-btn').style.display='none'; }, 300);
 }
 
+// ── RECEIPT PHOTO VIEWER with pinch-to-zoom ──
+function openReceiptPhoto(src, caption) {
+  // Overlay
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.97);z-index:9999;overflow:hidden;touch-action:none';
+
+  // Close button
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = '✕';
+  closeBtn.style.cssText = 'position:absolute;top:16px;right:16px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.15);color:#fff;width:38px;height:38px;border-radius:50%;cursor:pointer;font-size:18px;z-index:2;display:flex;align-items:center;justify-content:center';
+  closeBtn.addEventListener('click', () => ov.remove());
+
+  // Hint
+  const hint = document.createElement('div');
+  hint.textContent = 'Pinch to zoom · Double-tap to reset';
+  hint.style.cssText = 'position:absolute;bottom:20px;left:50%;transform:translateX(-50%);font-size:11px;color:rgba(255,255,255,0.35);white-space:nowrap;z-index:2;pointer-events:none';
+
+  // Caption
+  if (caption) {
+    const cap = document.createElement('div');
+    cap.textContent = caption;
+    cap.style.cssText = 'position:absolute;bottom:42px;left:50%;transform:translateX(-50%);font-size:12px;color:rgba(255,255,255,0.55);white-space:nowrap;z-index:2;pointer-events:none;max-width:90%;text-overflow:ellipsis;overflow:hidden';
+    ov.appendChild(cap);
+  }
+
+  // Image container (transform target)
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;touch-action:none';
+
+  const img = document.createElement('img');
+  img.src = src;
+  img.style.cssText = 'max-width:100%;max-height:100vh;object-fit:contain;border-radius:8px;user-select:none;-webkit-user-drag:none;pointer-events:none';
+  img.draggable = false;
+
+  wrap.appendChild(img);
+  ov.appendChild(closeBtn);
+  ov.appendChild(hint);
+  ov.appendChild(wrap);
+  document.body.appendChild(ov);
+
+  // ── Pinch-to-zoom state ──
+  let scale = 1, minScale = 1, maxScale = 5;
+  let tx = 0, ty = 0;            // translation
+  let lastTX = 0, lastTY = 0;
+  let pinchDist0 = 0;            // initial pinch distance
+  let pinchScale0 = 1;           // scale at pinch start
+  let panStart = null;           // single-finger pan start
+  let lastTap = 0;               // for double-tap
+
+  function applyTransform(animated) {
+    wrap.style.transition = animated ? 'transform 0.25s ease' : 'none';
+    wrap.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + scale + ')';
+  }
+
+  function clampTranslation() {
+    // Clamp so image doesn't pan off screen
+    const imgW = img.naturalWidth || img.offsetWidth;
+    const imgH = img.naturalHeight || img.offsetHeight;
+    const dispW = Math.min(window.innerWidth, imgW);
+    const dispH = Math.min(window.innerHeight, imgH);
+    const maxX = Math.max(0, (dispW * scale - window.innerWidth) / 2);
+    const maxY = Math.max(0, (dispH * scale - window.innerHeight) / 2);
+    tx = Math.max(-maxX, Math.min(maxX, tx));
+    ty = Math.max(-maxY, Math.min(maxY, ty));
+  }
+
+  function getDist(t) {
+    const dx = t[0].clientX - t[1].clientX;
+    const dy = t[0].clientY - t[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  function getMidpoint(t) {
+    return { x: (t[0].clientX + t[1].clientX) / 2, y: (t[0].clientY + t[1].clientY) / 2 };
+  }
+
+  ov.addEventListener('touchstart', function(e) {
+    e.preventDefault();
+    if (e.touches.length === 2) {
+      // Pinch start
+      panStart = null;
+      pinchDist0 = getDist(e.touches);
+      pinchScale0 = scale;
+    } else if (e.touches.length === 1) {
+      const now = Date.now();
+      if (now - lastTap < 280) {
+        // Double-tap: reset
+        scale = 1; tx = 0; ty = 0;
+        applyTransform(true);
+        lastTap = 0;
+        return;
+      }
+      lastTap = now;
+      panStart = { x: e.touches[0].clientX - tx, y: e.touches[0].clientY - ty };
+    }
+  }, { passive: false });
+
+  ov.addEventListener('touchmove', function(e) {
+    e.preventDefault();
+    if (e.touches.length === 2) {
+      // Pinch zoom
+      const dist = getDist(e.touches);
+      const newScale = Math.max(minScale, Math.min(maxScale, pinchScale0 * (dist / pinchDist0)));
+      // Zoom toward pinch midpoint
+      const mid = getMidpoint(e.touches);
+      const dScale = newScale / scale;
+      tx = mid.x - dScale * (mid.x - tx);
+      ty = mid.y - dScale * (mid.y - ty);
+      scale = newScale;
+      clampTranslation();
+      applyTransform(false);
+    } else if (e.touches.length === 1 && panStart && scale > 1) {
+      // Pan when zoomed in
+      tx = e.touches[0].clientX - panStart.x;
+      ty = e.touches[0].clientY - panStart.y;
+      clampTranslation();
+      applyTransform(false);
+    }
+  }, { passive: false });
+
+  ov.addEventListener('touchend', function(e) {
+    if (e.touches.length < 2) { pinchDist0 = 0; }
+    if (e.touches.length === 0) {
+      panStart = null;
+      // Snap back if over-zoomed out
+      if (scale < minScale) { scale = minScale; tx = 0; ty = 0; applyTransform(true); }
+    }
+  }, { passive: false });
+
+  // Desktop: click background to close (only when not zoomed)
+  ov.addEventListener('click', function(e) {
+    if (e.target === ov && scale <= 1) ov.remove();
+  });
+}
+
 // ── SAVED RECEIPTS — build gallery from DB receipts (visible to ALL members) ──
 function buildSavedReceiptsGallery() {
   try {
@@ -2954,22 +3089,7 @@ function buildSavedReceiptsGallery() {
       overlay.innerHTML = '<div style="font-size:9px;color:#30D158;font-weight:600">✅</div><div style="font-size:8px;color:#9896A8">' + label + '</div>';
       cell.appendChild(img);
       cell.appendChild(overlay);
-      cell.addEventListener('click', () => {
-        const ov = document.createElement('div');
-        ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.96);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px';
-        const closeBtn = document.createElement('button');
-        closeBtn.style.cssText = 'position:absolute;top:16px;right:16px;background:rgba(255,255,255,0.1);border:none;color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:18px';
-        closeBtn.textContent = '✕';
-        closeBtn.addEventListener('click', () => ov.remove());
-        const fi = document.createElement('img');
-        fi.src = r.photo_url;
-        fi.style.cssText = 'max-width:100%;max-height:72vh;border-radius:12px;object-fit:contain';
-        const lbl = document.createElement('div');
-        lbl.style.cssText = 'margin-top:12px;font-size:13px;color:#9896A8';
-        lbl.textContent = r.name + ' · $' + r.total.toFixed(2);
-        ov.appendChild(closeBtn); ov.appendChild(fi); ov.appendChild(lbl);
-        document.body.appendChild(ov);
-      });
+      cell.addEventListener('click', () => openReceiptPhoto(r.photo_url, r.name + ' · $' + r.total.toFixed(2)));
       grid.appendChild(cell);
     });
 
