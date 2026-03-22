@@ -2763,10 +2763,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const _tripToken = ${JSON.stringify(trip.share_token || '')};
   async function pollTripChanges() {
     try {
-      const r = await fetch('/trip-info/' + _tripId);
+      const r = await fetch('/trip-info/' + _tripId + '?token=' + encodeURIComponent(_tripToken));
       const d = await r.json();
       if (!d) return;
-      const newHash = (d.receipt_count || 0) + ':' + (d.total || 0);
+      const newHash = (d.receipt_count || 0) + ':' + (d.total || 0) + ':' + (d.settled_hash || '');
       if (_tripHash && newHash !== _tripHash) {
         // Data changed — reload to show fresh server-rendered state
         location.reload();
@@ -2916,8 +2916,9 @@ function openReceiptPhoto(src, caption) {
   // Close button
   const closeBtn = document.createElement('button');
   closeBtn.textContent = '✕';
-  closeBtn.style.cssText = 'position:absolute;top:16px;right:16px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.15);color:#fff;width:38px;height:38px;border-radius:50%;cursor:pointer;font-size:18px;z-index:2;display:flex;align-items:center;justify-content:center';
+  closeBtn.style.cssText = 'position:absolute;top:16px;right:16px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.15);color:#fff;width:44px;height:44px;border-radius:50%;cursor:pointer;font-size:18px;z-index:10000;display:flex;align-items:center;justify-content:center;pointer-events:auto;touch-action:manipulation';
   closeBtn.addEventListener('click', () => ov.remove());
+  closeBtn.addEventListener('touchend', (e) => { e.preventDefault(); e.stopPropagation(); ov.remove(); });
 
   // Hint
   const hint = document.createElement('div');
@@ -4997,11 +4998,11 @@ app.get('/trip-info/:tripId', async (req, res) => {
   try {
     const { tripId } = req.params;
     const { token } = req.query;
-    const { data: trip } = await supabase.from('trips').select('name, invite_token, people').eq('id', tripId).single();
+    const { data: trip } = await supabase.from('trips').select('name, invite_token, people, total, receipt_count, settled_people').eq('id', tripId).single();
     if (!trip) return res.json({ success: false });
     if (trip.invite_token !== token) return res.json({ success: false });
     const people = Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people || '[]');
-    res.json({ success: true, name: trip.name, people_count: people.length });
+    const settledRaw = trip.settled_people || []; const settledHash = JSON.stringify(Array.isArray(settledRaw) ? settledRaw : (typeof settledRaw === 'string' ? JSON.parse(settledRaw) : [])); res.json({ success: true, name: trip.name, people_count: people.length, total: trip.total || 0, receipt_count: trip.receipt_count || 0, settled_hash: settledHash });
   } catch(err) { res.json({ success: false }); }
 });
 
