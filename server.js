@@ -1766,10 +1766,15 @@ async function computeOutstanding(tripId) {
       if (typeof sp === 'string') { try { sp = JSON.parse(sp); } catch(e){} }
       if (typeof sp === 'string') { try { sp = JSON.parse(sp); } catch(e){} }
       if (Array.isArray(sp)) {
-        // Old format: array of names — treat as 999999 (fully settled), capped per-person below
         sp.forEach(name => { settledCreds[name.toLowerCase()] = 999999; });
       } else if (sp && typeof sp === 'object') {
-        Object.entries(sp).forEach(([k,v]) => { if (parseFloat(v)>0) settledCreds[k.toLowerCase()] = parseFloat(v); });
+        Object.entries(sp).forEach(([k,v]) => {
+          const val = parseFloat(v) || 0;
+          if (val <= 0) return;
+          // Per-receipt keys: 'person::receipt::id' — extract person name
+          const personKey = k.includes('::receipt::') ? k.split('::receipt::')[0] : k;
+          settledCreds[personKey] = (settledCreds[personKey] || 0) + val;
+        });
       }
     } catch(e) {}
     const people = (() => { try { return Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people||'[]'); } catch(e){ return []; } })();
@@ -1957,6 +1962,7 @@ app.get('/trip/:tripId', async (req, res) => {
   // Build per-person breakdown: who owes whom and how much
   // settled_credits: { "Name": amountSettled } — stores how much each person has paid off
   // Can be stored as old list format OR new object format — handle both gracefully
+  const settledPeopleRaw = (() => { try { let r = trip.settled_people; if(typeof r==='string'){try{r=JSON.parse(r);}catch(e){}} if(typeof r==='string'){try{r=JSON.parse(r);}catch(e){}} return (r && !Array.isArray(r) && typeof r==='object') ? r : {}; } catch(e){return {};} })();
   const settledCredits = (() => {
     try {
       let raw = trip.settled_people;
@@ -1973,9 +1979,14 @@ app.get('/trip/:tripId', async (req, res) => {
         parsed.forEach(name => { credits[name.toLowerCase()] = 999999; });
         return credits;
       }
-      // New format: { "daddy": 150.13, "Arsalan": 47.77 }
+      // New format — may contain per-receipt keys 'person::receipt::id' or person-level keys
       const credits = {};
-      Object.entries(parsed).forEach(([k, v]) => { credits[k.toLowerCase()] = parseFloat(v) || 0; });
+      Object.entries(parsed).forEach(([k, v]) => {
+        const val = parseFloat(v) || 0;
+        if (val <= 0) return;
+        const personKey = k.includes('::receipt::') ? k.split('::receipt::')[0] : k.toLowerCase();
+        credits[personKey] = (credits[personKey] || 0) + val;
+      });
       return credits;
     } catch(e) { return {}; }
   })();
@@ -2231,7 +2242,7 @@ app.get('/trip/:tripId', async (req, res) => {
               <div style="height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;margin-bottom:${payer?'10px':'0'}">
                 <div style="height:100%;width:${pct}%;background:${color};border-radius:2px"></div>
               </div>
-              ${(payer && (()=>{ const _r=totals[person]||0; const _c=Math.min(settledCredits[person.toLowerCase()]||0,_r); return !(_r>0.02 && Math.max(0,_r-_c)<=0.02); })()) ? '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px;flex-wrap:wrap">' + payButtonsHtml(payer, amount) + '<button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" style="padding:7px 14px;background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.2);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✓ Mark as Paid</button></div>' : (payer && (()=>{ const _raw=totals[person]||0; const _cred=Math.min(settledCredits[person.toLowerCase()]||0,_raw); return _raw>0.02 && Math.max(0,_raw-_cred)<=0.02; })()) ? '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px"><button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" data-settled="1" style="padding:7px 14px;background:rgba(48,209,88,0.15);border:1px solid rgba(48,209,88,0.4);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✅ Settled · tap to undo</button></div>' : ''}
+              ${(payer && (()=>{ const _r=totals[person]||0; const _c=Math.min(settledCredits[person.toLowerCase()]||0,_r); return !(_r>0.02 && Math.max(0,_r-_c)<=0.02); })()) ? '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px;flex-wrap:wrap">' + payButtonsHtml(payer, amount) + '<button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" style="padding:7px 14px;background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.2);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✓ Mark as Paid</button></div>' : (payer && (()=>{ const _rKey = (person+'::receipt::'+(r.id||receiptId)).toLowerCase().replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"'); const _rcptSettled = !!settledPeopleRaw[_rKey]; const _raw=totals[person]||0; const _cred=Math.min(settledCredits[person.toLowerCase()]||0,_raw); const _fullSettled=_raw>0.02&&Math.max(0,_raw-_cred)<=0.02; return _rcptSettled||_fullSettled; })()) ? '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px"><button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" data-settled="1" style="padding:7px 14px;background:rgba(48,209,88,0.15);border:1px solid rgba(48,209,88,0.4);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✅ Settled · tap to undo</button></div>' : ''}
             </div>`;
           }).join('')}
         </div>
@@ -3334,7 +3345,7 @@ function markReceiptItemPaid(personName, receiptId, amount, btn) {
       fetch(BACKEND + '/trip/' + TRIP_ID + '/partial-unsettle', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ token: TRIP_TOKEN, name: personName, amount: parseFloat(amount) || 0 })
+        body: JSON.stringify({ token: TRIP_TOKEN, name: personName, amount: parseFloat(amount) || 0, receipt_id: btn.getAttribute('data-receipt-id') || '' })
       })
       .then(r => r.json())
       .then(d => {
@@ -3379,7 +3390,7 @@ function markReceiptItemPaid(personName, receiptId, amount, btn) {
     fetch(BACKEND + '/trip/' + TRIP_ID + '/mark-settled', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ token: TRIP_TOKEN, name: personName, amount: parseFloat(amount) || 0 })
+      body: JSON.stringify({ token: TRIP_TOKEN, name: personName, amount: parseFloat(amount) || 0, receipt_id: btn.getAttribute('data-receipt-id') || '' })
     })
     .then(r => r.json())
     .then(d => {
@@ -3391,7 +3402,10 @@ function markReceiptItemPaid(personName, receiptId, amount, btn) {
         btn.disabled = false;
         btn.dataset.settled = '1';
         toast(personName + ' paid $' + parseFloat(amount).toFixed(2) + ' ✓', true);
-        setTimeout(() => location.reload(), 600);
+        // Update outstanding display immediately
+        const outEl = document.getElementById('outstanding-amt');
+        if (outEl && d.outstanding !== undefined) { outEl.textContent = '$' + parseFloat(d.outstanding).toFixed(2); }
+        setTimeout(() => location.reload(), 1200);
       } else {
         btn.disabled = false;
         btn.textContent = '✓ Mark as Paid';
@@ -4819,14 +4833,19 @@ app.post('/trip/:tripId/mark-settled', async (req, res) => {
       }
     } catch(e) {}
     const nameLower = (name||'').toLowerCase();
+    const receiptKey = req.body.receipt_id ? nameLower + '::receipt::' + req.body.receipt_id : null;
     const settleAmount = parseFloat(amount) || 0;
     if (settleAmount <= 0) {
       console.warn('[mark-settled] amount is 0 — rejecting write for', name);
       return res.json({ success: false, error: 'Amount is 0 — button text parsing failed' });
     }
-    // Set credit to the settle amount (not accumulate — prevents double-counting)
-    // If already partially settled, take the max to avoid reducing credit
-    credits[nameLower] = Math.max(credits[nameLower] || 0, settleAmount);
+    if (receiptKey) {
+      // Per-receipt settle: store with receipt-level key
+      credits[receiptKey] = settleAmount;
+    } else {
+      // Full person settle: store person-level key
+      credits[nameLower] = Math.max(credits[nameLower] || 0, settleAmount);
+    }
     console.log('[mark-settled] writing credits:', JSON.stringify(credits), 'tripId:', tripId, 'name:', name, 'amount:', settleAmount);
     const { error: dbErr } = await supabase.from('trips').update({ settled_people: credits }).eq('id', tripId);
     if (dbErr) { console.error('mark-settled DB error:', dbErr); return res.json({ success: false, error: dbErr.message }); }
@@ -4838,11 +4857,12 @@ app.post('/trip/:tripId/mark-settled', async (req, res) => {
     }
     console.log('[mark-settled] verified in DB:', JSON.stringify(verify?.settled_people));
     // Update trips.total = outstanding (what dashboard shows)
+    let outstandingVal = null;
     try {
-      const outstanding = await computeOutstanding(tripId);
-      if (outstanding !== null) await supabase.from('trips').update({ total: outstanding }).eq('id', tripId);
+      outstandingVal = await computeOutstanding(tripId);
+      if (outstandingVal !== null) await supabase.from('trips').update({ total: outstandingVal }).eq('id', tripId);
     } catch(e) { console.error('Outstanding recalc error:', e); }
-    res.json({ success: true });
+    res.json({ success: true, outstanding: outstandingVal });
   } catch(err) { res.json({ success: false, error: err.message }); }
 });
 
@@ -4865,13 +4885,17 @@ app.post('/trip/:tripId/partial-unsettle', async (req, res) => {
       }
     } catch(e) {}
     const nameLower = (name || '').toLowerCase();
-    const reduceBy = parseFloat(amount) || 0;
-    const current = Math.min(credits[nameLower] || 0, 999998); // cap sentinel
-    const newCredit = Math.max(0, current - reduceBy);
-    if (newCredit <= 0.02) {
-      delete credits[nameLower]; // fully unsettled
+    const receiptKey = req.body.receipt_id ? nameLower + '::receipt::' + req.body.receipt_id : null;
+    if (receiptKey) {
+      // Per-receipt unsettle: delete that specific key
+      delete credits[receiptKey];
     } else {
-      credits[nameLower] = Math.round(newCredit * 100) / 100;
+      const reduceBy = parseFloat(amount) || 0;
+      const current = Math.min(credits[nameLower] || 0, 999998);
+      const newCredit = Math.max(0, current - reduceBy);
+      if (newCredit <= 0.02) { delete credits[nameLower]; }
+      else { credits[nameLower] = Math.round(newCredit * 100) / 100; }
+    }
     }
     await supabase.from('trips').update({ settled_people: credits }).eq('id', tripId);
     const outstanding = await computeOutstanding(tripId);
