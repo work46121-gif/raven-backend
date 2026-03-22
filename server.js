@@ -2099,24 +2099,27 @@ app.get('/trip/:tripId', async (req, res) => {
     // Find which payers this person owes money to
     const owesBreakdown = [];
     (receipts||[]).forEach(r => {
-      if (!r.paid_by || r.paid_by.toLowerCase() === p.toLowerCase()) return;
+      if (r.paid_by && r.paid_by.toLowerCase() === p.toLowerCase()) return; // skip receipts this person paid
       try {
         const sp = typeof r.splits==='string' ? JSON.parse(r.splits) : (r.splits||{});
         const myShare = Object.entries(sp).find(([k]) => k.toLowerCase() === p.toLowerCase());
         if (myShare && parseFloat(myShare[1]) > 0) {
-          owesBreakdown.push({ payer: r.paid_by, amount: parseFloat(myShare[1]), receipt: r.name||'Receipt' });
+          // If no payer set, show as "unknown payer" — still need to show the amount
+          owesBreakdown.push({ payer: r.paid_by || '', amount: parseFloat(myShare[1]), receipt: r.name||'Receipt' });
         }
       } catch(e) {}
     });
 
     // Collapse to per-payer totals, then subtract settled credit proportionally
     const owesPerPayerRaw = {};
-    owesBreakdown.forEach(o => { owesPerPayerRaw[o.payer] = (owesPerPayerRaw[o.payer]||0) + o.amount; });
+    owesBreakdown.forEach(o => {
+      const key = o.payer || '__nopayer__';
+      owesPerPayerRaw[key] = (owesPerPayerRaw[key]||0) + o.amount;
+    });
     // Distribute settled credit proportionally across payers
     let remainingCredit = settledCredit;
     const owesPerPayer = {};
     if (remainingCredit > 0 && !isSettled) {
-      // Apply credit against each payer proportionally (largest first)
       Object.entries(owesPerPayerRaw).sort((a,b)=>b[1]-a[1]).forEach(([payer, amt]) => {
         const deduct = Math.min(remainingCredit, amt);
         const net = Math.max(0, amt - deduct);
@@ -2129,14 +2132,17 @@ app.get('/trip/:tripId', async (req, res) => {
     const payerEntries = isSettled ? [] : Object.entries(owesPerPayer);
 
     // Render pay slots with data attributes — filled client-side using PAY_PROFILES
-    const payBtnsHtml = payerEntries.map(([payerName, amt]) =>
-      `<div class="pay-slot" data-payer="${esc(payerName)}" data-amount="${amt.toFixed(2)}" style="margin-top:4px">
-        <div style="font-size:10px;color:#6E6B80;margin-bottom:4px">Pay ${esc(payerName)} <b style="color:#FF9A3C">$${amt.toFixed(2)}</b></div>
-        <div class="pay-btns" style="display:flex;flex-wrap:wrap;gap:6px">
-          <span style="font-size:11px;color:#6E6B80;font-style:italic">Loading payment options...</span>
-        </div>
-      </div>`
-    ).join('');
+    const payBtnsHtml = payerEntries.map(([payerName, amt]) => {
+      if (payerName === '__nopayer__') {
+        // Receipt has no payer set — just show the amount due, no payment button
+        return '<div style="margin-top:4px;padding:8px 12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:8px;font-size:12px;color:#6E6B80">💳 $' + amt.toFixed(2) + ' owed — payer not set on receipt</div>';
+      }
+      return '<div class="pay-slot" data-payer="' + esc(payerName) + '" data-amount="' + amt.toFixed(2) + '" style="margin-top:4px">' +
+        '<div style="font-size:10px;color:#6E6B80;margin-bottom:4px">Pay ' + esc(payerName) + ' <b style="color:#FF9A3C">$' + amt.toFixed(2) + '</b></div>' +
+        '<div class="pay-btns" style="display:flex;flex-wrap:wrap;gap:6px">' +
+        '<span style="font-size:11px;color:#6E6B80;font-style:italic">Loading payment options...</span>' +
+        '</div></div>';
+    }).join('');
 
     const personId = 'person-' + p.replace(/[^a-z0-9]/gi,'_');
     return `<div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)" id="row-${personId}">
@@ -3357,7 +3363,12 @@ function markReceiptItemPaid(personName, receiptId, amount, btn) {
           btn.disabled = false;
           btn.dataset.settled = '';
           toast(personName + ' unsettled ↩', true);
-          setTimeout(() => location.reload(), 600);
+          // Wait for DB write to propagate before reloading
+          setTimeout(() => {
+            const url = new URL(window.location.href);
+            url.searchParams.set('_r', Date.now());
+            window.location.href = url.toString();
+          }, 1500);
         } else {
           btn.disabled = false;
           btn.textContent = '✅ Settled · tap to undo';
@@ -3405,7 +3416,11 @@ function markReceiptItemPaid(personName, receiptId, amount, btn) {
         // Update outstanding display immediately
         const outEl = document.getElementById('outstanding-amt');
         if (outEl && d.outstanding !== undefined) { outEl.textContent = '$' + parseFloat(d.outstanding).toFixed(2); }
-        setTimeout(() => location.reload(), 1200);
+        setTimeout(() => {
+          const url = new URL(window.location.href);
+          url.searchParams.set('_r', Date.now());
+          window.location.href = url.toString();
+        }, 1200);
       } else {
         btn.disabled = false;
         btn.textContent = '✓ Mark as Paid';
