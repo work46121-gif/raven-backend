@@ -2204,6 +2204,14 @@ app.get('/trip/:tripId', async (req, res) => {
     const credit = Math.min(settledCredits[p.toLowerCase()] || 0, raw); // cap at rawOwed
     return Math.max(0, raw - credit) <= 0.02;
   }).length;
+  // For display: count people who are fully settled (debtors who paid + non-debtors like payers)
+  const settledPeopleCount = people.filter(p => {
+    const raw = totals[p] || 0;
+    if (raw <= 0.02) return true; // payer or zero-balance person = settled
+    const credit = Math.min(settledCredits[p.toLowerCase()] || 0, raw);
+    return Math.max(0, raw - credit) <= 0.02;
+  }).length;
+  const totalPeopleCount = people.length;
 
   // Backfill settled_count/debtor_count on the trip row — keeps dashboard in sync
   supabase.from('trips').update({ settled_count: settledCount, debtor_count: debtorCount }).eq('id', tripId).then(() => {}).catch(() => {});
@@ -2712,7 +2720,7 @@ ${coverHTML}
     <div id="outstanding-footer" data-total-spend="${totalSpend.toFixed(2)}" style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:${grandTotal>0?'rgba(255,107,53,0.04)':'rgba(48,209,88,0.04)'};border-top:1px solid ${grandTotal>0?'rgba(255,107,53,0.15)':'rgba(48,209,88,0.12)'}">
       <div>
         <div id='outstanding-sublabel'>
-          <div style='font-size:12px;font-weight:700;color:${settledCount===debtorCount&&debtorCount>0?"#30D158":"#9896A8"}'>${settledCount}/${debtorCount} settled</div>
+          <div style='font-size:12px;font-weight:700;color:${settledPeopleCount===totalPeopleCount&&totalPeopleCount>0?"#30D158":"#9896A8"}'>${settledPeopleCount}/${totalPeopleCount} people settled</div>
           <div style='font-size:10px;color:#6E6B80;margin-top:2px'>$${totalSpend.toFixed(2)} total spent</div>
         </div>
       </div>
