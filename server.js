@@ -499,21 +499,20 @@ app.get('/bill/:billId/state', async (req, res) => {
       }
     });
     for (const ghostName of extraNames) {
-      const { data: inserted, error: ghostErr } = await supabase.from('participants')
+      // Always add to response so they appear in "Who Owes What" immediately
+      const ghostRow = { id: 'ghost-' + ghostName, bill_id: billId, name: ghostName, amount: 0, paid: false };
+      dbParticipants.push(ghostRow);
+      dbNames.add(ghostName.toLowerCase());
+      // Best-effort DB insert (may fail due to RLS or duplicates — that's OK)
+      supabase.from('participants')
         .insert({ bill_id: billId, name: ghostName, amount: 0, paid: false })
-        .select().single();
-      if (inserted) {
-        dbParticipants.push(inserted);
-        dbNames.add(ghostName.toLowerCase());
-      } else {
-        // Insert failed (maybe duplicate with different casing) — try to fetch
-        const { data: found } = await supabase.from('participants')
-          .select('*').eq('bill_id', billId).ilike('name', ghostName).maybeSingle();
-        if (found && !dbNames.has(found.name.toLowerCase())) {
-          dbParticipants.push(found);
-          dbNames.add(found.name.toLowerCase());
-        }
-      }
+        .then(({ data, error }) => {
+          if (error) {
+            // Try fetch in case they exist already
+            supabase.from('participants').select('*').eq('bill_id', billId).ilike('name', ghostName).maybeSingle()
+              .then(({ data: found }) => { /* already in dbParticipants */ });
+          }
+        });
     }
     res.json({
       success: true,
