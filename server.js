@@ -1259,19 +1259,13 @@ if (!myName) {
 }
 let pollTimer = null;
 let lastState = null;
-// Persist optimistic paid state across refreshes for this bill session
+// Optimistic paid state — keeps UI showing paid while DB write is in flight
 let _optimisticPaid = {};
-try {
-  const stored = sessionStorage.getItem('_optimisticPaid_' + BID);
-  if (stored) _optimisticPaid = JSON.parse(stored);
-} catch(e) {}
 function _setOptimisticPaid(name, method) {
   _optimisticPaid[name.toLowerCase()] = { method: method || null };
-  try { sessionStorage.setItem('_optimisticPaid_' + BID, JSON.stringify(_optimisticPaid)); } catch(e) {}
 }
 function _clearOptimisticPaid(name) {
   delete _optimisticPaid[name.toLowerCase()];
-  try { sessionStorage.setItem('_optimisticPaid_' + BID, JSON.stringify(_optimisticPaid)); } catch(e) {}
 }
 
 // ── NAME SETUP ──
@@ -5935,16 +5929,28 @@ app.post('/bill/:billId/mark-paid', async (req, res) => {
     let updateQuery;
     const useNameLookup = !participantId || String(participantId).startsWith('ghost-');
     if (useNameLookup) {
-      // Ensure a real row exists first
-      const { data: existing } = await supabase.from('participants').select('id').eq('bill_id', billId).ilike('name', name).maybeSingle();
+      // Find the participant row first to get exact id and name
+      const { data: existing } = await supabase.from('participants').select('id,name').eq('bill_id', billId).ilike('name', name).maybeSingle();
       if (!existing) {
-        await supabase.from('participants').insert({ bill_id: billId, name, amount: 0, paid: false });
+        // Insert fresh row then update it
+        const { data: inserted } = await supabase.from('participants')
+          .insert({ bill_id: billId, name, amount: 0, paid: true, paid_at: new Date().toISOString(), ...(payment_method ? { payment_method } : {}) })
+          .select().maybeSingle();
+        console.log('[mark-paid] inserted+paid new row for', name, ':', inserted?.id || 'failed');
+        // Skip the update below — already inserted as paid
+        const { data: allParts2 } = await supabase.from('participants').select('paid,name').eq('bill_id', billId);
+        const paidByLower2 = (bill.paid_by || '').toLowerCase();
+        const nonPayers2 = (allParts2 || []).filter(p => p.name.toLowerCase() !== paidByLower2);
+        const allPaid2 = nonPayers2.length > 0 && nonPayers2.every(p => p.paid);
+        if (allPaid2) await supabase.from('bills').update({ status: 'completed' }).eq('id', billId);
+        return res.json({ success: true, allPaid: allPaid2 });
       }
+      // Use exact id for the update — more reliable than ilike name match
       updateQuery = supabase.from('participants').update({
         paid: true,
         paid_at: new Date().toISOString(),
         ...(payment_method ? { payment_method } : {})
-      }).eq('bill_id', billId).ilike('name', name);
+      }).eq('id', existing.id);
     } else {
       updateQuery = supabase.from('participants').update({
         paid: true,
@@ -5953,7 +5959,7 @@ app.post('/bill/:billId/mark-paid', async (req, res) => {
       }).eq('id', participantId);
     }
     const updateResult = await updateQuery;
-    console.log('[mark-paid] update result for', name, ':', JSON.stringify(updateResult?.error || 'ok'), '| participantId:', participantId, '| useNameLookup:', useNameLookup);
+    console.log('[mark-paid] update result for', name, ':', JSON.stringify(updateResult?.error || 'ok'), '| rows affected — useNameLookup:', useNameLookup);
     // Check if all non-payer participants are now paid — update bill status
     const { data: allParts } = await supabase.from('participants').select('paid,name').eq('bill_id', billId);
     const paidByLower = (bill.paid_by || '').toLowerCase();
