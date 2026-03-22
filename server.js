@@ -1982,6 +1982,8 @@ app.get('/trip/:tripId', async (req, res) => {
     const net = Math.round(Math.max(0, raw - credit) * 100) / 100;
     return s + (net <= 0.02 ? 0 : net); // ignore sub-2¢ rounding drift
   }, 0) * 100) / 100;
+  // Keep trips.total in sync with the live outstanding so dashboard card is always correct
+  supabase.from('trips').update({ total: grandTotal }).eq('id', tripId).then(() => {}).catch(() => {});
   // Total spend = sum of all receipt totals (what was actually spent)
   const totalSpend = (receipts||[]).reduce((s, r) => s + parseFloat(r.total||0), 0);
   // Count debtors (people who owe money) and how many of those are settled.
