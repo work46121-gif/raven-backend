@@ -3390,7 +3390,7 @@ function markReceiptItemPaid(personName, receiptId, amount, btn) {
         btn.style.color = '#30D158';
         btn.disabled = false;
         btn.dataset.settled = '1';
-        toast(personName + ' paid $' + (totals[person]||0).toFixed(2) + ' ✓', true);
+        toast(personName + ' paid $' + parseFloat(amount).toFixed(2) + ' ✓', true);
         setTimeout(() => location.reload(), 600);
       } else {
         btn.disabled = false;
@@ -4824,8 +4824,9 @@ app.post('/trip/:tripId/mark-settled', async (req, res) => {
       console.warn('[mark-settled] amount is 0 — rejecting write for', name);
       return res.json({ success: false, error: 'Amount is 0 — button text parsing failed' });
     }
-    // Add to existing credit (don't overwrite — accumulate)
-    credits[nameLower] = (credits[nameLower] || 0) + settleAmount;
+    // Set credit to the settle amount (not accumulate — prevents double-counting)
+    // If already partially settled, take the max to avoid reducing credit
+    credits[nameLower] = Math.max(credits[nameLower] || 0, settleAmount);
     console.log('[mark-settled] writing credits:', JSON.stringify(credits), 'tripId:', tripId, 'name:', name, 'amount:', settleAmount);
     const { error: dbErr } = await supabase.from('trips').update({ settled_people: credits }).eq('id', tripId);
     if (dbErr) { console.error('mark-settled DB error:', dbErr); return res.json({ success: false, error: dbErr.message }); }
