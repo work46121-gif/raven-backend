@@ -493,6 +493,9 @@ app.get('/bill/:billId/state', async (req, res) => {
     const dbParticipants = participantsRes.data || [];
     const dbNames = new Set(dbParticipants.map(p => p.name.toLowerCase()));
     const extraNames = new Set();
+    // Build a map of lowercase name -> canonical name from DB for case normalization
+    const dbNameCanonical = {};
+    dbParticipants.forEach(p => { dbNameCanonical[p.name.toLowerCase()] = p.name; });
     (selectionsRes.data || []).forEach(s => {
       if (s.participant_name && !dbNames.has(s.participant_name.toLowerCase())) {
         extraNames.add(s.participant_name);
@@ -512,20 +515,21 @@ app.get('/bill/:billId/state', async (req, res) => {
         // Already exists (duplicate) — fetch the real row
         const { data: found } = await supabase.from('participants').select('*').eq('bill_id', billId).ilike('name', ghostName).maybeSingle();
         realRow = found;
+        // Row already existed — no need to recalc, just add to response
+      }
+      if (!realRow) {
+        // Truly new row was inserted
+        needsRecalc = true;
       }
       const ghostRow = realRow || { id: 'ghost-' + ghostName, bill_id: billId, name: ghostName, amount: 0, paid: false };
       dbParticipants.push(ghostRow);
       dbNames.add(ghostName.toLowerCase());
-      // Recalculate amounts so this new participant gets the right DB amount
-      needsRecalc = true;
     }
-    // Recalc amounts for new ghost participants so their DB amount is correct
-    if (needsRecalc) { recalcBillAmounts(billId).catch(e => {}); }
-    // Re-fetch participants after recalc to get updated amounts
+    // Only recalc and re-fetch if we genuinely inserted a new participant row
     if (needsRecalc) {
+      await recalcBillAmounts(billId);
       const { data: fresh } = await supabase.from('participants').select('*').eq('bill_id', billId).order('name');
       if (fresh) {
-        // Merge: keep any ghost rows that aren't in DB yet, update real rows
         const freshMap = {};
         fresh.forEach(p => { freshMap[p.name.toLowerCase()] = p; });
         for (let i = 0; i < dbParticipants.length; i++) {
@@ -1368,7 +1372,7 @@ async function refreshAll() {
     // Hash: include selections sorted by item+person, participants, paid status, and amounts
     const selKey = d.selections.map(s => s.item_id + ':' + s.participant_name).sort().join('|');
     // Don't include p.amount in hash — it lags behind DB writes and causes missed updates
-    const partsKey = d.participants.map(p => p.id + ':' + (p.paid?'1':'0') + ':' + (p.payment_method||'')).sort().join('|');
+    const partsKey = d.participants.map(p => p.name.toLowerCase() + ':' + (p.paid?'1':'0') + ':' + (p.payment_method||'')).sort().join('|');
     const hash = selKey + '##' + partsKey + '##' + d.participants.length;
     if (hash === _lastStateHash && !_firstRender) return; // nothing changed
     _lastStateHash = hash;
