@@ -2162,13 +2162,13 @@ app.get('/trip/:tripId', async (req, res) => {
           <div>
             <div style="font-weight:600;font-size:14px;display:flex;align-items:center;gap:6px">${esc(p)} <span style="font-size:11px;color:#6E6B80;font-weight:400">›</span></div>
             <div class="person-status-display" style="font-size:11px;color:${isSettled?'#30D158':amtOwed>0?'#FF9A3C':amtReceivable>0?'#A855F7':'#30D158'}">
-              ${isSettled ? '✅ all settled' : amtOwed>0 ? 'owes $' + amtOwed.toFixed(2) : amtReceivable>0 ? 'collecting $' + amtReceivable.toFixed(2) : 'all settled ✓'}
+              ${isSettled ? '✅ all settled' : amtOwed>0 ? (isPartiallySettled ? 'still owes $' + amtOwed.toFixed(2) : 'owes $' + amtOwed.toFixed(2)) : amtReceivable>0 ? 'collecting $' + amtReceivable.toFixed(2) : 'all settled ✓'}
             </div>
           </div>
         </div>
         <div style="text-align:right">
-          <div class="person-balance-display" data-original-owed="${rawOwed.toFixed(2)}" data-raw-owed="${rawOwed.toFixed(2)}" style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${isSettled?'#30D158':amtOwed>0?'#FF9A3C':amtReceivable>0?'#A855F7':'#9896A8'}">
-            ${isSettled ? '✅' : amtOwed>0 ? '-$'+amtOwed.toFixed(2) : amtReceivable>0 ? '+$'+amtReceivable.toFixed(2) : '$0.00'}
+          <div class="person-balance-display" data-original-owed="${rawOwed.toFixed(2)}" data-raw-owed="${amtOwed.toFixed(2)}" style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${isSettled?'#30D158':amtOwed>0?'#FF9A3C':amtReceivable>0?'#A855F7':'#9896A8'}">
+            ${isSettled ? '$0 ✅' : amtOwed>0 ? '-$'+amtOwed.toFixed(2) : amtReceivable>0 ? '+$'+amtReceivable.toFixed(2) : '$0.00'}
           </div>
         </div>
       </div>
@@ -2256,7 +2256,20 @@ app.get('/trip/:tripId', async (req, res) => {
               <div style="height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;margin-bottom:${payer?'10px':'0'}">
                 <div style="height:100%;width:${pct}%;background:${color};border-radius:2px"></div>
               </div>
-              ${(payer && (()=>{ const _r=totals[person]||0; const _c=Math.min(settledCredits[person.toLowerCase()]||0,_r); return !(_r>0.02 && Math.max(0,_r-_c)<=0.02); })()) ? '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px;flex-wrap:wrap">' + payButtonsHtml(payer, amount) + '<button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" style="padding:7px 14px;background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.2);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✓ Mark as Paid</button></div>' : (payer && (()=>{ const _rKey = (person+'::receipt::'+(r.id||receiptId)).toLowerCase().replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"'); const _rcptSettled = !!settledPeopleRaw[_rKey]; const _raw=totals[person]||0; const _cred=Math.min(settledCredits[person.toLowerCase()]||0,_raw); const _fullSettled=_raw>0.02&&Math.max(0,_raw-_cred)<=0.02; return _rcptSettled||_fullSettled; })()) ? '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px"><button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" data-settled="1" style="padding:7px 14px;background:rgba(48,209,88,0.15);border:1px solid rgba(48,209,88,0.4);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✅ Settled · tap to undo</button></div>' : ''}
+              ${(()=>{ 
+                const _rKey = (person+'::receipt::'+(r.id||receiptId)).toLowerCase().replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"');
+                const _rcptSettled = !!settledPeopleRaw[_rKey];
+                const _raw = totals[person]||0;
+                const _cred = Math.min(settledCredits[person.toLowerCase()]||0,_raw);
+                const _fullSettled = _raw>0.02 && Math.max(0,_raw-_cred)<=0.02;
+                if (!payer) return '';
+                // FIRST: check if this specific receipt is already settled
+                if (_rcptSettled || _fullSettled) {
+                  return '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px"><button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" data-settled="1" style="padding:7px 14px;background:rgba(48,209,88,0.15);border:1px solid rgba(48,209,88,0.4);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✅ Settled · tap to undo</button></div>';
+                }
+                // THEN: show "Mark as Paid" if person still owes on this receipt
+                return '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px;flex-wrap:wrap">' + payButtonsHtml(payer, amount) + '<button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" style="padding:7px 14px;background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.2);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✓ Mark as Paid</button></div>';
+              })()}
             </div>`;
           }).join('')}
         </div>
