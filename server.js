@@ -3331,10 +3331,10 @@ function markReceiptItemPaid(personName, receiptId, amount, btn) {
       btn.disabled = true;
       btn.textContent = '⏳ Saving…';
       btn.dataset.confirming = '';
-      fetch(BACKEND + '/trip/' + TRIP_ID + '/unsettle', {
+      fetch(BACKEND + '/trip/' + TRIP_ID + '/partial-unsettle', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ token: TRIP_TOKEN, name: personName })
+        body: JSON.stringify({ token: TRIP_TOKEN, name: personName, amount: parseFloat(amount) || 0 })
       })
       .then(r => r.json())
       .then(d => {
@@ -4842,6 +4842,40 @@ app.post('/trip/:tripId/mark-settled', async (req, res) => {
       const outstanding = await computeOutstanding(tripId);
       if (outstanding !== null) await supabase.from('trips').update({ total: outstanding }).eq('id', tripId);
     } catch(e) { console.error('Outstanding recalc error:', e); }
+    res.json({ success: true });
+  } catch(err) { res.json({ success: false, error: err.message }); }
+});
+
+// ── PARTIAL UNSETTLE — reduce credit by one receipt's amount ─────────────────
+app.post('/trip/:tripId/partial-unsettle', async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const { token, name, amount } = req.body;
+    const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
+    if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
+    let credits = {};
+    try {
+      let raw = trip.settled_people;
+      if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch(e) {} }
+      if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch(e) {} }
+      if (Array.isArray(raw)) {
+        raw.forEach(n => { credits[n.toLowerCase()] = 999999; });
+      } else if (raw && typeof raw === 'object') {
+        Object.entries(raw).forEach(([k, v]) => { if (parseFloat(v) > 0) credits[k.toLowerCase()] = parseFloat(v); });
+      }
+    } catch(e) {}
+    const nameLower = (name || '').toLowerCase();
+    const reduceBy = parseFloat(amount) || 0;
+    const current = Math.min(credits[nameLower] || 0, 999998); // cap sentinel
+    const newCredit = Math.max(0, current - reduceBy);
+    if (newCredit <= 0.02) {
+      delete credits[nameLower]; // fully unsettled
+    } else {
+      credits[nameLower] = Math.round(newCredit * 100) / 100;
+    }
+    await supabase.from('trips').update({ settled_people: credits }).eq('id', tripId);
+    const outstanding = await computeOutstanding(tripId);
+    if (outstanding !== null) await supabase.from('trips').update({ total: outstanding }).eq('id', tripId);
     res.json({ success: true });
   } catch(err) { res.json({ success: false, error: err.message }); }
 });
