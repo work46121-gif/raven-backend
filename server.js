@@ -546,19 +546,19 @@ app.post('/bill/:billId/join', async (req, res) => {
     const { data: bill } = await supabase.from('bills').select('share_token, live_mode, live_people_count').eq('id', billId).single();
     if (!bill) return res.json({ success: false, error: 'Bill not found' });
     const cleanName = name.trim();
-    // Check if person already exists
+    // Check if person already exists as participant
     const { data: existing } = await supabase.from('participants')
       .select('id').eq('bill_id', billId).ilike('name', cleanName).maybeSingle();
     if (existing) return res.json({ success: true, name: cleanName }); // already joined
-    // Max members check for live mode
+    // Soft max check — warn the UI but always allow join
+    // Hard blocking would prevent legitimate QR users from getting their row in "Who Owes What"
+    let maxReached = false;
     if (bill.live_mode && bill.live_people_count > 0) {
       const { count } = await supabase.from('participants').select('id', { count: 'exact', head: true }).eq('bill_id', billId);
-      if (count >= bill.live_people_count) {
-        return res.json({ success: false, error: 'max_reached', maxCount: bill.live_people_count });
-      }
+      if (count >= bill.live_people_count) maxReached = true;
     }
     await supabase.from('participants').insert({ bill_id: billId, name: cleanName, amount: 0, paid: false });
-    res.json({ success: true, name: cleanName });
+    res.json({ success: true, name: cleanName, maxReached, maxCount: bill.live_people_count });
   } catch(e) { res.json({ success: false, error: e.message }); }
 });
 
@@ -1193,8 +1193,8 @@ function initName() {
     setNameUI(stored);
     const cn = document.getElementById('cname');
     if (cn) cn.value = stored;
-    // Always ensure participant record exists — autoJoin is idempotent
-    autoJoin(stored);
+    // Always ensure participant record exists — silent so no modal pops up
+    autoJoin(stored, true);
     return;
   }
   // Check Raven profile
@@ -1212,7 +1212,7 @@ async function submitName() {
   await autoJoin(name);
 }
 
-async function autoJoin(name) {
+async function autoJoin(name, silent) {
   try {
     const r = await fetch('/bill/' + BID + '/join', {
       method: 'POST', headers: {'Content-Type':'application/json'},
@@ -1222,13 +1222,14 @@ async function autoJoin(name) {
     if (d.success) {
       myName = d.name;
       localStorage.setItem('raven_bill_name_' + BID, myName);
-      document.getElementById('name-modal').style.display = 'none';
+      if (!silent) document.getElementById('name-modal').style.display = 'none';
       setNameUI(myName);
       const cn = document.getElementById('cname');
       if (cn) cn.value = myName;
+      if (d.maxReached && !silent) toast('⚠️ Over guest limit — tax/tip splits may vary');
       _lastStateHash = ''; // force immediate re-render to show self in owes section
       refreshAll();
-    } else if (d.error === 'max_reached') {
+    } else if (d.error === 'max_reached' && !silent) {
       // Show max members reached UI
       const modal = document.getElementById('name-modal');
       const box = modal.querySelector('.name-modal-box');
