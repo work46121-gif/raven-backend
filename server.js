@@ -3081,6 +3081,9 @@ function applyNameAndAvatar(firstName, avatarUrl) {
 }
 
 // Fetch and apply profile pictures for ALL trip members
+// Cache of member avatar URLs, keyed by lowercase first_name
+const _memberAvatarCache = {};
+
 async function applyAllMemberAvatars() {
   try {
     if (!PEOPLE || PEOPLE.length === 0) return;
@@ -3093,7 +3096,10 @@ async function applyAllMemberAvatars() {
     if (!res.ok) return;
     const profiles = await res.json();
     (profiles || []).forEach(prof => {
-      if (!prof.first_name || !prof.avatar_url) return;
+      if (!prof.first_name) return;
+      // Cache avatar (even if null, so we know the profile was fetched)
+      _memberAvatarCache[prof.first_name.toLowerCase()] = prof.avatar_url || null;
+      if (!prof.avatar_url) return;
       document.querySelectorAll('[data-person-avatar]').forEach(el => {
         if (el.getAttribute('data-person-avatar').toLowerCase() === prof.first_name.toLowerCase()) {
           el.innerHTML = '<img src="' + prof.avatar_url + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%">';
@@ -3101,6 +3107,13 @@ async function applyAllMemberAvatars() {
         }
       });
     });
+    // Also cache the current user's avatar from localStorage
+    try {
+      const lp = JSON.parse(localStorage.getItem('raven_profile') || '{}');
+      if (lp.first_name && lp.avatar_url) {
+        _memberAvatarCache[lp.first_name.toLowerCase()] = lp.avatar_url;
+      }
+    } catch(e) {}
   } catch(e) { /* best effort */ }
 }
 
@@ -3964,7 +3977,10 @@ function openMemberProfile(name) {
   const modal = document.getElementById("member-profile-modal");
   const avEl = document.getElementById("mp-avatar");
   const colors = ["linear-gradient(135deg,#7C3AED,#A855F7)","linear-gradient(135deg,#E8633A,#FF6B35)","linear-gradient(135deg,#0EA5E9,#7C3AED)","linear-gradient(135deg,#30D158,#0EA5E9)","linear-gradient(135deg,#F59E0B,#EF4444)","linear-gradient(135deg,#EC4899,#8B5CF6)"];
-  if (avEl) { if (prof?.avatar_url) { avEl.innerHTML = '<img src="'+prof.avatar_url+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%">'; avEl.style.background="transparent"; } else { avEl.textContent=name[0].toUpperCase(); avEl.style.background=colors[name.charCodeAt(0)%colors.length]; } }
+  // avatar_url is not in PAY_PROFILES (excluded to avoid bloating inline JSON)
+  // Use the cached value from applyAllMemberAvatars, falling back to localStorage for self
+  const cachedAvatar = _memberAvatarCache[name.toLowerCase()] || null;
+  if (avEl) { if (cachedAvatar) { avEl.innerHTML = '<img src="'+cachedAvatar+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%">'; avEl.style.background="transparent"; } else { avEl.innerHTML = ''; avEl.textContent=name[0].toUpperCase(); avEl.style.background=colors[name.charCodeAt(0)%colors.length]; } }
   const nameEl=document.getElementById("mp-name"); if(nameEl) nameEl.textContent=name;
   const ridEl=document.getElementById("mp-raven-id"); if(ridEl) ridEl.textContent=prof?.raven_id?"@"+prof.raven_id:"";
   const sinceEl=document.getElementById("mp-member-since"); if(sinceEl) { if(prof?.created_at){const d=new Date(prof.created_at);sinceEl.textContent="🪶 RAVEN member since "+d.toLocaleDateString("en-US",{month:"long",year:"numeric"});}else{sinceEl.textContent="🪶 RAVEN member";}}
