@@ -1259,6 +1259,7 @@ if (!myName) {
 }
 let pollTimer = null;
 let lastState = null;
+let _optimisticPaid = {}; // name.toLowerCase() -> { method }
 
 // ── NAME SETUP ──
 function initName() {
@@ -1365,6 +1366,20 @@ async function refreshAll() {
     if (hash === _lastStateHash && !_firstRender) return; // nothing changed
     _lastStateHash = hash;
     _firstRender = false;
+    lastState = d; // keep reference so optimistic patches can update it
+    // Apply any pending optimistic paid patches before rendering
+    if (_optimisticPaid && Object.keys(_optimisticPaid).length > 0) {
+      d.participants.forEach(p => {
+        const key = p.name.toLowerCase();
+        const patch = _optimisticPaid[key];
+        if (patch) {
+          p.paid = true;
+          p.payment_method = patch.method;
+          // Once server confirms paid, remove from optimistic map
+          if (p.paid) delete _optimisticPaid[key];
+        }
+      });
+    }
     renderState(d);
   } catch(e) { console.error('Refresh error:', e); }
 }
@@ -1579,11 +1594,8 @@ async function markPaidByName(name, method) {
       closePay();
       const methodLabel = method && method !== 'Other' ? ' via ' + method : '';
       toast('✅ ' + name + ' paid' + methodLabel + '!');
-      // Optimistically update lastState so re-render shows ✅ immediately
-      if (lastState && lastState.participants) {
-        const match = lastState.participants.find(p => p.name.toLowerCase() === name.toLowerCase());
-        if (match) { match.paid = true; match.payment_method = method || null; }
-      }
+      // Optimistically mark as paid — survives the next refreshAll re-render
+      _optimisticPaid[name.toLowerCase()] = { method: method || null };
       _lastStateHash = '';
       refreshAll();
     } else {
@@ -1641,13 +1653,8 @@ async function markPaid(pid, name, method) {
       closePay();
       const methodLabel = method && method !== 'Other' ? ' via ' + method : '';
       toast('✅ ' + name + ' paid' + methodLabel + '!');
-      // Optimistically update lastState so next re-render shows ✅ immediately
-      if (lastState && lastState.participants) {
-        const match = lastState.participants.find(p =>
-          String(p.id) === String(pid) || p.name.toLowerCase() === name.toLowerCase()
-        );
-        if (match) { match.paid = true; match.payment_method = method || null; }
-      }
+      // Optimistically mark as paid — survives the next refreshAll re-render
+      _optimisticPaid[name.toLowerCase()] = { method: method || null };
       _lastStateHash = '';
       refreshAll();
     } else {
