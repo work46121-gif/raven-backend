@@ -1191,17 +1191,18 @@ function initName() {
   const stored = myName;
   if (stored) {
     setNameUI(stored);
-  } else {
-    // Check Raven profile
-    try {
-      const p = JSON.parse(localStorage.getItem('raven_profile') || '{}');
-      if (p.first_name) { autoJoin(p.first_name); return; }
-    } catch(e) {}
-    document.getElementById('name-modal').style.display = 'flex';
+    const cn = document.getElementById('cname');
+    if (cn) cn.value = stored;
+    // Always ensure participant record exists — autoJoin is idempotent
+    autoJoin(stored);
+    return;
   }
-  // Pre-fill comment name
-  const cn = document.getElementById('cname');
-  if (cn && stored) cn.value = stored;
+  // Check Raven profile
+  try {
+    const p = JSON.parse(localStorage.getItem('raven_profile') || '{}');
+    if (p.first_name) { autoJoin(p.first_name); return; }
+  } catch(e) {}
+  document.getElementById('name-modal').style.display = 'flex';
 }
 
 async function submitName() {
