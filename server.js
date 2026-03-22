@@ -2112,22 +2112,51 @@ app.get('/trip/:tripId', async (req, res) => {
       } catch(e) {}
     });
 
-    // Collapse to per-payer totals, then subtract settled credit proportionally
+    // Collapse to per-payer totals
     const owesPerPayerRaw = {};
     owesBreakdown.forEach(o => { owesPerPayerRaw[o.payer] = (owesPerPayerRaw[o.payer]||0) + o.amount; });
-    // Distribute settled credit proportionally across payers
-    let remainingCredit = settledCredit;
+
+    // Apply credits per-payer using receipt-level keys from settledPeopleRaw
+    // Each key like "mel::receipt::22" tells us exactly which receipt (and thus which payer) was settled
+    // This ensures "Pay daddy $46.52" stays daddy even after settling Arsalan's Jeep
     const owesPerPayer = {};
-    if (remainingCredit > 0 && !isSettled) {
-      // Apply credit against each payer proportionally (largest first)
-      Object.entries(owesPerPayerRaw).sort((a,b)=>b[1]-a[1]).forEach(([payer, amt]) => {
-        const deduct = Math.min(remainingCredit, amt);
-        const net = Math.max(0, amt - deduct);
-        remainingCredit -= deduct;
-        if (net > 0.005) owesPerPayer[payer] = net;
+    if (!isSettled) {
+      const pLower = p.toLowerCase();
+      // Build per-payer credit from receipt-level keys
+      const perPayerCredit = {};
+      (receipts||[]).forEach(r => {
+        if (!r.paid_by) return;
+        const rKey = (pLower + '::receipt::' + r.id).toLowerCase();
+        if (settledPeopleRaw[rKey]) {
+          const payerKey = r.paid_by;
+          perPayerCredit[payerKey] = (perPayerCredit[payerKey]||0) + (parseFloat(settledPeopleRaw[rKey])||0);
+        }
       });
-    } else if (!isSettled) {
-      Object.assign(owesPerPayer, owesPerPayerRaw);
+      // If we have receipt-level keys, use them for precise per-payer credit
+      const hasReceiptKeys = Object.keys(perPayerCredit).length > 0;
+      if (hasReceiptKeys) {
+        Object.entries(owesPerPayerRaw).forEach(([payer, amt]) => {
+          // Find the payer key case-insensitively
+          const creditEntry = Object.entries(perPayerCredit).find(([k]) => k.toLowerCase() === payer.toLowerCase());
+          const credit = creditEntry ? creditEntry[1] : 0;
+          const net = Math.max(0, Math.round((amt - credit) * 100) / 100);
+          if (net > 0.005) owesPerPayer[payer] = net;
+        });
+      } else {
+        // No receipt-level keys: check person-level credit and distribute
+        // to largest payer first (fallback for old data)
+        let remainingCredit = settledCredit;
+        if (remainingCredit > 0) {
+          Object.entries(owesPerPayerRaw).sort((a,b)=>b[1]-a[1]).forEach(([payer, amt]) => {
+            const deduct = Math.min(remainingCredit, amt);
+            const net = Math.max(0, amt - deduct);
+            remainingCredit -= deduct;
+            if (net > 0.005) owesPerPayer[payer] = net;
+          });
+        } else {
+          Object.assign(owesPerPayer, owesPerPayerRaw);
+        }
+      }
     }
     const payerEntries = isSettled ? [] : Object.entries(owesPerPayer);
 
