@@ -1308,6 +1308,7 @@ function renderState(d) {
         const isMe = myName && p.name.toLowerCase() === (myName||'').toLowerCase();
         const amt = parseFloat(p.amount || 0);
 
+        // Compute amount CLIENT-SIDE from current selections (always fresh, no DB lag)
         const myItems = [];
         items.forEach(item => {
           const claimers = selMap[String(item.id)] || [];
@@ -1315,11 +1316,12 @@ function renderState(d) {
             myItems.push({ name: item.name, price: parseFloat(item.price||0), splitWith: claimers.length });
           }
         });
-
+        const anySelections = Object.values(selMap).some(c => c.length > 0);
         const itemsTotal = myItems.reduce((s, i) => s + i.price / i.splitWith, 0);
         const proportion = billSubtotal > 0 && itemsTotal > 0 ? itemsTotal / billSubtotal : 0;
         const myTax = tax * proportion;
         const myTip = tip * proportion;
+        const liveAmt = isBillPayer ? 0 : Math.round((itemsTotal + myTax + myTip) * 100) / 100;
 
         let breakdown = '';
         if (!isBillPayer && myItems.length > 0) {
@@ -1331,17 +1333,20 @@ function renderState(d) {
               }).join('')
             + (myTax > 0 ? '<div style="display:flex;justify-content:space-between;padding:3px 0;border-top:1px solid rgba(255,255,255,0.06);margin-top:4px"><span style="font-size:11px;color:#6E6B80">Tax</span><span style="font-size:11px;color:#6E6B80;font-family:monospace">$' + myTax.toFixed(2) + '</span></div>' : '')
             + (myTip > 0 ? '<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6E6B80">Tip</span><span style="font-size:11px;color:#6E6B80;font-family:monospace">$' + myTip.toFixed(2) + '</span></div>' : '')
-            + '<div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:6px;padding-top:6px;display:flex;justify-content:space-between"><span style="font-size:12px;font-weight:700;color:#F0EEF8">Total</span><span style="font-size:13px;font-weight:800;color:#30D158;font-family:monospace">$' + amt.toFixed(2) + '</span></div>'
+            + '<div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:6px;padding-top:6px;display:flex;justify-content:space-between"><span style="font-size:12px;font-weight:700;color:#F0EEF8">Total</span><span style="font-size:13px;font-weight:800;color:#30D158;font-family:monospace">$' + liveAmt.toFixed(2) + '</span></div>'
             + '</div>';
+        } else if (!isBillPayer && anySelections && myItems.length === 0) {
+          breakdown = '<div style="margin-top:8px;padding:8px 12px;background:rgba(255,255,255,0.02);border-radius:8px;font-size:12px;color:#6E6B80;font-style:italic">Tap items above to claim your order</div>';
         }
 
         const rowBorder = isMe ? 'border-left:3px solid #30D158;background:rgba(48,209,88,0.03);' : '';
-        let statusColor = isBillPayer ? '#C084FC' : p.paid ? '#30D158' : amt > 0 ? '#FF9A3C' : '#6E6B80';
-        let statusText = isBillPayer ? '💳 Paid the bill' : p.paid ? '✅ Paid' : amt > 0 ? 'Owes $' + amt.toFixed(2) : myItems.length === 0 && items.length > 0 ? '⏳ Claiming items...' : '✓ Settled';
+        let statusColor = isBillPayer ? '#C084FC' : p.paid ? '#30D158' : liveAmt > 0 ? '#FF9A3C' : '#6E6B80';
+        let statusText = isBillPayer ? '💳 Paid the bill' : p.paid ? '✅ Paid' : liveAmt > 0 ? 'Owes $' + liveAmt.toFixed(2) : anySelections ? '⏳ Nothing claimed yet' : '✓ All settled';
         let action = '';
         if (isBillPayer) action = '<div style="font-size:24px">💳</div>';
         else if (p.paid) action = '<div style="font-size:22px">✅</div>';
-        else if (isMe && amt > 0) action = '<button onclick="showMyPayModal(' + amt.toFixed(2) + ')" style="padding:10px 16px;background:#30D158;border:none;border-radius:10px;color:#000;font-weight:800;font-size:13px;cursor:pointer;font-family:inherit;flex-shrink:0;white-space:nowrap">Pay Now</button>';
+        else if (isMe && liveAmt > 0) action = '<button onclick="showMyPayModal(' + liveAmt.toFixed(2) + ')" style="padding:10px 16px;background:#30D158;border:none;border-radius:10px;color:#000;font-weight:800;font-size:13px;cursor:pointer;font-family:inherit;flex-shrink:0;white-space:nowrap">Pay Now</button>';
+        else if (!isMe && liveAmt > 0) action = '<button onclick="showPay(this)" data-pid="' + p.id + '" data-name="' + p.name.replace(/"/g,"&quot;") + '" data-amount="' + liveAmt.toFixed(2) + '" style="padding:9px 14px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.25);border-radius:10px;color:#30D158;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit;flex-shrink:0">Pay</button>';
 
         return '<div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05);' + rowBorder + '">'
           + '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">'
@@ -1359,11 +1364,23 @@ function renderState(d) {
     const me = participants.find(p => myName && p.name.toLowerCase() === myName.toLowerCase());
     const paidByPart = participants.find(p => p.name.toLowerCase() === paidByLower);
     const amIBillPayer = myName && myName.toLowerCase() === paidByLower;
-    if (me && !amIBillPayer && !me.paid && parseFloat(me.amount||0) > 0) {
+    // Recompute my live amount for pay bar
+    let myLiveAmt = 0;
+    if (me && !amIBillPayer) {
+      const myBarItems = [];
+      items.forEach(item => {
+        const cl = selMap[String(item.id)] || [];
+        if (cl.some(c => c.toLowerCase() === myName.toLowerCase())) myBarItems.push({ price: parseFloat(item.price||0), splitWith: cl.length });
+      });
+      const myBarTotal = myBarItems.reduce((s,i) => s + i.price/i.splitWith, 0);
+      const barProportion = billSubtotal > 0 && myBarTotal > 0 ? myBarTotal/billSubtotal : 0;
+      myLiveAmt = Math.round((myBarTotal + tax*barProportion + tip*barProportion)*100)/100;
+    }
+    if (me && !amIBillPayer && !me.paid && myLiveAmt > 0) {
       bar.style.display = 'block';
       const amtEl = document.getElementById('bar-amt');
       const toEl = document.getElementById('bar-to');
-      if (amtEl) amtEl.textContent = '$' + parseFloat(me.amount).toFixed(2);
+      if (amtEl) amtEl.textContent = '$' + myLiveAmt.toFixed(2);
       if (toEl) toEl.textContent = bill.paid_by || 'the bill payer';
     } else {
       bar.style.display = 'none';
