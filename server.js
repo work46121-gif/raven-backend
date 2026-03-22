@@ -3974,14 +3974,32 @@ function updateEditSplitPreview() {
   const rows    = document.getElementById('edit-r-split-rows');
   if (!preview || !rows) return;
   if (checked.length === 0 || total === 0) { preview.style.display = 'none'; return; }
-  // Non-payers split the total; payer owes $0
-  const nonPayers = checked.filter(p => p.toLowerCase() !== paidBy);
-  const per = nonPayers.length > 0 ? total / nonPayers.length : 0;
+
+  // Get current splits from the receipt data
+  const r = _editReceiptId ? receiptsDataMap[_editReceiptId] : null;
+  const existingSplits = r ? (r.splits || {}) : {};
+
+  // Build a lookup of existing split amounts (case-insensitive)
+  const splitLookup = {};
+  Object.entries(existingSplits).forEach(([k, v]) => { splitLookup[k.toLowerCase()] = parseFloat(v) || 0; });
+
+  // Show all PEOPLE on the receipt (checked or not), using their actual split amount
+  // Payer always shows $0.00 (they paid, they don't owe themselves)
+  // Checked non-payers show their actual split amount from the data
+  // Unchecked people show $0.00
   preview.style.display = 'block';
-  rows.innerHTML = checked.map(p => {
-    const isPayer = p.toLowerCase() === paidBy;
-    const amt = isPayer ? '0.00' : per.toFixed(2);
-    const color = isPayer ? '#6E6B80' : '#30D158';
+  rows.innerHTML = PEOPLE.map(p => {
+    const pLower = p.toLowerCase();
+    const isPayer = pLower === paidBy;
+    const isChecked = checked.map(c => c.toLowerCase()).includes(pLower);
+    let amt, color;
+    if (isPayer) {
+      amt = '0.00'; color = '#6E6B80';
+    } else if (isChecked) {
+      amt = (splitLookup[pLower] || 0).toFixed(2); color = '#30D158';
+    } else {
+      return ''; // not on receipt, skip
+    }
     return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:13px">' +
       '<span style="color:#9896A8">' + p + (isPayer ? ' <span style="font-size:11px;color:#6E6B80">(paid)</span>' : '') + '</span>' +
       '<span style="color:' + color + ';font-weight:600">$' + amt + '</span></div>';
