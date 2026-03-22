@@ -1101,10 +1101,10 @@ ${items.length > 0 ? `
   <div class="sec-lbl">📋 Tap items you ordered</div>
   <div class="card" id="items-list">
     ${items.map(item => `
-    <div class="item-row" id="item-${item.id}" onclick="toggleClaim('${item.id}','${(item.name||'').replace(/'/g,"\'")}')">
+    <div class="item-row" id="item-${item.id}" data-item-id="${item.id}" data-item-name="${(item.name||'').replace(/"/g,'&quot;')}">
       <div class="item-check" id="check-${item.id}"></div>
       <div style="flex:1;min-width:0">
-        <div style="font-size:14px;font-weight:600">${item.name||'Item'}</div>
+        <div class="item-name-text" style="font-size:14px;font-weight:600">${item.name||'Item'}</div>
         <div id="claimers-${item.id}" style="font-size:11px;color:#6E6B80;margin-top:2px"></div>
       </div>
       <div style="font-size:15px;font-weight:700;color:#F0EEF8;font-family:monospace;flex-shrink:0">$${parseFloat(item.price||0).toFixed(2)}</div>
@@ -1174,7 +1174,15 @@ ${bill.receipt_image ? `
 const BID = ${JSON.stringify(billId)};
 const BILL_TOKEN = ${JSON.stringify(bill.share_token || '')};
 const BILL_URL = ${JSON.stringify(billUrl)};
+// Init myName from localStorage OR URL param
 let myName = localStorage.getItem('raven_bill_name_' + BID) || '';
+if (!myName) {
+  const _urlN = new URLSearchParams(window.location.search).get('name');
+  if (_urlN) {
+    myName = decodeURIComponent(_urlN);
+    localStorage.setItem('raven_bill_name_' + BID, myName);
+  }
+}
 let pollTimer = null;
 let lastState = null;
 
@@ -1637,14 +1645,50 @@ initName();
 refreshAll();
 loadC();
 
+// ── DELEGATED CLAIM HANDLER — works on all devices (mobile + desktop) ──
+// Handles both click and touchend on the items container
+(function() {
+  const container = document.getElementById('items-list');
+  if (!container) return;
+
+  function handleClaim(e) {
+    const row = e.target.closest('[data-item-id]');
+    if (!row) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const itemId = row.getAttribute('data-item-id');
+    const itemName = row.getAttribute('data-item-name') || '';
+    toggleClaim(itemId, itemName);
+  }
+
+  container.addEventListener('click', handleClaim);
+  container.addEventListener('touchend', function(e) {
+    // Only fire if not scrolling
+    const touch = e.changedTouches[0];
+    const startY = container._touchStartY || touch.clientY;
+    if (Math.abs(touch.clientY - startY) < 10) {
+      handleClaim(e);
+    }
+  }, { passive: false });
+  container.addEventListener('touchstart', function(e) {
+    container._touchStartY = e.touches[0].clientY;
+  }, { passive: true });
+})();
+
 // Auto-poll every 5 seconds
 pollTimer = setInterval(refreshAll, 2000);
 
 // Stop polling when tab hidden, resume when visible
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { clearInterval(pollTimer); }
-  else { _lastStateHash = ''; _firstRender = true; refreshAll(); pollTimer = setInterval(refreshAll, 2000); }
+  if (document.hidden) { clearInterval(pollTimer); pollTimer = null; }
+  else { _lastStateHash = ''; _firstRender = true; refreshAll(); clearInterval(pollTimer); pollTimer = setInterval(refreshAll, 2000); }
 });
+// Watchdog: if poll timer dies, restart it
+setInterval(function() {
+  if (!pollTimer) { _lastStateHash = ''; _firstRender = true; pollTimer = setInterval(refreshAll, 2000); refreshAll(); }
+}, 5000);
+// Also refresh when window gets focus (user switches back to tab)
+window.addEventListener('focus', function() { _lastStateHash = ''; _firstRender = true; refreshAll(); });
 
 // Enter key on name input
 document.getElementById('name-input').addEventListener('keydown', e => {
@@ -3674,16 +3718,18 @@ function updateEven() {
   const discount=parseFloat((document.getElementById('r-discount')||{}).value)||0;
   const net=Math.max(0,v-discount);
   const paidBy=(document.getElementById('r-paidby')||{}).value||'';
-  const paidByL=paidBy.toLowerCase();
-  const debtors=PEOPLE.filter(p=>p.toLowerCase()!==paidByL);
-  const per=debtors.length>0?net/debtors.length:(PEOPLE.length>0?net/PEOPLE.length:0);
-  document.getElementById('r-even-prev').style.display = net>0?'block':'none';
+  const paidByT = (paidBy||'').trim();
+  const paidByL = paidByT.toLowerCase();
+  // Exclude payer — all non-payers split evenly
+  const debtors = paidByT ? PEOPLE.filter(p => p.trim().toLowerCase() !== paidByL) : [...PEOPLE];
+  const per = debtors.length > 0 ? net / debtors.length : (PEOPLE.length > 0 ? net / PEOPLE.length : 0);
+  document.getElementById('r-even-prev').style.display = net > 0 ? 'block' : 'none';
   PEOPLE.forEach(p => {
     const id = 'ep-'+p.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');
     const el = document.getElementById(id);
     if (!el) return;
-    const isPayer = paidBy && p.toLowerCase()===paidByL;
-    el.textContent = isPayer ? 'paid 💳' : '$'+per.toFixed(2);
+    const isPayer = paidByT && p.trim().toLowerCase() === paidByL;
+    el.textContent = isPayer ? 'paid 💳' : '$' + per.toFixed(2);
     el.style.color = isPayer ? '#A855F7' : '#30D158';
   });
 }
@@ -3929,10 +3975,11 @@ async function saveReceipt() {
     const discount=parseFloat((document.getElementById('r-discount')||{}).value)||0;
     if(total<=0){btn.textContent='Save Receipt';btn.disabled=false;toast('Enter a total amount',false);return;}
     const finalTotal = Math.max(0, total - discount);
-    const paidByL=(paidBy||'').toLowerCase();
-    const debtors=paidBy?PEOPLE.filter(p=>p.toLowerCase()!==paidByL):PEOPLE;
-    const per=debtors.length>0?finalTotal/debtors.length:finalTotal/PEOPLE.length;
-    PEOPLE.forEach(p=>{splits[p]=(paidBy&&p.toLowerCase()===paidByL)?0:per;});
+    const paidByT2=(paidBy||'').trim();
+    const paidByL2=paidByT2.toLowerCase();
+    const debtors2=paidByT2?PEOPLE.filter(p=>p.trim().toLowerCase()!==paidByL2):PEOPLE;
+    const per=debtors2.length>0?finalTotal/debtors2.length:finalTotal/PEOPLE.length;
+    PEOPLE.forEach(p=>{splits[p]=(paidByT2&&p.trim().toLowerCase()===paidByL2)?0:per;});
     total = finalTotal;
   } else {
     PEOPLE.forEach(p=>{splits[p]=0;});
