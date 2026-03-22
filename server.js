@@ -2295,7 +2295,7 @@ app.get('/trip/:tripId', async (req, res) => {
           ${thumbHtml}
           <div style="flex:1;min-width:0">
             <div style="font-weight:700;font-size:15px;color:#F0EEF8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.name||'Receipt')}</div>
-            <div style="font-size:11px;color:#6E6B80;margin-top:2px">${dateStr}${payer ? ' · 💳 ' + esc(payer) + ' paid' : ''} · ${splitterCount} ${splitterCount===1?'person':'people'}</div>
+            <div style="font-size:11px;color:#6E6B80;margin-top:2px">${dateStr} · ${splitterCount} ${splitterCount===1?'person':'people'}</div>            ${payer ? '<div style="display:inline-flex;align-items:center;gap:4px;margin-top:3px;padding:2px 8px;background:rgba(168,85,247,0.12);border:1px solid rgba(168,85,247,0.25);border-radius:6px"><span style="font-size:10px;color:#A855F7;font-weight:700">💳 Paid by ' + esc(payer) + '</span></div>' : ''}
             ${splitEntries.length > 0 ? '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">' + splitPillsHtml + '</div>' : ''}
           </div>
         </div>
@@ -2796,31 +2796,112 @@ document.addEventListener('DOMContentLoaded', () => {
   // Build saved receipts photo gallery — runs after DOM ready so it works on mobile too
   try { buildSavedReceiptsGallery(); } catch(e) { console.error('Gallery error:', e); }
 
-  // Background poll — silently reload if receipts or settled state changed
-  let _tripHash = '';
+  // ── REALTIME — Supabase live sync so all members see changes instantly ──
   const _tripId = ${JSON.stringify(tripId)};
   const _tripToken = ${JSON.stringify(trip.share_token || '')};
-  async function pollTripChanges() {
-    try {
-      const r = await fetch('/trip-info/' + _tripId + '?token=' + encodeURIComponent(_tripToken));
-      const d = await r.json();
-      if (!d) return;
-      const newHash = (d.receipt_count || 0) + ':' + (d.total || 0) + ':' + (d.settled_hash || '');
-      if (_tripHash && newHash !== _tripHash) {
-        // Data changed — reload to show fresh server-rendered state
-        { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }
-      }
-      _tripHash = newHash;
-    } catch(e) {}
+  let _realtimeDb = null;
+  let _realtimeChannel = null;
+  let _reloadPending = false;
+  let _lastActivity = Date.now();
+
+  function doLiveReload() {
+    if (_reloadPending) return; // debounce
+    _reloadPending = true;
+    // Show a subtle live-update toast before reloading
+    toast('🔄 Updating...', true);
+    setTimeout(() => {
+      const _u = new URL(window.location.href);
+      _u.searchParams.set('_nc', Date.now());
+      window.location.href = _u.toString();
+    }, 600);
   }
-  // Poll every 8 seconds (less aggressive than bill page since it triggers reload)
-  setInterval(pollTripChanges, 8000);
-  // Also reload on tab focus if we've been away
-  let _tripHidden = false;
+
+  async function initRealtime() {
+    try {
+      // Load supabase-js if not already loaded (reuse chat's copy)
+      if (!window.supabase || !window.supabase.createClient) {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+          s.onload = resolve; s.onerror = reject;
+          document.head.appendChild(s);
+        });
+      }
+      _realtimeDb = window.supabase.createClient(
+        'https://ffjpzkpdumdcwnakpaje.supabase.co',
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmanB6a3BkdW1kY3duYWtwYWplIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5ODc4OTcsImV4cCI6MjA4ODU2Mzg5N30.JtDLVu4K1TJ8emcN_mvSHBu6e0y8-jPQv-ypoc9p0RU'
+      );
+
+      // Subscribe to trip_receipts changes for this trip
+      _realtimeChannel = _realtimeDb
+        .channel('trip-hub-' + _tripId)
+        .on('postgres_changes', {
+          event: '*', schema: 'public', table: 'trip_receipts',
+          filter: 'trip_id=eq.' + _tripId
+        }, function(payload) {
+          console.log('[Realtime] trip_receipts change:', payload.eventType);
+          doLiveReload();
+        })
+        .on('postgres_changes', {
+          event: 'UPDATE', schema: 'public', table: 'trips',
+          filter: 'id=eq.' + _tripId
+        }, function(payload) {
+          // Only reload for meaningful changes (not just total recalc)
+          const n = payload.new || {};
+          const o = payload.old || {};
+          const changed = JSON.stringify(n.settled_people) !== JSON.stringify(o.settled_people)
+            || JSON.stringify(n.people) !== JSON.stringify(o.people)
+            || n.name !== o.name;
+          if (changed) {
+            console.log('[Realtime] trips change (meaningful)');
+            doLiveReload();
+          }
+        })
+        .on('postgres_changes', {
+          event: '*', schema: 'public', table: 'trip_comments',
+          filter: 'trip_id=eq.' + _tripId
+        }, function(payload) {
+          console.log('[Realtime] trip_comments change:', payload.eventType);
+          doLiveReload();
+        })
+        .subscribe(function(status) {
+          console.log('[Realtime] channel status:', status);
+          if (status === 'SUBSCRIBED') {
+            console.log('[Realtime] ✅ Live sync active for trip', _tripId);
+          }
+        });
+
+    } catch(e) {
+      console.warn('[Realtime] Could not init:', e.message);
+      // Fallback to polling if realtime fails
+      setInterval(async function() {
+        try {
+          const r = await fetch('/trip-info/' + _tripId + '?token=' + encodeURIComponent(_tripToken));
+          const d = await r.json();
+          if (d && d._hash) {
+            if (window._fallbackHash && d._hash !== window._fallbackHash) doLiveReload();
+            window._fallbackHash = d._hash;
+          }
+        } catch(e2) {}
+      }, 15000);
+    }
+  }
+
+  // Stop realtime when tab hidden, resume on focus
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) { _tripHidden = true; }
-    else if (_tripHidden) { _tripHidden = false; pollTripChanges(); }
+    if (document.hidden) {
+      if (_realtimeChannel && _realtimeDb) {
+        _realtimeDb.removeChannel(_realtimeChannel);
+        _realtimeChannel = null;
+      }
+    } else {
+      // Reload once on return (data may have changed while away)
+      doLiveReload();
+    }
   });
+
+  // Init realtime after a short delay so page renders first
+  setTimeout(initRealtime, 1000);
 
   // Wire up "Mark as Settled" buttons via event delegation — safe for any name
   document.addEventListener('click', function(e) {
@@ -5267,11 +5348,14 @@ app.get('/trip-info/:tripId', async (req, res) => {
   try {
     const { tripId } = req.params;
     const { token } = req.query;
-    const { data: trip } = await supabase.from('trips').select('name, invite_token, people, total, receipt_count, settled_people').eq('id', tripId).single();
+    const { data: trip } = await supabase.from('trips').select('name, invite_token, share_token, people, total, receipt_count, settled_people').eq('id', tripId).single();
     if (!trip) return res.json({ success: false });
-    if (trip.invite_token !== token) return res.json({ success: false });
+    if (trip.invite_token !== token && trip.share_token !== token) return res.json({ success: false });
     const people = Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people || '[]');
-    const settledRaw = trip.settled_people || []; const settledHash = JSON.stringify(Array.isArray(settledRaw) ? settledRaw : (typeof settledRaw === 'string' ? JSON.parse(settledRaw) : [])); res.json({ success: true, name: trip.name, people_count: people.length, total: trip.total || 0, receipt_count: trip.receipt_count || 0, settled_hash: settledHash });
+    const settledRaw = trip.settled_people || []; 
+    const settledHash = JSON.stringify(Array.isArray(settledRaw) ? settledRaw : (typeof settledRaw === 'string' ? JSON.parse(settledRaw) : []));
+    const _hash = (trip.receipt_count || 0) + ':' + (trip.total || 0) + ':' + settledHash.length;
+    res.json({ success: true, name: trip.name, people_count: people.length, total: trip.total || 0, receipt_count: trip.receipt_count || 0, settled_hash: settledHash, _hash });
   } catch(err) { res.json({ success: false }); }
 });
 
