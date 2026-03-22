@@ -2151,6 +2151,10 @@ app.get('/trip/:tripId', async (req, res) => {
     // Entries excluding the payer (they don't owe themselves)
     const splitEntries = Object.entries(splits).filter(([p,a]) => parseFloat(a) > 0 && (!payer || p.toLowerCase() !== payer.toLowerCase()));
     const allEntries   = Object.entries(splits).filter(([,a]) => parseFloat(a) > 0);
+    // splitterCount includes the payer (their share may be $0 since they paid)
+    const splitterCount = payer
+      ? Math.max(allEntries.length + 1, Object.keys(splits).length)  // +1 for payer
+      : allEntries.length;
     const total = parseFloat(r.total||0);
     const dateStr = new Date(r.created_at).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'America/New_York'});
     const receiptId = 'receipt-' + rIdx;
@@ -2212,7 +2216,7 @@ app.get('/trip/:tripId', async (req, res) => {
               <div style="height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;margin-bottom:${payer?'10px':'0'}">
                 <div style="height:100%;width:${pct}%;background:${color};border-radius:2px"></div>
               </div>
-              ${(payer && !(settledCredits[person.toLowerCase()]>0 && Math.max(0,(totals[person]||0)-(settledCredits[person.toLowerCase()]||0))<=0.005)) ? '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px;flex-wrap:wrap">' + payButtonsHtml(payer, amount) + '<button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" style="padding:7px 14px;background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.2);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✓ Mark as Paid</button></div>' : (payer && settledCredits[person.toLowerCase()]>0) ? '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06)"><span style="font-size:11px;color:#30D158">✅ Settled</span></div>' : ''}
+              ${(payer && !(settledCredits[person.toLowerCase()]>0 && Math.max(0,(totals[person]||0)-(settledCredits[person.toLowerCase()]||0))<=0.005)) ? '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px;flex-wrap:wrap">' + payButtonsHtml(payer, amount) + '<button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" style="padding:7px 14px;background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.2);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✓ Mark as Paid</button></div>' : (payer && settledCredits[person.toLowerCase()]>0) ? '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px"><button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" data-settled="1" style="padding:7px 14px;background:rgba(48,209,88,0.15);border:1px solid rgba(48,209,88,0.4);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✅ Settled · tap to undo</button></div>' : ''}
             </div>`;
           }).join('')}
         </div>
@@ -2245,7 +2249,7 @@ app.get('/trip/:tripId', async (req, res) => {
             <span style="font-family:'Bebas Neue',sans-serif;font-size:24px;color:#30D158;letter-spacing:0.03em">$${total.toFixed(2)}</span>
           </div>
           <div style="display:flex;justify-content:space-between;font-size:11px;color:#6E6B80">
-            <span>${allEntries.length} ${allEntries.length===1?'person':'people'} splitting${payer?` · paid by ${esc(payer)}`:''}</span>
+            <span>${splitterCount} ${splitterCount===1?'person':'people'} splitting${payer?` · paid by ${esc(payer)}`:''}</span>
             <span>${dateStr}</span>
           </div>
         </div>
@@ -2262,7 +2266,7 @@ app.get('/trip/:tripId', async (req, res) => {
           ${thumbHtml}
           <div style="flex:1;min-width:0">
             <div style="font-weight:700;font-size:15px;color:#F0EEF8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.name||'Receipt')}</div>
-            <div style="font-size:11px;color:#6E6B80;margin-top:2px">${dateStr}${payer ? ' · 💳 ' + esc(payer) + ' paid' : ''} · ${allEntries.length} ${allEntries.length===1?'person':'people'}</div>
+            <div style="font-size:11px;color:#6E6B80;margin-top:2px">${dateStr}${payer ? ' · 💳 ' + esc(payer) + ' paid' : ''} · ${splitterCount} ${splitterCount===1?'person':'people'}</div>
             ${splitEntries.length > 0 ? '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">' + splitPillsHtml + '</div>' : ''}
           </div>
         </div>
@@ -3307,6 +3311,43 @@ function saveReceiptPaidMap(map) {
 
 function markReceiptItemPaid(personName, receiptId, amount, btn) {
   if (!btn) return;
+
+  // ── UNSETTLE path: button is currently showing "✅ Settled · tap to undo" ──
+  if (btn.dataset.settled === '1') {
+    if (btn.dataset.confirming === 'unsettle') {
+      // Confirmed unsettle — remove from paid map
+      const map = getReceiptPaidMap();
+      const key = personName + '::' + receiptId;
+      delete map[key];
+      saveReceiptPaidMap(map);
+      // Revert button to "Mark as Paid" state
+      btn.textContent = '✓ Mark as Paid';
+      btn.style.background = 'rgba(48,209,88,0.06)';
+      btn.style.borderColor = 'rgba(48,209,88,0.2)';
+      btn.disabled = false;
+      btn.dataset.settled = '';
+      btn.dataset.confirming = '';
+      updatePersonBalanceDisplay(personName);
+      toast(personName + ' unsettled ↩', true);
+      return;
+    }
+    // First tap — ask to confirm
+    btn.dataset.confirming = 'unsettle';
+    btn.textContent = '⚠️ Tap again to unsettle';
+    btn.style.borderColor = 'rgba(255,107,53,0.5)';
+    btn.style.color = '#FF6B35';
+    setTimeout(() => {
+      if (btn.dataset.confirming === 'unsettle') {
+        btn.dataset.confirming = '';
+        btn.textContent = '✅ Settled · tap to undo';
+        btn.style.borderColor = 'rgba(48,209,88,0.4)';
+        btn.style.color = '#30D158';
+      }
+    }, 3000);
+    return;
+  }
+
+  // ── SETTLE path: normal "Mark as Paid" confirm flow ──
   if (btn.dataset.confirming === '1') {
     // Confirmed — mark this receipt as paid for this person
     const map = getReceiptPaidMap();
@@ -3315,13 +3356,14 @@ function markReceiptItemPaid(personName, receiptId, amount, btn) {
       map[key] = parseFloat(amount) || 0;
       saveReceiptPaidMap(map);
     }
-    // Update button
-    btn.textContent = '✅ Paid';
+    // Update button to settled state
+    btn.textContent = '✅ Settled · tap to undo';
     btn.style.background = 'rgba(48,209,88,0.15)';
     btn.style.borderColor = 'rgba(48,209,88,0.4)';
-    btn.disabled = true;
+    btn.style.color = '#30D158';
+    btn.disabled = false;
+    btn.dataset.settled = '1';
     btn.dataset.confirming = '';
-    // Recalculate and update this person's top-level balance display
     updatePersonBalanceDisplay(personName);
     toast(personName + ' paid $' + parseFloat(amount).toFixed(2) + ' ✓', true);
     return;
@@ -3374,10 +3416,13 @@ function updatePersonBalanceDisplay(personName) {
   Object.keys(map).forEach(key => {
     const btn = document.querySelector('[data-receipt-paid-key="' + key + '"]');
     if (btn) {
-      btn.textContent = '✅ Paid';
+      // Restore as "Settled · tap to undo" — clickable so they can unsettle
+      btn.textContent = '✅ Settled · tap to undo';
       btn.style.background = 'rgba(48,209,88,0.15)';
       btn.style.borderColor = 'rgba(48,209,88,0.4)';
-      btn.disabled = true;
+      btn.style.color = '#30D158';
+      btn.disabled = false;
+      btn.dataset.settled = '1';
     }
   });
   // Update all person balances
