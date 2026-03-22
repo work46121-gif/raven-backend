@@ -1984,6 +1984,13 @@ app.get('/trip/:tripId', async (req, res) => {
   }, 0) * 100) / 100;
   // Total spend = sum of all receipt totals (what was actually spent)
   const totalSpend = (receipts||[]).reduce((s, r) => s + parseFloat(r.total||0), 0);
+  // Count people who actually owe money (rawOwed > 0) and how many of those are settled
+  const debtorCount  = people.filter(p => (totals[p] || 0) > 0.02).length;
+  const settledCount = people.filter(p => {
+    const raw = totals[p] || 0;
+    const credit = settledCredits[p.toLowerCase()] || 0;
+    return raw > 0.02 && Math.max(0, raw - credit) <= 0.02;
+  }).length;
 
   const baseUrl   = process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : `https://raven-backend-production-fb1f.up.railway.app`;
   const frontendUrl = 'https://ravensplit.com';
@@ -2414,7 +2421,10 @@ ${coverHTML}
     <span style="width:3px;height:3px;border-radius:50%;background:rgba(255,255,255,0.12)"></span>
     <span>${(receipts||[]).length} receipt${(receipts||[]).length!==1?'s':''}</span>
     <span style="width:3px;height:3px;border-radius:50%;background:rgba(255,255,255,0.12)"></span>
-    <span style="color:#30D158;font-weight:600">$${totalSpend.toFixed(2)} total</span>
+    ${grandTotal > 0
+      ? `<span style='color:#FF9A3C;font-weight:600'>$${grandTotal.toFixed(2)} outstanding</span>`
+      : `<span style='color:#30D158;font-weight:600'>All settled ✓</span>`
+    }
   </div>
   <div style="display:flex;align-items:center;margin-top:14px;margin-bottom:6px;position:relative">
     ${avatarRow}
@@ -2432,10 +2442,16 @@ ${coverHTML}
     ${owesRows}
     <div id="outstanding-footer" data-total-spend="${totalSpend.toFixed(2)}" style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:${grandTotal>0?'rgba(255,107,53,0.04)':'rgba(48,209,88,0.04)'};border-top:1px solid ${grandTotal>0?'rgba(255,107,53,0.15)':'rgba(48,209,88,0.12)'}">
       <div>
-        ${grandTotal===0&&totalSpend>0
-          ? `<div style='display:flex;align-items:center;gap:6px'><span style='font-size:13px'>✅</span><div><div id='outstanding-sublabel' style='font-size:12px;font-weight:700;color:#30D158'>Everyone settled up</div><div style='font-size:10px;color:#6E6B80;margin-top:1px'>Total spent on trip: <span style='color:#F0EEF8;font-weight:600'>$${totalSpend.toFixed(2)}</span></div></div></div>`
-          : `<div id="outstanding-sublabel" style="font-size:10px;color:#6E6B80">$${totalSpend.toFixed(2)} total spend</div>`
-        }
+        <div id='outstanding-sublabel' style='display:flex;align-items:center;gap:7px'>
+          ${settledCount > 0 && debtorCount > 0
+            ? `<div style='width:18px;height:18px;border-radius:50%;background:${settledCount===debtorCount?'rgba(48,209,88,0.2)':'rgba(255,107,53,0.15)'};display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0'>${settledCount===debtorCount?'✓':'!'}</div>`
+            : `<div style='width:18px;height:18px;border-radius:50%;background:rgba(110,107,128,0.15);display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;color:#6E6B80'>—</div>`
+          }
+          <div>
+            <div style='font-size:12px;font-weight:700;color:${settledCount===debtorCount&&debtorCount>0?"#30D158":"#9896A8"}'>${settledCount}/${debtorCount} Member${debtorCount!==1?'s':''} settled up</div>
+            <div style='font-size:10px;color:#6E6B80;margin-top:1px'>$${totalSpend.toFixed(2)} total spent on trip</div>
+          </div>
+        </div>
       </div>
       <div style="text-align:right">
         <div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:${grandTotal>0?'#FF9A3C':'#9896A8'};margin-bottom:2px" id="outstanding-label">Outstanding</div>
@@ -3447,20 +3463,33 @@ function updatePersonBalanceDisplay(personName) {
     outAmt.style.color = grandOutstanding > 0.005 ? '#FF9A3C' : '#30D158';
   }
   if (outLabel) outLabel.style.color = grandOutstanding > 0.005 ? '#FF9A3C' : '#9896A8';
-  const footerEl = document.getElementById('outstanding-footer');
-  const ts = footerEl ? footerEl.getAttribute('data-total-spend') : '';
-  if (outSub && grandOutstanding <= 0.02) {
-    outSub.style.color = '#30D158';
-    outSub.style.fontSize = '12px';
-    outSub.style.fontWeight = '700';
-    outSub.textContent = 'Everyone settled up';
-    if (!outSub.parentElement.querySelector('.settled-spend-line') && ts) {
-      const line = document.createElement('div');
-      line.className = 'settled-spend-line';
-      line.style.cssText = 'font-size:10px;color:#6E6B80;margin-top:1px';
-      line.innerHTML = 'Total spent on trip: <span style="color:#F0EEF8;font-weight:600">$' + ts + '</span>';
-      outSub.after(line);
+  // Update X/Y Members settled up footer
+  if (outSub) {
+    // Recount settled vs debtor from DOM
+    let clientDebtors = 0, clientSettled = 0;
+    document.querySelectorAll('[data-raw-owed]').forEach(el => {
+      const rw = parseFloat(el.getAttribute('data-raw-owed')) || 0;
+      if (rw <= 0.02) return; // not a debtor
+      clientDebtors++;
+      const rowEl = el.closest('[id^="row-"]');
+      if (!rowEl) return;
+      const nameEl = rowEl.querySelector('[data-open-profile]');
+      const pName = nameEl ? nameEl.getAttribute('data-open-profile') : null;
+      if (!pName) return;
+      let paid = 0;
+      Object.entries(map).forEach(([k, v]) => { if (k.startsWith(pName + '::')) paid += v; });
+      if (Math.max(0, rw - paid) <= 0.02) clientSettled++;
+    });
+    const allSettled = clientDebtors > 0 && clientSettled === clientDebtors;
+    const iconEl = outSub.previousElementSibling;
+    if (iconEl) {
+      iconEl.style.background = allSettled ? 'rgba(48,209,88,0.2)' : 'rgba(255,107,53,0.15)';
+      iconEl.textContent = allSettled ? '✓' : '!';
     }
+    const labelEl = outSub.querySelector('div:first-child');
+    const label = clientDebtors > 0 ? clientSettled + '/' + clientDebtors + ' Member' + (clientDebtors !== 1 ? 's' : '') + ' settled up' : '0/0 Members settled up';
+    if (labelEl) { labelEl.textContent = label; labelEl.style.color = allSettled ? '#30D158' : '#9896A8'; }
+    else outSub.textContent = label;
   }
 }
 
