@@ -2753,7 +2753,7 @@ ${coverHTML}
         </select>
       </div>
       <div>
-        <div style="font-size:12px;color:#6E6B80;margin-bottom:8px;font-weight:600">Photo — AI scans automatically</div>
+        <div style="font-size:12px;color:#6E6B80;margin-bottom:8px;font-weight:600">Photo — RAVEN scans automatically</div>
         <div id="r-drop" style="border:2px dashed rgba(48,209,88,0.25);border-radius:12px;padding:20px;text-align:center;cursor:pointer">
           <div id="r-empty" style="color:#6E6B80;font-size:13px">📸 Tap to upload receipt photo</div>
           <img id="r-preview" style="display:none;max-width:100%;border-radius:8px;max-height:220px;object-fit:contain">
@@ -4577,7 +4577,7 @@ function tripPhoto(file) {
 
       const st=document.getElementById('r-scan-status');
       st.style.display='block';
-      st.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:8px"><div class="spinner"></div><span style="font-size:13px;color:#C084FC;font-weight:600">Waking up AI server...</span></div>';
+      st.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:8px"><div class="spinner"></div><span style="font-size:13px;color:#C084FC;font-weight:600">RAVEN is starting up...</span></div>';
 
       // Wake server then scan with retry (handles Railway cold starts)
       async function doScan(attempt) {
