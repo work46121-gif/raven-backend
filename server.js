@@ -2333,7 +2333,7 @@ app.get('/trip/:tripId', async (req, res) => {
   const owesRows = people.map((p, i) => {
     const rawOwed = totals[p] || 0;
     const settledCredit = Math.min(settledCredits[p.toLowerCase()] || 0, rawOwed); // cap at rawOwed — prevents 999999 sentinel over-settling
-    const amtOwed = Math.round(Math.max(0, rawOwed - settledCredit) * 100) / 100;
+    let amtOwed = Math.round(Math.max(0, rawOwed - settledCredit) * 100) / 100;
     const isSettled = rawOwed > 0.02 && amtOwed <= 0.02; // fully settled (allow up to 2¢ rounding drift)
     const isPartiallySettled = settledCredit > 0 && amtOwed > 0.02;
     const amtReceivable = owedTo[p] || 0;
@@ -2399,7 +2399,11 @@ app.get('/trip/:tripId', async (req, res) => {
         }
       }
     }
-    const payerEntries = isSettled ? [] : Object.entries(owesPerPayer);
+    const payerEntries = Object.entries(owesPerPayer);
+    const effectiveAmtOwed = Math.round(payerEntries.reduce((sum, [, amt]) => sum + (parseFloat(amt) || 0), 0) * 100) / 100;
+    const effectiveIsSettled = rawOwed > 0.02 && effectiveAmtOwed <= 0.02;
+    const effectiveIsPartiallySettled = settledCredit > 0 && effectiveAmtOwed > 0.02;
+    const effectiveIsCreditor = amtReceivable > 0 && effectiveAmtOwed === 0;
 
     const personId = 'person-' + p.replace(/[^a-z0-9]/gi,'_');
 
@@ -2420,29 +2424,29 @@ app.get('/trip/:tripId', async (req, res) => {
     // "Mark as Paid" button for the whole person (settles all their debt at once)
     const markPaidBtnHtml = payerEntries.length > 0
       ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.06)">
-          <button class="mark-settled-btn" data-person="${personId}" data-name="${esc(p)}" id="markpaid-${personId}" data-settle-amount="${amtOwed.toFixed(2)}" style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:9px;color:#30D158;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer">✓ Settle balance · $${amtOwed.toFixed(2)}</button>
+          <button class="mark-settled-btn" data-person="${personId}" data-name="${esc(p)}" id="markpaid-${personId}" data-settle-amount="${effectiveAmtOwed.toFixed(2)}" style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:9px;color:#30D158;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer">✓ Settle balance · $${effectiveAmtOwed.toFixed(2)}</button>
         </div>`
       : '';
 
     // data-is-settled used for accurate settled count
-    return `<div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)" id="row-${personId}" data-is-settled="${isSettled?'1':'0'}" data-is-debtor="${rawOwed>0.02?'1':'0'}">
+    return `<div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)" id="row-${personId}" data-is-settled="${effectiveIsSettled?'1':'0'}" data-is-debtor="${effectiveAmtOwed>0.02?'1':'0'}">
       <div style="display:flex;align-items:center;justify-content:space-between;${(payerEntries.length>0&&!isSettled)?'margin-bottom:4px':''}">
         <div style="display:flex;align-items:center;gap:10px;cursor:pointer" data-open-profile="${esc(p)}" title="View ${esc(p)}'s profile">
           <div data-person-avatar="${esc(p)}" style="width:34px;height:34px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;overflow:hidden">${esc(p[0].toUpperCase())}</div>
           <div>
             <div style="font-weight:600;font-size:14px;display:flex;align-items:center;gap:6px">${esc(p)} <span style="font-size:11px;color:#6E6B80;font-weight:400">›</span></div>
-            <div class="person-status-display" style="font-size:11px;color:${isSettled?'#30D158':amtOwed>0?'#FF9A3C':amtReceivable>0?'#A855F7':'#30D158'}">
-              ${isSettled ? '✅ all settled' : amtOwed>0 ? (isPartiallySettled ? 'still owes $' + amtOwed.toFixed(2) : 'owes $' + amtOwed.toFixed(2)) : amtReceivable>0 ? 'collecting $' + amtReceivable.toFixed(2) : 'all settled ✓'}
+            <div class="person-status-display" style="font-size:11px;color:${effectiveIsSettled?'#30D158':effectiveAmtOwed>0?'#FF9A3C':effectiveIsCreditor?'#A855F7':'#30D158'}">
+              ${effectiveIsSettled ? '✅ all settled' : effectiveAmtOwed>0 ? (effectiveIsPartiallySettled ? 'still owes $' + effectiveAmtOwed.toFixed(2) : 'owes $' + effectiveAmtOwed.toFixed(2)) : effectiveIsCreditor ? 'collecting $' + amtReceivable.toFixed(2) : 'all settled ✓'}
             </div>
           </div>
         </div>
         <div style="text-align:right">
-          <div class="person-balance-display" data-original-owed="${rawOwed.toFixed(2)}" data-raw-owed="${amtOwed.toFixed(2)}" style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${isSettled?'#30D158':amtOwed>0?'#FF9A3C':amtReceivable>0?'#A855F7':'#9896A8'}">
-            ${isSettled ? '$0 ✅' : amtOwed>0 ? '-$'+amtOwed.toFixed(2) : amtReceivable>0 ? '+$'+amtReceivable.toFixed(2) : '$0.00'}
+          <div class="person-balance-display" data-original-owed="${rawOwed.toFixed(2)}" data-raw-owed="${effectiveAmtOwed.toFixed(2)}" style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${effectiveIsSettled?'#30D158':effectiveAmtOwed>0?'#FF9A3C':effectiveIsCreditor?'#A855F7':'#9896A8'}">
+            ${effectiveIsSettled ? '$0 ✅' : effectiveAmtOwed>0 ? '-$'+effectiveAmtOwed.toFixed(2) : effectiveIsCreditor ? '+$'+amtReceivable.toFixed(2) : '$0.00'}
           </div>
         </div>
       </div>
-      ${isSettled
+      ${effectiveIsSettled
         ? `<div style="margin-top:6px;display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(48,209,88,0.07);border:1px solid rgba(48,209,88,0.2);border-radius:8px"><span style="font-size:13px;color:#30D158;font-weight:600">✅ Fully Settled</span></div>`
         : payerEntries.length>0
           ? `<div class="client-pay-block">${payBtnsHtml}${markPaidBtnHtml}</div>`
@@ -3271,11 +3275,16 @@ function getEasternDateStamp(input) {
   return d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 }
 
+function getReminderLockKey() {
+  return 'raven_trip_reminder_sent_' + TRIP_ID;
+}
+
 function initTripReminderUI() {
   const btn = document.getElementById('trip-reminder-btn');
   const text = document.getElementById('trip-reminder-text');
   if (!btn || !text) return;
-  const sentToday = TRIP_REMINDER_LAST_SENT_AT && getEasternDateStamp(TRIP_REMINDER_LAST_SENT_AT) === getEasternDateStamp();
+  const localReminderStamp = sessionStorage.getItem(getReminderLockKey()) || '';
+  const sentToday = (TRIP_REMINDER_LAST_SENT_AT && getEasternDateStamp(TRIP_REMINDER_LAST_SENT_AT) === getEasternDateStamp()) || localReminderStamp === getEasternDateStamp();
   if (sentToday) {
     btn.disabled = true;
     btn.style.opacity = '0.55';
@@ -3303,11 +3312,11 @@ async function sendTripReminder() {
     const d = await r.json();
     if (d.success) {
       if ((d.sent || 0) > 0) {
+        sessionStorage.setItem(getReminderLockKey(), getEasternDateStamp());
         btn.style.opacity = '0.55';
         btn.style.cursor = 'not-allowed';
         if (text) text.textContent = d.message || 'Reminder sent. The bell will unlock again tomorrow.';
         toast('🔔 Reminder sent to ' + (d.sent || 0) + ' member' + ((d.sent || 0) === 1 ? '' : 's'), true);
-        setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 1200);
       } else {
         btn.disabled = false;
         btn.style.cursor = 'pointer';
