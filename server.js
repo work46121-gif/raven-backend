@@ -3280,7 +3280,7 @@ function initTripReminderUI() {
     btn.disabled = true;
     btn.style.opacity = '0.55';
     btn.style.cursor = 'not-allowed';
-    text.textContent = 'Today\'s reminder has already been sent. You can send another tomorrow.';
+    text.textContent = "Today's reminder has already been sent. You can send another tomorrow.";
     return;
   }
   btn.addEventListener('click', sendTripReminder);
@@ -6109,8 +6109,7 @@ app.post('/trip/:tripId/send-reminder', async (req, res) => {
               from: 'RAVEN <support@ravensplit.com>',
               to: [email],
               subject: `🔔 RAVEN reminder: ${debtor.amount.toFixed(2)} due for ${trip.name}`,
-              html,
-              subject: `RAVEN billing reminder: ${debtor.amount.toFixed(2)} due for ${trip.name}`
+              html
             })
           });
           const rd = await r.json();
