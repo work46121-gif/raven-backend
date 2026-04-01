@@ -2316,7 +2316,7 @@ app.get('/trip/:tripId', async (req, res) => {
         ? `<div style="font-size:11px;color:#9896A8;margin-top:6px">Friendly reminder: all bills are due by ${new Date(trip.due_date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}.</div>`
         : '';
       countdownHTML = isCompleted
-        ? `<div style="background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.3);border-radius:16px;padding:16px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:700;margin-bottom:4px">✅ Trip Completed</div><div style="font-size:12px;color:#6E6B80">${tripDateLabel} · ${ago} day${ago!==1?'s':''} ago</div>${dueDateMsg}</div>`
+        ? `<div style="background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.3);border-radius:16px;padding:16px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:700;margin-bottom:4px">✅ Trip Completed</div><div style="font-size:12px;color:#6E6B80">Started ${tripDateLabel}${trip.end_date ? ' · ended ' + new Date(trip.end_date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}) : ''}</div><div style="font-size:11px;color:#6E6B80;margin-top:4px">${ago} day${ago!==1?'s':''} since the trip wrapped up</div>${dueDateMsg}</div>`
         : isActive
           ? `<div style="background:linear-gradient(135deg,rgba(48,209,88,0.1),rgba(255,193,7,0.06));border:1px solid rgba(48,209,88,0.24);border-radius:16px;padding:18px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:700;margin-bottom:4px">🟢 Trip is Active</div><div style="font-size:12px;color:#6E6B80">From ${tripDateLabel}${trip.end_date ? ' through ' + new Date(trip.end_date+'T12:00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}) : ''}</div>${dueDateMsg}</div>`
           : `<div style="background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.18);border-radius:16px;padding:16px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:600">✅ Trip was ${ago>0?ago+' day'+(ago!==1?'s':'')+' ago':'today'} · ${tripDateLabel}</div>${dueDateMsg}</div>`;
@@ -6095,7 +6095,7 @@ app.post('/trip/:tripId/send-reminder', async (req, res) => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.RESEND_API_KEY}` },
             body: JSON.stringify({
-              from: 'RAVEN <reminders@ravensplit.com>',
+              from: 'RAVEN <support@ravensplit.com>',
               to: [email],
               subject: `🔔 RAVEN reminder: ${debtor.amount.toFixed(2)} due for ${trip.name}`,
               html
@@ -6588,7 +6588,7 @@ app.post('/remind-dashboard', async (req, res) => {
             const r = await fetch('https://api.resend.com/emails', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.RESEND_API_KEY}` },
-              body: JSON.stringify({ from: 'RAVEN <reminders@ravensplit.com>', to: [p.phone], subject: `🪶 Reminder: You owe $${parseFloat(p.amount).toFixed(2)} for ${bill.name}`, html })
+              body: JSON.stringify({ from: 'RAVEN <support@ravensplit.com>', to: [p.phone], subject: `🪶 Reminder: You owe $${parseFloat(p.amount).toFixed(2)} for ${bill.name}`, html })
             });
             const rd = await r.json();
             if (rd.id) { sent++; continue; }
