@@ -2311,8 +2311,8 @@ app.get('/trip/:tripId', async (req, res) => {
         isCompleted = todayNum >= endNum;
         isActive = todayNum >= tripNum && todayNum < endNum;
         if (isCompleted) {
-          const endAt = new Date(trip.end_date+'T12:00:00');
-          completedAgo = Math.max(0, Math.floor((today - endAt) / (1000 * 60 * 60 * 24)));
+          const endUTC = Date.UTC(ey, em - 1, ed);
+          completedAgo = Math.max(0, Math.round((todayUTC - endUTC) / 86400000));
         }
       } else {
         isActive = todayNum >= tripNum;
@@ -6085,7 +6085,7 @@ app.post('/trip/:tripId/send-reminder', async (req, res) => {
       } catch(e) { confirmed = true; }
       if (!confirmed) { skipped++; continue; }
 
-      const html = `<div style="font-family:-apple-system,sans-serif;max-width:520px;margin:0 auto;background:#06060A;color:#F0EEF8;border-radius:18px;padding:32px 28px">
+      let html = `<div style="font-family:-apple-system,sans-serif;max-width:520px;margin:0 auto;background:#06060A;color:#F0EEF8;border-radius:18px;padding:32px 28px">
         <div style="text-align:center;margin-bottom:24px"><div style="font-size:34px">🪶</div><div style="font-size:20px;font-weight:800;letter-spacing:0.1em">RAVEN</div></div>
         <h2 style="font-size:21px;margin-bottom:10px">Hey ${debtor.name} 👋</h2>
         <p style="color:#9896A8;font-size:15px;line-height:1.75;margin-bottom:18px">This is a friendly reminder that you still owe <strong style="color:#FFD54A">$${debtor.amount.toFixed(2)}</strong> for <strong style="color:#F0EEF8">${trip.name}</strong>.</p>
@@ -6093,6 +6093,12 @@ app.post('/trip/:tripId/send-reminder', async (req, res) => {
         <a href="${tripUrl}" style="display:block;text-align:center;background:#FFD54A;color:#151515;font-weight:800;font-size:16px;padding:16px;border-radius:12px;text-decoration:none;margin-bottom:18px">🔔 View Trip & Pay →</a>
         <p style="color:#6E6B80;font-size:12px;text-align:center">Sent via RAVEN for ${trip.name}</p>
       </div>`;
+
+      html = html
+        .replace(/<h2[^>]*>Hey[\s\S]*?<\/h2>/, `<h2 style="font-size:21px;margin-bottom:10px">Hi ${debtor.name},</h2>`)
+        .replace('This is a friendly reminder that you still owe', 'This is a transactional billing reminder that you currently owe')
+        .replace(/>[^<]*View Trip & Pay[^<]*</, '>Review trip balance →<')
+        .replace(`<p style="color:#6E6B80;font-size:12px;text-align:center">Sent via RAVEN for ${trip.name}</p>`, `<p style="color:#6E6B80;font-size:12px;line-height:1.6;text-align:center;margin:0 0 6px">This email relates to your trip activity and balance status in RAVEN.</p><p style="color:#6E6B80;font-size:12px;text-align:center;margin:0">Sent by <strong style="color:#A7A3B8;font-weight:600">support@ravensplit.com</strong> for ${trip.name}</p>`);
 
       if (process.env.RESEND_API_KEY) {
         try {
@@ -6103,7 +6109,8 @@ app.post('/trip/:tripId/send-reminder', async (req, res) => {
               from: 'RAVEN <support@ravensplit.com>',
               to: [email],
               subject: `🔔 RAVEN reminder: ${debtor.amount.toFixed(2)} due for ${trip.name}`,
-              html
+              html,
+              subject: `RAVEN billing reminder: ${debtor.amount.toFixed(2)} due for ${trip.name}`
             })
           });
           const rd = await r.json();
