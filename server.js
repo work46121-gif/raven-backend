@@ -2380,7 +2380,7 @@ app.get('/trip/:tripId', async (req, res) => {
     // "Mark as Paid" button for the whole person (settles all their debt at once)
     const markPaidBtnHtml = payerEntries.length > 0
       ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.06)">
-          <button class="mark-settled-btn" data-person="${personId}" data-name="${esc(p)}" id="markpaid-${personId}" data-settle-amount="${amtOwed.toFixed(2)}" style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:9px;color:#30D158;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer">✓ Mark as Paid · $${amtOwed.toFixed(2)}</button>
+          <button class="mark-settled-btn" data-person="${personId}" data-name="${esc(p)}" id="markpaid-${personId}" data-settle-amount="${amtOwed.toFixed(2)}" style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:9px;color:#30D158;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer">✓ Settle balance · $${amtOwed.toFixed(2)}</button>
         </div>`
       : '';
 
@@ -2498,7 +2498,7 @@ app.get('/trip/:tripId', async (req, res) => {
                   return '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px"><button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" data-settled="1" style="padding:7px 14px;background:rgba(48,209,88,0.15);border:1px solid rgba(48,209,88,0.4);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✅ Settled · tap to undo</button></div>';
                 }
                 // THEN: show "Mark as Paid" if person still owes on this receipt
-                return '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px;flex-wrap:wrap">' + payButtonsHtml(payer, amount) + '<button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" style="padding:7px 14px;background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.2);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✓ Mark as Paid</button></div>';
+                return '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px;flex-wrap:wrap">' + payButtonsHtml(payer, amount) + '<button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" style="padding:7px 14px;background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.2);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">✓ Settle this receipt</button></div>';
               })()}
             </div>`;
           }).join('')}
@@ -2783,6 +2783,30 @@ ${coverHTML}
           <input id="r-iname" type="text" placeholder="Item name" style="flex:1">
           <div style="position:relative;display:flex;align-items:center"><span style="position:absolute;left:10px;color:#6E6B80;font-size:13px">$</span><input id="r-iprice" type="number" placeholder="0.00" step="0.01" style="width:80px;padding-left:24px"></div>
           <button id="r-add-item" style="padding:0 14px;background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.3);border-radius:8px;color:#A855F7;font-family:'Epilogue',sans-serif;font-weight:700;cursor:pointer;font-size:18px;flex-shrink:0">+</button>
+        </div>
+        <div style="margin-top:12px;padding:14px;background:#13131A;border:1px solid rgba(255,255,255,0.07);border-radius:12px">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:700;margin-bottom:10px">Extra charges</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+            <div>
+              <div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600">Tax</div>
+              <div style="position:relative"><span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#6E6B80;font-size:13px">$</span><input id="r-tax" type="number" placeholder="0.00" step="0.01" style="padding-left:24px"></div>
+            </div>
+            <div>
+              <div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600">Tip</div>
+              <div style="position:relative"><span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#6E6B80;font-size:13px">$</span><input id="r-tip" type="number" placeholder="0.00" step="0.01" style="padding-left:24px"></div>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div>
+              <div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600">Service fee</div>
+              <div style="position:relative"><span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#6E6B80;font-size:13px">$</span><input id="r-service" type="number" placeholder="0.00" step="0.01" style="padding-left:24px"></div>
+            </div>
+            <div>
+              <div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600">Discount / Promo</div>
+              <div style="position:relative"><span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#FF6B6B;font-size:13px">-$</span><input id="r-item-discount" type="number" placeholder="0.00" step="0.01" style="padding-left:32px"></div>
+            </div>
+          </div>
+          <div id="r-item-summary" style="display:none;margin-top:10px;padding:10px 12px;background:#0C0C12;border-radius:10px"></div>
         </div>
       </div>
       <div style="display:flex;gap:10px">
@@ -3186,6 +3210,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 let splitType = 'even', tripItems = [], imgBase64 = null, newMembers = [];
+let tripScanCharges = { tax: 0, tip: 0, service_fee: 0 };
 let gifUrl = null, gifTimer = null, gifPanelOpen = false;
 
 // ── TOAST ──
@@ -3727,7 +3752,7 @@ function markReceiptItemPaid(personName, receiptId, amount, btn) {
     .then(r => r.json())
     .then(d => {
       if (d.success) {
-        btn.textContent = '✓ Mark as Paid';
+        btn.textContent = '✓ Settle this receipt';
         btn.style.background = 'rgba(48,209,88,0.06)';
         btn.style.borderColor = 'rgba(48,209,88,0.2)';
         btn.style.color = '#30D158';
@@ -3807,11 +3832,11 @@ function markReceiptItemPaid(personName, receiptId, amount, btn) {
       setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 2000);
     } else {
       btn.disabled = false;
-      btn.textContent = '✓ Mark as Paid';
+      btn.textContent = '✓ Settle this receipt';
       toast('Error: ' + (d.error || 'Could not save'), false);
     }
   })
-  .catch(() => { btn.disabled = false; btn.textContent = '✓ Mark as Paid'; toast('Network error', false); });
+  .catch(() => { btn.disabled = false; btn.textContent = '✓ Settle this receipt'; toast('Network error', false); });
 }
 
 function updatePersonBalanceDisplay(personName) {
@@ -3991,11 +4016,11 @@ function markTripPersonPaid(personName, personId, btn) {
       updatePersonBalanceDisplay(personName);
     } else {
       btn.disabled = false;
-      btn.textContent = '✓ Mark as Paid';
+      btn.textContent = '✓ Settle balance';
       toast('Error: ' + (d.error || 'Could not save'), false);
     }
   })
-  .catch(() => { btn.disabled = false; btn.textContent = '✓ Mark as Paid'; toast('Network error', false); });
+  .catch(() => { btn.disabled = false; btn.textContent = '✓ Settle balance'; toast('Network error', false); });
 }
 
 // ── DELETE RECEIPT (admin only) ──
@@ -4458,6 +4483,10 @@ document.getElementById('r-btn-i').addEventListener('click', () => setSplit('ite
 document.getElementById('r-total').addEventListener('input', updateEven);
 document.getElementById('r-paidby').addEventListener('change', updateEven);
 document.getElementById('r-discount').addEventListener('input', updateEven);
+document.getElementById('r-tax').addEventListener('input', updateItemizedSummary);
+document.getElementById('r-tip').addEventListener('input', updateItemizedSummary);
+document.getElementById('r-service').addEventListener('input', updateItemizedSummary);
+document.getElementById('r-item-discount').addEventListener('input', updateItemizedSummary);
 document.getElementById('r-add-item').addEventListener('click', addItem);
 document.getElementById('r-drop').addEventListener('click', () => document.getElementById('r-file').click());
 document.getElementById('r-file').addEventListener('change', function() { if(this.files[0]) tripPhoto(this.files[0]); });
@@ -4469,6 +4498,7 @@ function setSplit(t) {
   document.getElementById('r-item-sec').style.display = t==='itemized'?'block':'none';
   document.getElementById('r-btn-e').className = 'spl'+(t==='even'?' ae':'');
   document.getElementById('r-btn-i').className = 'spl'+(t==='itemized'?' ai':'');
+  updateItemizedSummary();
 }
 function updateEven() {
   const v=parseFloat(document.getElementById('r-total').value)||0;
@@ -4493,12 +4523,37 @@ function updateEven() {
   });
   prevEl.innerHTML = html;
 }
+function updateItemizedSummary() {
+  const summaryEl = document.getElementById('r-item-summary');
+  if (!summaryEl) return;
+  const subtotal = tripItems.reduce((s, item) => s + (parseFloat(item.price) || 0), 0);
+  const tax = parseFloat((document.getElementById('r-tax') || {}).value) || 0;
+  const tip = parseFloat((document.getElementById('r-tip') || {}).value) || 0;
+  const service = parseFloat((document.getElementById('r-service') || {}).value) || 0;
+  const discount = parseFloat((document.getElementById('r-item-discount') || {}).value) || 0;
+  const total = Math.max(0, subtotal + tax + tip + service - discount);
+  if (subtotal <= 0 && tax <= 0 && tip <= 0 && service <= 0 && discount <= 0) {
+    summaryEl.style.display = 'none';
+    summaryEl.innerHTML = '';
+    return;
+  }
+  summaryEl.style.display = 'block';
+  summaryEl.innerHTML =
+    '<div style="display:flex;justify-content:space-between;font-size:12px;color:#6E6B80"><span>Items subtotal</span><span style="font-family:monospace">$' + subtotal.toFixed(2) + '</span></div>' +
+    (tax > 0 ? '<div style="display:flex;justify-content:space-between;font-size:12px;color:#6E6B80;margin-top:4px"><span>Tax</span><span style="font-family:monospace">$' + tax.toFixed(2) + '</span></div>' : '') +
+    (tip > 0 ? '<div style="display:flex;justify-content:space-between;font-size:12px;color:#6E6B80;margin-top:4px"><span>Tip</span><span style="font-family:monospace">$' + tip.toFixed(2) + '</span></div>' : '') +
+    (service > 0 ? '<div style="display:flex;justify-content:space-between;font-size:12px;color:#6E6B80;margin-top:4px"><span>Service fee</span><span style="font-family:monospace">$' + service.toFixed(2) + '</span></div>' : '') +
+    (discount > 0 ? '<div style="display:flex;justify-content:space-between;font-size:12px;color:#FF8F8F;margin-top:4px"><span>Discount</span><span style="font-family:monospace">-$' + discount.toFixed(2) + '</span></div>' : '') +
+    '<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;padding-top:8px;margin-top:8px;border-top:1px solid rgba(255,255,255,0.06)"><span style="color:#F0EEF8">Receipt total</span><span style="font-family:monospace;color:#30D158">$' + total.toFixed(2) + '</span></div>' +
+    '<div style="font-size:11px;color:#9896A8;margin-top:8px">Tax, tip, and fees are split by each person&apos;s share of the items.</div>';
+}
 function addItem() {
   const n=document.getElementById('r-iname').value.trim(), p=parseFloat(document.getElementById('r-iprice').value);
   if (!n||isNaN(p)||p<=0) return;
   tripItems.push({id:Date.now(),name:n,price:p,assignees:[]});
   document.getElementById('r-iname').value=''; document.getElementById('r-iprice').value='';
   renderItems();
+  updateItemizedSummary();
 }
 function renderItems() {
   const container = document.getElementById('r-items-list');
@@ -4535,6 +4590,7 @@ function renderItems() {
     });
     d.appendChild(row); d.appendChild(btns); container.appendChild(d);
   });
+  updateItemizedSummary();
 }
 
 function tripPhoto(file) {
@@ -4583,7 +4639,7 @@ function tripPhoto(file) {
       async function doScan(attempt) {
         if (attempt === 1) {
           try { await Promise.race([fetch(BACKEND+'/'), new Promise(r=>setTimeout(r,20000))]); } catch(e) {}
-          st.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:8px"><div class="spinner"></div><span style="font-size:13px;color:#C084FC;font-weight:600">Scanning receipt with AI...</span></div>';
+          st.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:8px"><div class="spinner"></div><span style="font-size:13px;color:#C084FC;font-weight:600">RAVEN is scanning your receipt...</span></div>';
         } else {
           st.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:8px"><div class="spinner"></div><span style="font-size:13px;color:#C084FC;font-weight:600">Retrying... ('+attempt+' of 3)</span></div>';
           await new Promise(r=>setTimeout(r,2000));
@@ -4601,6 +4657,10 @@ function tripPhoto(file) {
             if (!document.getElementById('r-name').value && d.bill_name) document.getElementById('r-name').value = d.bill_name;
             const tot = d.total || d.items.reduce((s,i)=>s+i.price,0);
             document.getElementById('r-total').value = tot.toFixed(2); updateEven();
+            tripScanCharges = { tax: parseFloat(d.tax) || 0, tip: parseFloat(d.tip) || 0, service_fee: 0 };
+            document.getElementById('r-tax').value = tripScanCharges.tax > 0 ? tripScanCharges.tax.toFixed(2) : '';
+            document.getElementById('r-tip').value = tripScanCharges.tip > 0 ? tripScanCharges.tip.toFixed(2) : '';
+            document.getElementById('r-service').value = '';
             if (d.tax > 0) { /* store tax for display — add to total field note */ }
             tripItems = d.items.map((item,idx)=>({id:Date.now()+idx,name:item.name,price:parseFloat(item.price)||0,assignees:[]}));
             setSplit('itemized'); renderItems();
@@ -4745,9 +4805,48 @@ async function saveReceipt() {
     PEOPLE.forEach(p=>{splits[p]=0;});
     tripItems.forEach(item=>{const as=item.assignees.length>0?item.assignees:PEOPLE;const sh=item.price/as.length;as.forEach(p=>{splits[p]=(splits[p]||0)+sh;});total+=item.price;});
     if(total<=0){btn.textContent='Save Receipt';btn.disabled=false;toast('Add at least one item',false);return;}
+    const subtotal = total;
+    const tax = parseFloat((document.getElementById('r-tax') || {}).value) || 0;
+    const tip = parseFloat((document.getElementById('r-tip') || {}).value) || 0;
+    const serviceFee = parseFloat((document.getElementById('r-service') || {}).value) || 0;
+    const discount = parseFloat((document.getElementById('r-item-discount') || {}).value) || 0;
+    if (subtotal > 0) {
+      Object.keys(splits).forEach(person => {
+        const baseShare = parseFloat(splits[person]) || 0;
+        const proportion = baseShare / subtotal;
+        if (tax > 0) splits[person] += tax * proportion;
+        if (tip > 0) splits[person] += tip * proportion;
+        if (serviceFee > 0) splits[person] += serviceFee * proportion;
+      });
+      const preDiscountTotal = subtotal + tax + tip + serviceFee;
+      if (discount > 0 && preDiscountTotal > 0) {
+        Object.keys(splits).forEach(person => {
+          const currentShare = parseFloat(splits[person]) || 0;
+          const discountShare = discount * (currentShare / preDiscountTotal);
+          splits[person] = Math.max(0, currentShare - discountShare);
+        });
+      }
+    }
+    total = Math.max(0, subtotal + tax + tip + serviceFee - discount);
   }
   try{
-    const r=await fetch(BACKEND+'/trip/'+TRIP_ID+'/receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,total,splits,token:TRIP_TOKEN,items:splitType==='itemized'?tripItems:[],paid_by:paidBy||null,discount:parseFloat((document.getElementById('r-discount')||{}).value)||0})});
+    const payload = {
+      name,
+      total,
+      splits,
+      token: TRIP_TOKEN,
+      items: splitType==='itemized'?tripItems:[],
+      paid_by: paidBy || null,
+      discount: splitType === 'itemized'
+        ? (parseFloat((document.getElementById('r-item-discount')||{}).value) || 0)
+        : (parseFloat((document.getElementById('r-discount')||{}).value) || 0)
+    };
+    if (splitType === 'itemized') {
+      payload.tax = parseFloat((document.getElementById('r-tax')||{}).value) || 0;
+      payload.tip = parseFloat((document.getElementById('r-tip')||{}).value) || 0;
+      payload.service_fee = parseFloat((document.getElementById('r-service')||{}).value) || 0;
+    }
+    const r=await fetch(BACKEND+'/trip/'+TRIP_ID+'/receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     const d=await r.json();
     if(d.success){
       toast('✅ Receipt saved!');
@@ -4760,8 +4859,13 @@ async function saveReceipt() {
       document.getElementById('r-scan-status').style.display='none';
       document.getElementById('r-scan-status').innerHTML='';
       const paidByEl=document.getElementById('r-paidby'); if(paidByEl) paidByEl.value='';
+      document.getElementById('r-tax').value='';
+      document.getElementById('r-tip').value='';
+      document.getElementById('r-service').value='';
+      document.getElementById('r-item-discount').value='';
+      tripScanCharges = { tax: 0, tip: 0, service_fee: 0 };
       tripItems=[]; imgBase64=null; splitType='even';
-      setSplit('even'); renderItems();
+      setSplit('even'); renderItems(); updateItemizedSummary();
       setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 1200);
     } else{btn.textContent='Save Receipt';btn.disabled=false;toast(d.error||'Error',false);}
   }catch(e){btn.textContent='Save Receipt';btn.disabled=false;toast('Network error',false);}
