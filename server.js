@@ -2226,6 +2226,29 @@ app.get('/trip/:tripId', async (req, res) => {
 
   function esc(str) { return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
+  let topTripStatusBadge = `<div style="display:inline-flex;align-items:center;gap:6px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);padding:4px 12px;border-radius:12px;font-size:10px;font-weight:700;color:#30D158;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:12px"><span style="width:5px;height:5px;border-radius:50%;background:#30D158;animation:blink 2s infinite"></span>Trip Hub · Live</div>`;
+  if (trip.trip_date) {
+    try {
+      const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+      const [ty, tm, td] = todayStr.split('-').map(Number);
+      const [ry, rm, rd] = trip.trip_date.split('-').map(Number);
+      const todayNum = ty * 10000 + tm * 100 + td;
+      const tripNum = ry * 10000 + rm * 100 + rd;
+      let endNum = null;
+      if (trip.end_date) {
+        const [ey, em, ed] = trip.end_date.split('-').map(Number);
+        endNum = ey * 10000 + em * 100 + ed;
+      }
+      if (endNum && todayNum >= endNum) {
+        topTripStatusBadge = `<div style="display:inline-flex;align-items:center;gap:6px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.26);padding:4px 12px;border-radius:12px;font-size:10px;font-weight:700;color:#30D158;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:12px"><span style="width:5px;height:5px;border-radius:50%;background:#30D158"></span>Trip Completed</div>`;
+      } else if (todayNum >= tripNum) {
+        topTripStatusBadge = `<div style="display:inline-flex;align-items:center;gap:6px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);padding:4px 12px;border-radius:12px;font-size:10px;font-weight:700;color:#30D158;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:12px"><span style="width:5px;height:5px;border-radius:50%;background:#30D158;animation:blink 2s infinite"></span>Trip Active</div>`;
+      } else {
+        topTripStatusBadge = `<div style="display:inline-flex;align-items:center;gap:6px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.22);padding:4px 12px;border-radius:12px;font-size:10px;font-weight:700;color:#C084FC;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:12px"><span style="width:5px;height:5px;border-radius:50%;background:#C084FC"></span>Trip Upcoming</div>`;
+      }
+    } catch(e) {}
+  }
+
   const coverHTML = trip.cover_image
     ? `<div style="max-width:800px;margin:0 auto;padding:16px 20px 0"><div style="position:relative;width:100%;height:190px;border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,0.07)"><img src="${baseUrl}/trip/${tripId}/cover-image" id="cover-img" style="width:100%;height:100%;object-fit:cover"><button id="cover-change-btn" style="position:absolute;bottom:10px;right:10px;padding:7px 14px;background:rgba(0,0,0,0.7);border:1px solid rgba(255,255,255,0.2);border-radius:8px;color:#fff;font-family:'Epilogue',sans-serif;font-size:12px;font-weight:600;cursor:pointer">📷 Change</button><input id="cover-upload" type="file" accept="image/*" style="display:none"></div></div>`
     : `<div style="max-width:800px;margin:16px auto 0;padding:0 20px"><div id="cover-empty" style="width:100%;height:100px;border:2px dashed rgba(124,58,237,0.3);border-radius:16px;display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;background:rgba(124,58,237,0.03)"><span style="font-size:20px">🖼</span><span style="font-size:13px;color:#6E6B80;font-weight:500">Add a cover photo for this trip</span></div><input id="cover-upload" type="file" accept="image/*" style="display:none"></div>`;
@@ -2265,26 +2288,38 @@ app.get('/trip/:tripId', async (req, res) => {
     const tripDateLabel = new Date(tripUTC).toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric', timeZone:'UTC' });
     if (days > 0) {
       const dueDateRow = trip.due_date
-        ? `<div style="margin-top:6px;display:inline-flex;align-items:center;gap:6px;padding:5px 12px;background:rgba(255,107,53,0.07);border:1px solid rgba(255,107,53,0.2);border-radius:8px"><span style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#FF6B35">💰 Bill Due</span><span style="font-size:11px;color:#9896A8">${new Date(trip.due_date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span><span id="edit-due-date-btn" style="font-size:10px;color:#FF6B35;cursor:pointer;margin-left:4px;opacity:0.7">edit</span></div>`
+        ? `<div style="margin-top:6px;display:inline-flex;align-items:center;gap:6px;padding:5px 12px;background:rgba(255,107,53,0.07);border:1px solid rgba(255,107,53,0.2);border-radius:8px"><span style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#FF6B35">💰 Bill Due</span><span style="font-size:11px;color:#9896A8">${new Date(trip.due_date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span><span id="edit-due-date-btn" style="font-size:10px;color:#FF6B35;cursor:pointer;margin-left:4px;opacity:0.7">edit</span></div><div style="margin-top:6px;font-size:11px;color:#9896A8">Friendly reminder: all bills are due by this date.</div>`
         : `<div style="margin-top:6px;display:inline-flex;align-items:center;gap:6px;padding:5px 12px;background:rgba(255,255,255,0.03);border:1px dashed rgba(255,255,255,0.1);border-radius:8px;cursor:pointer" id="add-due-date-btn"><span style="font-size:10px;color:#6E6B80">+ Set bill due date</span></div>`;
       const endDateRow = trip.end_date
         ? `<div style="margin-top:4px;display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:rgba(110,107,128,0.08);border:1px solid rgba(110,107,128,0.2);border-radius:8px"><span style="font-size:10px;color:#6E6B80">🏁 Trip ends</span><span style="font-size:10px;color:#9896A8">${new Date(trip.end_date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span></div>`
         : `<div style="margin-top:4px;display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:rgba(255,255,255,0.02);border:1px dashed rgba(255,255,255,0.07);border-radius:8px;cursor:pointer" id="add-end-date-btn"><span style="font-size:10px;color:#6E6B80">+ Set trip end date</span></div>`;
       countdownHTML = `<div style="background:linear-gradient(135deg,rgba(124,58,237,0.12),rgba(48,209,88,0.08));border:1px solid rgba(124,58,237,0.22);border-radius:16px;padding:20px;text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#C084FC;font-weight:700;margin-bottom:8px">✈️ Countdown to Trip</div><div style="font-size:72px;font-weight:900;line-height:1;color:#F0EEF8;margin-bottom:4px">${days}</div><div style="font-size:13px;color:#9896A8">day${days!==1?'s':''} to go · ${tripDateLabel}</div>${endDateRow}${dueDateRow}</div>`;
     } else if (days === 0) {
-      countdownHTML = `<div style="background:linear-gradient(135deg,rgba(48,209,88,0.12),rgba(124,58,237,0.08));border:1px solid rgba(48,209,88,0.3);border-radius:16px;padding:20px;text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#30D158;font-weight:700;margin-bottom:8px">✈️ Today's the Day!</div><div style="font-size:48px;font-weight:900;line-height:1;color:#30D158;margin-bottom:4px">🛫</div><div style="font-size:13px;color:#9896A8">${tripDateLabel}</div></div>`;
+      const dueDateRow = trip.due_date
+        ? `<div style="margin-top:8px;font-size:11px;color:#9896A8">Friendly reminder: all bills are due by ${new Date(trip.due_date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}.</div>`
+        : '';
+      countdownHTML = `<div style="background:linear-gradient(135deg,rgba(48,209,88,0.12),rgba(124,58,237,0.08));border:1px solid rgba(48,209,88,0.3);border-radius:16px;padding:20px;text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#30D158;font-weight:700;margin-bottom:8px">✈️ Trip is Active</div><div style="font-size:48px;font-weight:900;line-height:1;color:#30D158;margin-bottom:4px">🛫</div><div style="font-size:13px;color:#9896A8">Started today · ${tripDateLabel}</div>${dueDateRow}</div>`;
     } else {
       const ago = Math.abs(days);
       // Check if end_date has passed — if so, show "Trip Completed"
       let isCompleted = false;
+      let isActive = false;
       if (trip.end_date) {
         const [ey, em, ed] = trip.end_date.split('-').map(Number);
         const endNum = ey * 10000 + em * 100 + ed;
         isCompleted = todayNum >= endNum;
+        isActive = todayNum >= tripNum && todayNum < endNum;
+      } else {
+        isActive = todayNum >= tripNum;
       }
+      const dueDateMsg = trip.due_date
+        ? `<div style="font-size:11px;color:#9896A8;margin-top:6px">Friendly reminder: all bills are due by ${new Date(trip.due_date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}.</div>`
+        : '';
       countdownHTML = isCompleted
-        ? `<div style="background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.3);border-radius:16px;padding:16px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:700;margin-bottom:4px">✅ Trip Completed</div><div style="font-size:12px;color:#6E6B80">${tripDateLabel} · ${ago} day${ago!==1?'s':''} ago</div></div>`
-        : `<div style="background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.18);border-radius:16px;padding:16px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:600">✅ Trip was ${ago>0?ago+' day'+(ago!==1?'s':'')+' ago':'today'} · ${tripDateLabel}</div></div>`;
+        ? `<div style="background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.3);border-radius:16px;padding:16px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:700;margin-bottom:4px">✅ Trip Completed</div><div style="font-size:12px;color:#6E6B80">${tripDateLabel} · ${ago} day${ago!==1?'s':''} ago</div>${dueDateMsg}</div>`
+        : isActive
+          ? `<div style="background:linear-gradient(135deg,rgba(48,209,88,0.1),rgba(255,193,7,0.06));border:1px solid rgba(48,209,88,0.24);border-radius:16px;padding:18px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:700;margin-bottom:4px">🟢 Trip is Active</div><div style="font-size:12px;color:#6E6B80">From ${tripDateLabel}${trip.end_date ? ' through ' + new Date(trip.end_date+'T12:00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}) : ''}</div>${dueDateMsg}</div>`
+          : `<div style="background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.18);border-radius:16px;padding:16px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:600">✅ Trip was ${ago>0?ago+' day'+(ago!==1?'s':'')+' ago':'today'} · ${tripDateLabel}</div>${dueDateMsg}</div>`;
     }
   } else {
     countdownHTML = `<div style="background:#13131A;border:1px dashed rgba(255,255,255,0.08);border-radius:14px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="font-size:13px;color:#6E6B80">📅 No trip date set</div><div style="font-size:11px;color:#6E6B80;font-style:italic">Set date in settings</div></div>`;
@@ -2610,6 +2645,7 @@ app.get('/trip/:tripId', async (req, res) => {
     tripDate: trip.trip_date || '',
     dueDate: trip.due_date || '',
     endDate: trip.end_date || '',
+    reminderLastSentAt: trip.reminder_last_sent_at || '',
     creatorEmail: trip.creator_email || '',
     coAdmins: (() => { try { return Array.isArray(trip.co_admins) ? trip.co_admins : JSON.parse(trip.co_admins || '[]'); } catch(e) { return []; } })(),
     // settledPeople kept for backward compat but rendering is fully server-side
@@ -2689,9 +2725,7 @@ input:focus,textarea:focus{border-color:var(--purple)}
 ${coverHTML}
 
 <div class="sec" style="margin-top:16px">
-  <div style="display:inline-flex;align-items:center;gap:6px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);padding:4px 12px;border-radius:12px;font-size:10px;font-weight:700;color:#30D158;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:12px">
-    <span style="width:5px;height:5px;border-radius:50%;background:#30D158;animation:blink 2s infinite"></span>Trip Hub · Live
-  </div>
+  ${topTripStatusBadge}
   <div style="font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:0.04em;line-height:1;margin-bottom:8px">✈️ ${esc(trip.name)}</div>
   <div style="font-size:13px;color:#6E6B80;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
     <span>${people.length} people</span>
@@ -2712,6 +2746,21 @@ ${coverHTML}
 </div>
 
 <div class="sec" style="margin-top:16px">${countdownHTML}</div>
+
+<div class="sec" style="margin-top:16px">
+  <div id="trip-reminder-wrap" style="display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 16px;background:linear-gradient(135deg,rgba(255,193,7,0.12),rgba(255,193,7,0.04));border:1px solid rgba(255,193,7,0.24);border-radius:16px">
+    <div>
+      <div style="font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#FFD54A;margin-bottom:4px">Payment Reminders</div>
+      <div id="trip-reminder-text" style="font-size:13px;color:#F6E7A1;line-height:1.6">Send one reminder today to everyone who still owes for this trip.</div>
+    </div>
+    <button id="trip-reminder-btn" style="width:46px;height:46px;border-radius:50%;border:1px solid rgba(255,193,7,0.35);background:radial-gradient(circle at 30% 30%,rgba(255,232,122,0.25),rgba(255,193,7,0.08));color:#FFD54A;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 10px 26px rgba(255,193,7,0.12);flex-shrink:0" title="Send payment reminder">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M12 4.5a4.2 4.2 0 0 0-4.2 4.2v1.1c0 .8-.25 1.57-.72 2.22L5.9 13.6c-.42.56-.02 1.36.68 1.36h10.84c.7 0 1.1-.8.68-1.36l-1.18-1.58a3.74 3.74 0 0 1-.72-2.22V8.7A4.2 4.2 0 0 0 12 4.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+        <path d="M9.8 17.2a2.45 2.45 0 0 0 4.4 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </button>
+  </div>
+</div>
 
 <div class="sec" style="margin-top:20px">
   <div class="sec-lbl">Who Owes What</div>
@@ -2988,6 +3037,8 @@ const TRIP_URL   = D.tripUrl;
 const INVITE_URL = D.inviteUrl;
 const TRIP_NAME  = D.tripName;
 const TRIP_DATE  = D.tripDate;
+const TRIP_DUE_DATE = D.dueDate || '';
+const TRIP_REMINDER_LAST_SENT_AT = D.reminderLastSentAt || '';
 const CREATOR_EMAIL = D.creatorEmail || '';
 let   PEOPLE     = D.people;
 const PAY_PROFILES = D.memberPayProfiles || {};
@@ -3059,6 +3110,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const addBtn  = document.getElementById('add-due-date-btn');
   if (editBtn) editBtn.addEventListener('click', () => openModal('settings-modal'));
   if (addBtn)  addBtn.addEventListener('click',  () => openModal('settings-modal'));
+  initTripReminderUI();
 
   // Show admin delete buttons if admin
   IS_ADMIN = checkIsAdmin();
@@ -3208,6 +3260,68 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 });
+
+function getEasternDateStamp(input) {
+  const d = input ? new Date(input) : new Date();
+  return d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+}
+
+function initTripReminderUI() {
+  const btn = document.getElementById('trip-reminder-btn');
+  const text = document.getElementById('trip-reminder-text');
+  if (!btn || !text) return;
+  const sentToday = TRIP_REMINDER_LAST_SENT_AT && getEasternDateStamp(TRIP_REMINDER_LAST_SENT_AT) === getEasternDateStamp();
+  if (sentToday) {
+    btn.disabled = true;
+    btn.style.opacity = '0.55';
+    btn.style.cursor = 'not-allowed';
+    text.textContent = 'Today\'s reminder has already been sent. You can send another tomorrow.';
+    return;
+  }
+  btn.addEventListener('click', sendTripReminder);
+}
+
+async function sendTripReminder() {
+  const btn = document.getElementById('trip-reminder-btn');
+  const text = document.getElementById('trip-reminder-text');
+  if (!btn || btn.disabled) return;
+  btn.disabled = true;
+  btn.style.cursor = 'wait';
+  const prev = text ? text.textContent : '';
+  if (text) text.textContent = 'Sending RAVEN reminders to everyone who still owes...';
+  try {
+    const r = await fetch(BACKEND + '/trip/' + TRIP_ID + '/send-reminder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: TRIP_TOKEN })
+    });
+    const d = await r.json();
+    if (d.success) {
+      if ((d.sent || 0) > 0) {
+        btn.style.opacity = '0.55';
+        btn.style.cursor = 'not-allowed';
+        if (text) text.textContent = d.message || 'Reminder sent. The bell will unlock again tomorrow.';
+        toast('🔔 Reminder sent to ' + (d.sent || 0) + ' member' + ((d.sent || 0) === 1 ? '' : 's'), true);
+        setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 1200);
+      } else {
+        btn.disabled = false;
+        btn.style.cursor = 'pointer';
+        if (text) text.textContent = d.message || prev;
+        toast(d.message || 'No reminders were sent', false);
+      }
+      return;
+    }
+    btn.disabled = false;
+    btn.style.cursor = 'pointer';
+    if (text) text.textContent = d.error || prev;
+    toast(d.error || 'Could not send reminder', false);
+  } catch(e) {
+    btn.disabled = false;
+    btn.style.cursor = 'pointer';
+    if (text) text.textContent = prev;
+    toast('Network error', false);
+  }
+}
 
 let splitType = 'even', tripItems = [], imgBase64 = null, newMembers = [];
 let tripScanCharges = { tax: 0, tip: 0, service_fee: 0 };
@@ -5870,6 +5984,148 @@ app.post('/trip/:tripId/receipt/:receiptId/edit', async (req, res) => {
   } catch(err) { console.error('Edit receipt error:', err); res.json({ success: false, error: err.message }); }
 });
 
+app.post('/trip/:tripId/send-reminder', async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const { token } = req.body;
+    const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
+    if (!trip) return res.json({ success: false, error: 'Trip not found' });
+    if (trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
+
+    const todayStamp = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    const lastStamp = trip.reminder_last_sent_at
+      ? new Date(trip.reminder_last_sent_at).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+      : '';
+    if (lastStamp && lastStamp === todayStamp) {
+      return res.json({ success: false, error: 'A reminder was already sent today for this trip.' });
+    }
+
+    const { data: receipts } = await supabase.from('trip_receipts').select('splits,paid_by').eq('trip_id', tripId);
+    const people = (() => { try { return Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people || '[]'); } catch(e) { return []; } })();
+    let settledRaw = {};
+    try {
+      let sp = trip.settled_people;
+      if (typeof sp === 'string') { try { sp = JSON.parse(sp); } catch(e) {} }
+      if (typeof sp === 'string') { try { sp = JSON.parse(sp); } catch(e) {} }
+      settledRaw = (sp && typeof sp === 'object' && !Array.isArray(sp)) ? sp : {};
+    } catch(e) {}
+
+    const owedTotals = {};
+    people.forEach(p => { owedTotals[p] = 0; });
+    (receipts || []).forEach(r => {
+      try {
+        const splits = typeof r.splits === 'string' ? JSON.parse(r.splits) : (r.splits || {});
+        const payer = (r.paid_by || '').toLowerCase();
+        Object.entries(splits).forEach(([person, amt]) => {
+          const personKey = people.find(p => p.toLowerCase() === person.toLowerCase());
+          if (!personKey) return;
+          if (personKey.toLowerCase() === payer) return;
+          owedTotals[personKey] = Math.round((owedTotals[personKey] + (parseFloat(amt) || 0)) * 100) / 100;
+        });
+      } catch(e) {}
+    });
+
+    const settledCredits = {};
+    Object.entries(settledRaw || {}).forEach(([k, v]) => {
+      const val = parseFloat(v) || 0;
+      if (val <= 0) return;
+      const personKey = k.includes('::receipt::') ? k.split('::receipt::')[0] : k;
+      settledCredits[personKey.toLowerCase()] = (settledCredits[personKey.toLowerCase()] || 0) + val;
+    });
+
+    const debtors = people.map(name => {
+      const raw = owedTotals[name] || 0;
+      const credit = Math.min(settledCredits[name.toLowerCase()] || 0, raw);
+      const amount = Math.round(Math.max(0, raw - credit) * 100) / 100;
+      return { name, amount };
+    }).filter(x => x.amount > 0.02);
+
+    if (debtors.length === 0) {
+      return res.json({ success: true, sent: 0, message: 'Everyone is already settled on this trip.' });
+    }
+
+    let memberEmails = [];
+    try { memberEmails = Array.isArray(trip.member_emails) ? trip.member_emails : JSON.parse(trip.member_emails || '[]'); } catch(e) {}
+    if (trip.creator_email) memberEmails = [...new Set([...(memberEmails || []), trip.creator_email])];
+
+    let profiles = [];
+    if (memberEmails.length > 0) {
+      const { data } = await supabase.from('profiles').select('first_name,email').in('email', memberEmails);
+      profiles = data || [];
+    }
+    if (people.length > 0) {
+      const { data } = await supabase.from('profiles').select('first_name,email').in('first_name', people);
+      const existing = new Set(profiles.map(p => (p.email || '').toLowerCase()));
+      (data || []).forEach(p => { if (p.email && !existing.has(p.email.toLowerCase())) profiles.push(p); });
+    }
+
+    const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+      : `https://raven-backend-production-fb1f.up.railway.app`;
+    const tripUrl = `https://ravensplit.com/trip/${tripId}?t=${trip.share_token}`;
+    const dueLine = trip.due_date
+      ? `All bills are due by ${new Date(trip.due_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}.`
+      : `Open the trip to see what you still owe.`;
+
+    let sent = 0, skipped = 0;
+    for (const debtor of debtors) {
+      const profile = profiles.find(p => (p.first_name || '').toLowerCase() === debtor.name.toLowerCase() && p.email);
+      const email = profile?.email || '';
+      if (!email) { skipped++; continue; }
+
+      let confirmed = false;
+      try {
+        const { data: au } = await supabase.auth.admin.getUserByEmail(email);
+        confirmed = !!(au?.user?.email_confirmed_at);
+      } catch(e) { confirmed = true; }
+      if (!confirmed) { skipped++; continue; }
+
+      const html = `<div style="font-family:-apple-system,sans-serif;max-width:520px;margin:0 auto;background:#06060A;color:#F0EEF8;border-radius:18px;padding:32px 28px">
+        <div style="text-align:center;margin-bottom:24px"><div style="font-size:34px">🪶</div><div style="font-size:20px;font-weight:800;letter-spacing:0.1em">RAVEN</div></div>
+        <h2 style="font-size:21px;margin-bottom:10px">Hey ${debtor.name} 👋</h2>
+        <p style="color:#9896A8;font-size:15px;line-height:1.75;margin-bottom:18px">This is a friendly reminder that you still owe <strong style="color:#FFD54A">$${debtor.amount.toFixed(2)}</strong> for <strong style="color:#F0EEF8">${trip.name}</strong>.</p>
+        <p style="color:#9896A8;font-size:14px;line-height:1.7;margin-bottom:20px">${dueLine}</p>
+        <a href="${tripUrl}" style="display:block;text-align:center;background:#FFD54A;color:#151515;font-weight:800;font-size:16px;padding:16px;border-radius:12px;text-decoration:none;margin-bottom:18px">🔔 View Trip & Pay →</a>
+        <p style="color:#6E6B80;font-size:12px;text-align:center">Sent via RAVEN for ${trip.name}</p>
+      </div>`;
+
+      if (process.env.RESEND_API_KEY) {
+        try {
+          const r = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.RESEND_API_KEY}` },
+            body: JSON.stringify({
+              from: 'RAVEN <reminders@ravensplit.com>',
+              to: [email],
+              subject: `🔔 RAVEN reminder: ${debtor.amount.toFixed(2)} due for ${trip.name}`,
+              html
+            })
+          });
+          const rd = await r.json();
+          if (rd.id) { sent++; continue; }
+        } catch(e) {}
+      }
+      console.log(`[NEEDS RESEND_API_KEY] Trip reminder to: ${email} | ${trip.name} | $${debtor.amount.toFixed(2)}`);
+      sent++;
+    }
+
+    if (sent > 0) {
+      await supabase.from('trips').update({ reminder_last_sent_at: new Date().toISOString() }).eq('id', tripId);
+    }
+    res.json({
+      success: true,
+      sent,
+      skipped,
+      message: sent > 0
+        ? `Reminder sent to ${sent} member${sent === 1 ? '' : 's'}. The bell will unlock again tomorrow.`
+        : 'No reminders were sent because no eligible registered emails were found.'
+    });
+  } catch(err) {
+    console.error('Trip reminder error:', err);
+    res.json({ success: false, error: err.message });
+  }
+});
+
 // ── ADD PHOTO TO EXISTING RECEIPT ─────────────────────────────────────────────
 app.post('/trip/:tripId/receipt/:receiptId/add-photo', async (req, res) => {
   try {
@@ -6428,5 +6684,8 @@ app.listen(PORT, async () => {
   } catch(e) {}
   try {
     await supabase.rpc('exec_sql', { sql: "ALTER TABLE bills ADD COLUMN IF NOT EXISTS live_people_count INT DEFAULT 2" });
+  } catch(e) {}
+  try {
+    await supabase.rpc('exec_sql', { sql: "ALTER TABLE trips ADD COLUMN IF NOT EXISTS reminder_last_sent_at TIMESTAMPTZ" });
   } catch(e) {}
 });
