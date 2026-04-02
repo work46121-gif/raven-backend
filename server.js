@@ -2124,6 +2124,7 @@ app.get('/trip/:tripId', async (req, res) => {
     const cleanKey = String(key).trim();
     if (!cleanKey || memberPayProfiles[cleanKey]) return;
     memberPayProfiles[cleanKey] = {
+      display_name: profile.first_name || profile.raven_id || cleanKey.replace(/^@/, ''),
       venmo: profile.venmo || '',
       cashapp: profile.cashapp || '',
       zelle: profile.zelle || '',
@@ -2144,7 +2145,7 @@ app.get('/trip/:tripId', async (req, res) => {
       (profilesByEmail || []).forEach(p => {
         const name = p.first_name || '';
         // NOTE: avatar_url intentionally excluded — it's base64 and would bloat the inline JSON blob
-        if (name) memberPayProfiles[name] = { venmo: p.venmo||'', cashapp: p.cashapp||'', zelle: p.zelle||'', applepay: p.applepay||'', email: p.email||'', raven_id: p.raven_id||'' };
+        if (name) memberPayProfiles[name] = { display_name: p.first_name || p.raven_id || name, venmo: p.venmo||'', cashapp: p.cashapp||'', zelle: p.zelle||'', applepay: p.applepay||'', email: p.email||'', raven_id: p.raven_id||'' };
       });
     }
 
@@ -2154,11 +2155,18 @@ app.get('/trip/:tripId', async (req, res) => {
       const { data: profilesByName } = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle,applepay,raven_id,avatar_url,created_at').in('first_name', people);
       (profilesByName || []).forEach(p => {
         if (p.first_name && !memberPayProfiles[p.first_name]) {
-          memberPayProfiles[p.first_name] = { venmo: p.venmo||'', cashapp: p.cashapp||'', zelle: p.zelle||'', applepay: p.applepay||'', raven_id: p.raven_id||'' };
+          memberPayProfiles[p.first_name] = { display_name: p.first_name || p.raven_id || '', venmo: p.venmo||'', cashapp: p.cashapp||'', zelle: p.zelle||'', applepay: p.applepay||'', raven_id: p.raven_id||'' };
         }
       });
     }
   } catch(e) { console.error('Error fetching payment profiles:', e); }
+
+  const getMemberDisplayName = (rawName) => {
+    const clean = String(rawName || '').trim();
+    if (!clean) return 'Someone';
+    const profile = memberPayProfiles[clean] || memberPayProfiles[clean.replace(/^@/, '')] || null;
+    return profile?.display_name || clean.replace(/^@/, '');
+  };
 
   try {
     const normalizedPeople = [...new Set((people || []).map(p => String(p || '').trim()).filter(Boolean))];
@@ -2427,6 +2435,7 @@ app.get('/trip/:tripId', async (req, res) => {
   }
 
   const owesRows = people.map((p, i) => {
+    const displayName = getMemberDisplayName(p);
     const rawOwed = totals[p] || 0;
     const settledCredit = Math.min(settledCredits[p.toLowerCase()] || 0, rawOwed); // cap at rawOwed — prevents 999999 sentinel over-settling
     let amtOwed = Math.round(Math.max(0, rawOwed - settledCredit) * 100) / 100;
@@ -2533,10 +2542,10 @@ app.get('/trip/:tripId', async (req, res) => {
     // data-is-settled used for accurate settled count
     return `<div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)" id="row-${personId}" data-is-settled="${effectiveIsSettled?'1':'0'}" data-is-debtor="${effectiveAmtOwed>0.02?'1':'0'}">
       <div style="display:flex;align-items:center;justify-content:space-between;${(payerEntries.length>0&&!isSettled)?'margin-bottom:4px':''}">
-        <div style="display:flex;align-items:center;gap:10px;cursor:pointer" data-open-profile="${esc(p)}" title="View ${esc(p)}'s profile">
-          <div data-person-avatar="${esc(p)}" style="width:34px;height:34px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;overflow:hidden">${esc(p[0].toUpperCase())}</div>
+        <div style="display:flex;align-items:center;gap:10px;cursor:pointer" data-open-profile="${esc(p)}" title="View ${esc(displayName)}'s profile">
+          <div data-person-avatar="${esc(p)}" style="width:34px;height:34px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;overflow:hidden">${esc(displayName[0].toUpperCase())}</div>
           <div>
-            <div style="font-weight:600;font-size:14px;display:flex;align-items:center;gap:6px">${esc(p)} <span style="font-size:11px;color:#6E6B80;font-weight:400">›</span></div>
+            <div style="font-weight:600;font-size:14px;display:flex;align-items:center;gap:6px">${esc(displayName)} <span style="font-size:11px;color:#6E6B80;font-weight:400">›</span></div>
             <div class="person-status-display" style="font-size:11px;color:${effectiveIsSettled?'#30D158':effectiveAmtOwed>0?'#FF9A3C':effectiveIsCreditor?'#A855F7':'#30D158'}">
               ${effectiveIsSettled ? '✅ all settled' : effectiveAmtOwed>0 ? (effectiveIsPartiallySettled ? 'still owes $' + effectiveAmtOwed.toFixed(2) : 'owes $' + effectiveAmtOwed.toFixed(2)) : effectiveIsCreditor ? 'collecting $' + amtReceivable.toFixed(2) : 'all settled ✓'}
             </div>
@@ -2739,16 +2748,17 @@ app.get('/trip/:tripId', async (req, res) => {
   }).join('');
 
   const perPersonInputs = people.map(p =>
-    `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px"><span style="color:#9896A8">${esc(p)}</span><span id="ep-${esc(p.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,''))}" style="color:#30D158;font-weight:600">$0.00</span></div>`
+    `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px"><span style="color:#9896A8">${esc(getMemberDisplayName(p))}</span><span id="ep-${esc(p.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,''))}" style="color:#30D158;font-weight:600">$0.00</span></div>`
   ).join('');
 
   const coAdminsList = (() => { try { return Array.isArray(trip.co_admins) ? trip.co_admins : JSON.parse(trip.co_admins || '[]'); } catch(e) { return []; } })();
   const existingMemberRows = people.map((p, i) => {
+    const displayName = getMemberDisplayName(p);
     const isCoAdmin = coAdminsList.map(n=>n.toLowerCase()).includes(p.toLowerCase());
     const adminBadge = isCoAdmin ? `<span style="font-size:10px;background:rgba(124,58,237,0.15);color:#A855F7;border:1px solid rgba(124,58,237,0.25);border-radius:6px;padding:2px 7px;font-weight:700;margin-left:6px">⚙️ co-admin</span>` : '';
     const adminBtn = `<button onclick="event.stopPropagation();toggleCoAdmin(this,'${esc(p)}')" data-name="${esc(p)}" data-is-admin="${isCoAdmin?'1':'0'}" class="admin-only-btn" style="display:none;padding:5px 10px;font-size:11px;font-weight:700;border-radius:7px;border:1px solid ${isCoAdmin?'rgba(124,58,237,0.4)':'rgba(255,255,255,0.12)'};background:${isCoAdmin?'rgba(124,58,237,0.12)':'rgba(255,255,255,0.05)'};color:${isCoAdmin?'#A855F7':'#9896A8'};cursor:pointer;font-family:inherit">${isCoAdmin?'- Admin':'+ Admin'}</button>`;
     const removeBtn = `<button onclick="event.stopPropagation();removeMember(this,'${esc(p)}')" class="admin-only-btn" style="display:none;padding:5px 10px;font-size:11px;font-weight:700;border-radius:7px;border:1px solid rgba(255,68,68,0.3);background:rgba(255,68,68,0.08);color:#FF6B6B;cursor:pointer;font-family:inherit;margin-left:4px">Remove</button>`;
-    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#13131A;border:1px solid rgba(255,255,255,0.07);border-radius:10px"><div style="display:flex;align-items:center;gap:9px;flex:1;min-width:0"><div style="width:28px;height:28px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">${esc(p[0].toUpperCase())}</div><span style="font-size:13px;font-weight:600">${esc(p)}</span>${adminBadge}</div><div style="display:flex;align-items:center;gap:4px;flex-shrink:0">${adminBtn}${removeBtn}</div></div>`;
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#13131A;border:1px solid rgba(255,255,255,0.07);border-radius:10px"><div style="display:flex;align-items:center;gap:9px;flex:1;min-width:0"><div style="width:28px;height:28px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">${esc(displayName[0].toUpperCase())}</div><span style="font-size:13px;font-weight:600">${esc(displayName)}</span>${adminBadge}</div><div style="display:flex;align-items:center;gap:4px;flex-shrink:0">${adminBtn}${removeBtn}</div></div>`;
   }).join('');
 
   // All user-controlled data goes into a single JSON blob read by JS — NEVER interpolated into JS template literals
@@ -3458,6 +3468,12 @@ async function sendTripReminder() {
     });
     const d = await r.json();
     if (d.success) {
+      if (d.locked_today && !((d.sent || 0) > 0)) {
+        sessionStorage.setItem(getReminderLockKey(), getEasternDateStamp());
+        lockTripReminderUI(d.message || "Today's reminder has already been sent. You can send another tomorrow.");
+        toast(d.message || "Today's reminder has already been sent. You can send another tomorrow.", true);
+        return;
+      }
       if ((d.sent || 0) > 0) {
         sessionStorage.setItem(getReminderLockKey(), getEasternDateStamp());
         lockTripReminderUI(d.message || 'Reminder sent. The bell will unlock again tomorrow.');
@@ -6018,7 +6034,7 @@ app.post('/trip/:tripId/add-members', async (req, res) => {
       const clean = m.trim();
 
       // Check if input looks like a raven_id (@handle or handle)
-      const isRavenId = /^@?[a-z0-9_]{2,30}$/i.test(clean) && !clean.includes(' ') && !clean.includes('@');
+      const isRavenId = /^@?[a-z0-9_]{2,30}$/i.test(clean) && !clean.includes(' ');
       const ravenHandle = clean.replace(/^@/, '').toLowerCase();
 
       // Try to look up the user by raven_id first
@@ -6268,6 +6284,15 @@ app.post('/trip/:tripId/send-reminder', async (req, res) => {
       return res.json({ success: true, sent: 0, message: 'Everyone is already settled on this trip.' });
     }
 
+    const { error: reminderLockError } = await supabase
+      .from('trips')
+      .update({ reminder_last_sent_at: new Date().toISOString() })
+      .eq('id', tripId);
+    if (reminderLockError) {
+      console.error('Trip reminder lock error:', reminderLockError);
+      return res.json({ success: false, error: 'Could not lock today\'s reminder bell. Please try again.' });
+    }
+
     let memberEmails = [];
     try { memberEmails = Array.isArray(trip.member_emails) ? trip.member_emails : JSON.parse(trip.member_emails || '[]'); } catch(e) {}
     if (trip.creator_email) memberEmails = [...new Set([...(memberEmails || []), trip.creator_email])];
@@ -6339,16 +6364,14 @@ app.post('/trip/:tripId/send-reminder', async (req, res) => {
       sent++;
     }
 
-    if (sent > 0) {
-      await supabase.from('trips').update({ reminder_last_sent_at: new Date().toISOString() }).eq('id', tripId);
-    }
     res.json({
       success: true,
       sent,
       skipped,
+      locked_today: true,
       message: sent > 0
         ? `Reminder sent to ${sent} member${sent === 1 ? '' : 's'}. The bell will unlock again tomorrow.`
-        : 'No reminders were sent because no eligible registered emails were found.'
+        : 'Today\'s reminder bell has already been used for this trip. No eligible registered emails were found to send this time.'
     });
   } catch(err) {
     console.error('Trip reminder error:', err);
