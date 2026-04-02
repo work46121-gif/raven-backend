@@ -2265,8 +2265,63 @@ app.get('/trip/:tripId', async (req, res) => {
   const avatarColors = ['linear-gradient(135deg,#7C3AED,#A855F7)','linear-gradient(135deg,#E8633A,#FF6B35)','linear-gradient(135deg,#0EA5E9,#7C3AED)','linear-gradient(135deg,#30D158,#0EA5E9)','linear-gradient(135deg,#F59E0B,#EF4444)','linear-gradient(135deg,#EC4899,#8B5CF6)','linear-gradient(135deg,#14B8A6,#3B82F6)','linear-gradient(135deg,#84CC16,#10B981)'];
 
   function esc(str) { return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  const isRoommateHouse = String(trip.type || '').toLowerCase() === 'roommates';
+  const experienceIcon = isRoommateHouse ? '🏠' : '✈️';
+  const pageTitleSuffix = isRoommateHouse ? 'House Ledger on RAVEN' : 'Trip Hub on RAVEN';
+  const coverEmptyLabel = isRoommateHouse ? 'Add a cover photo for this house' : 'Add a cover photo for this trip';
+  const memberCountLabel = isRoommateHouse ? 'housemates' : 'people';
+  const receiptCountLabel = isRoommateHouse ? 'expense' : 'receipt';
+  const inviteButtonLabel = isRoommateHouse ? '🏡 Invite Housemate' : '📨 Invite';
+  const chatButtonLabel = isRoommateHouse ? '🏠 House Chat' : '💬 Chat';
+  const reminderHeading = isRoommateHouse ? 'House Nudges' : 'Payment Reminders';
+  const reminderMessage = isRoommateHouse ? 'Send one reminder today to everyone who still owes the house.' : 'Send one reminder today to everyone who still owes for this trip.';
+  const owesHeading = isRoommateHouse ? 'House Balance' : 'Who Owes What';
+  const settledLabel = isRoommateHouse ? 'housemates settled' : 'people settled';
+  const totalSpendLabel = isRoommateHouse ? 'total house spend' : 'total spent';
+  const outstandingLabel = isRoommateHouse ? 'House Balance' : 'Outstanding';
+  const addReceiptButtonLabel = isRoommateHouse ? '🏠 Log House Expense' : '📸 Add a Receipt';
+  const shareButtonLabel = isRoommateHouse ? '🔗 Share House' : '🔗 Share';
+  const settingsButtonLabel = isRoommateHouse ? '🏠 House Settings' : '⚙️ Settings';
+  const newReceiptHeading = isRoommateHouse ? 'New House Expense' : 'New Receipt';
+  const newReceiptNameLabel = isRoommateHouse ? 'Expense Name' : 'Receipt Name';
+  const newReceiptNamePlaceholder = isRoommateHouse ? 'e.g. April electric bill' : 'e.g. Dinner at Casa Marina';
+  const whoPaidLabel = isRoommateHouse ? "Who covered it? (they'll collect from the house)" : "Who paid? (they'll collect from others)";
+  const photoScanLabel = isRoommateHouse ? 'Photo - RAVEN scans bills, rent slips, and receipts automatically' : 'Photo - RAVEN scans automatically';
+  const photoUploadLabel = isRoommateHouse ? '🏠 Tap to upload bill or receipt photo' : '📸 Tap to upload receipt photo';
+  const sectionReceiptsLabel = isRoommateHouse ? 'House Expenses' : 'All Receipts';
+  const emptyReceiptsTitle = isRoommateHouse ? 'No house expenses yet' : 'No receipts yet';
+  const emptyReceiptsBody = isRoommateHouse ? 'Start the ledger with rent, utilities, groceries, or supplies.' : 'Be the first to add one!';
+  const commentsEmptyLabel = isRoommateHouse ? 'No house notes yet - leave the first update.' : 'No comments yet - say something! 👋';
+  const commentPlaceholder = isRoommateHouse ? 'Leave a house note...' : 'Add a comment...';
+  const postCommentLabel = isRoommateHouse ? '🏠 Post Note' : '💬 Post';
+  const editReceiptTitle = isRoommateHouse ? '✏️ Edit House Expense' : '✏️ Edit Receipt';
+  const editReceiptNameLabel = isRoommateHouse ? 'Expense Name' : 'Receipt Name';
+  const editPeopleLabel = isRoommateHouse ? "Who's part of this expense?" : "Who's on this receipt?";
+  const settingsTitle = isRoommateHouse ? 'House Settings' : 'Trip Settings';
+  const settingsNameLabel = isRoommateHouse ? 'House Name' : 'Trip Name';
+  const settingsNamePlaceholder = isRoommateHouse ? 'House name' : 'Trip name';
+  const settingsDateLabel = isRoommateHouse ? 'House Start Date' : 'Trip Start Date';
+  const settingsEndDateLabel = isRoommateHouse ? 'House Cycle End Date' : '🏁 Trip End Date';
+  const settingsEndDateHint = isRoommateHouse ? '(marks this house cycle as wrapped)' : '(marks trip as completed)';
+  const settingsDueDateLabel = isRoommateHouse ? 'Monthly Due Date' : '💰 Bill Due Date';
+  const settingsDueDateHint = isRoommateHouse ? '(RAVEN uses this to nudge roommates)' : '(RAVEN sends reminders after this)';
+  const addMembersTitle = isRoommateHouse ? 'Add Housemates' : 'Add Members';
+  const addMembersHelp = isRoommateHouse ? 'Enter a name or <span style="color:#A855F7;font-weight:700">@ravenid</span> - using a Raven ID links their account so the house auto-appears in their roommates tab.' : 'Enter a name or <span style="color:#A855F7;font-weight:700">@ravenid</span> - using a Raven ID links their account so the trip auto-appears in their hub.';
+  const currentMembersLabel = isRoommateHouse ? 'Current Housemates' : 'Current Members';
+  const saveMembersLabel = isRoommateHouse ? '✓ Save Housemates' : '✓ Save New Members';
+  const inviteTitle = isRoommateHouse ? 'Invite to House' : 'Invite to Trip';
+  const shareLinkHeading = isRoommateHouse ? '🏠 House Link' : '📋 Trip Link';
+  const shareLinkHelp = isRoommateHouse ? 'For housemates already added to this home' : 'For people already added to the trip';
+  const shareLinkCopy = isRoommateHouse ? '📋 Copy House Link' : '📋 Copy';
+  const shareLinkShare = isRoommateHouse ? '📤 Share House' : '📤 Share';
+  const inviteLinkHeading = isRoommateHouse ? '🏡 House Invite Link' : '📨 Invite Link';
+  const inviteLinkHelp = isRoommateHouse ? 'Requires creating a RAVEN account to join the house ledger' : 'Requires creating a RAVEN account';
+  const inviteCopyLabel = isRoommateHouse ? '📋 Copy House Invite' : '📋 Copy Invite';
+  const inviteShareLabel = isRoommateHouse ? '📤 Share House Invite' : '📤 Share';
+  const countdownEmptyLabel = isRoommateHouse ? '🏠 No house billing cycle set' : '📅 No trip date set';
+  const countdownEmptyHint = isRoommateHouse ? 'Set dates in house settings' : 'Set date in settings';
 
-  let topTripStatusBadge = `<div style="display:inline-flex;align-items:center;gap:6px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);padding:4px 12px;border-radius:12px;font-size:10px;font-weight:700;color:#30D158;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:12px"><span style="width:5px;height:5px;border-radius:50%;background:#30D158;animation:blink 2s infinite"></span>Trip Hub · Live</div>`;
+  let topTripStatusBadge = `<div style="display:inline-flex;align-items:center;gap:6px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);padding:4px 12px;border-radius:12px;font-size:10px;font-weight:700;color:#30D158;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:12px"><span style="width:5px;height:5px;border-radius:50%;background:#30D158;animation:blink 2s infinite"></span>${isRoommateHouse ? 'House Mode · Live' : 'Trip Hub · Live'}</div>`;
   if (trip.trip_date) {
     try {
       const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
@@ -2280,18 +2335,18 @@ app.get('/trip/:tripId', async (req, res) => {
         endNum = ey * 10000 + em * 100 + ed;
       }
       if (endNum && todayNum >= endNum) {
-        topTripStatusBadge = `<div style="display:inline-flex;align-items:center;gap:6px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.26);padding:4px 12px;border-radius:12px;font-size:10px;font-weight:700;color:#30D158;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:12px"><span style="width:5px;height:5px;border-radius:50%;background:#30D158"></span>Trip Completed</div>`;
+        topTripStatusBadge = `<div style="display:inline-flex;align-items:center;gap:6px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.26);padding:4px 12px;border-radius:12px;font-size:10px;font-weight:700;color:#30D158;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:12px"><span style="width:5px;height:5px;border-radius:50%;background:#30D158"></span>${isRoommateHouse ? 'House Settled' : 'Trip Completed'}</div>`;
       } else if (todayNum >= tripNum) {
-        topTripStatusBadge = `<div style="display:inline-flex;align-items:center;gap:6px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);padding:4px 12px;border-radius:12px;font-size:10px;font-weight:700;color:#30D158;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:12px"><span style="width:5px;height:5px;border-radius:50%;background:#30D158;animation:blink 2s infinite"></span>Trip Active</div>`;
+        topTripStatusBadge = `<div style="display:inline-flex;align-items:center;gap:6px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);padding:4px 12px;border-radius:12px;font-size:10px;font-weight:700;color:#30D158;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:12px"><span style="width:5px;height:5px;border-radius:50%;background:#30D158;animation:blink 2s infinite"></span>${isRoommateHouse ? 'House Flow Active' : 'Trip Active'}</div>`;
       } else {
-        topTripStatusBadge = `<div style="display:inline-flex;align-items:center;gap:6px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.22);padding:4px 12px;border-radius:12px;font-size:10px;font-weight:700;color:#C084FC;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:12px"><span style="width:5px;height:5px;border-radius:50%;background:#C084FC"></span>Trip Upcoming</div>`;
+        topTripStatusBadge = `<div style="display:inline-flex;align-items:center;gap:6px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.22);padding:4px 12px;border-radius:12px;font-size:10px;font-weight:700;color:#C084FC;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:12px"><span style="width:5px;height:5px;border-radius:50%;background:#C084FC"></span>${isRoommateHouse ? 'House Setup' : 'Trip Upcoming'}</div>`;
       }
     } catch(e) {}
   }
 
   const coverHTML = trip.cover_image
     ? `<div style="max-width:800px;margin:0 auto;padding:16px 20px 0"><div style="position:relative;width:100%;height:190px;border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,0.07)"><img src="${baseUrl}/trip/${tripId}/cover-image" id="cover-img" style="width:100%;height:100%;object-fit:cover"><button id="cover-change-btn" style="position:absolute;bottom:10px;right:10px;padding:7px 14px;background:rgba(0,0,0,0.7);border:1px solid rgba(255,255,255,0.2);border-radius:8px;color:#fff;font-family:'Epilogue',sans-serif;font-size:12px;font-weight:600;cursor:pointer">📷 Change</button><input id="cover-upload" type="file" accept="image/*" style="display:none"></div></div>`
-    : `<div style="max-width:800px;margin:16px auto 0;padding:0 20px"><div id="cover-empty" style="width:100%;height:100px;border:2px dashed rgba(124,58,237,0.3);border-radius:16px;display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;background:rgba(124,58,237,0.03)"><span style="font-size:20px">🖼</span><span style="font-size:13px;color:#6E6B80;font-weight:500">Add a cover photo for this trip</span></div><input id="cover-upload" type="file" accept="image/*" style="display:none"></div>`;
+    : `<div style="max-width:800px;margin:16px auto 0;padding:0 20px"><div id="cover-empty" style="width:100%;height:100px;border:2px dashed rgba(124,58,237,0.3);border-radius:16px;display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;background:rgba(124,58,237,0.03)"><span style="font-size:20px">🖼</span><span style="font-size:13px;color:#6E6B80;font-weight:500">${coverEmptyLabel}</span></div><input id="cover-upload" type="file" accept="image/*" style="display:none"></div>`;
 
   const visiblePeople = people.slice(0, 5);
   const overflowPeople = people.slice(5);
@@ -2333,12 +2388,12 @@ app.get('/trip/:tripId', async (req, res) => {
       const endDateRow = trip.end_date
         ? `<div style="margin-top:4px;display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:rgba(110,107,128,0.08);border:1px solid rgba(110,107,128,0.2);border-radius:8px"><span style="font-size:10px;color:#6E6B80">🏁 Trip ends</span><span style="font-size:10px;color:#9896A8">${new Date(trip.end_date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span></div>`
         : `<div style="margin-top:4px;display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:rgba(255,255,255,0.02);border:1px dashed rgba(255,255,255,0.07);border-radius:8px;cursor:pointer" id="add-end-date-btn"><span style="font-size:10px;color:#6E6B80">+ Set trip end date</span></div>`;
-      countdownHTML = `<div style="background:linear-gradient(135deg,rgba(124,58,237,0.12),rgba(48,209,88,0.08));border:1px solid rgba(124,58,237,0.22);border-radius:16px;padding:20px;text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#C084FC;font-weight:700;margin-bottom:8px">✈️ Countdown to Trip</div><div style="font-size:72px;font-weight:900;line-height:1;color:#F0EEF8;margin-bottom:4px">${days}</div><div style="font-size:13px;color:#9896A8">day${days!==1?'s':''} to go · ${tripDateLabel}</div>${endDateRow}${dueDateRow}</div>`;
+      countdownHTML = `<div style="background:linear-gradient(135deg,rgba(124,58,237,0.12),rgba(48,209,88,0.08));border:1px solid rgba(124,58,237,0.22);border-radius:16px;padding:20px;text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#C084FC;font-weight:700;margin-bottom:8px">${isRoommateHouse ? '🏠 Next House Cycle' : '✈️ Countdown to Trip'}</div><div style="font-size:72px;font-weight:900;line-height:1;color:#F0EEF8;margin-bottom:4px">${days}</div><div style="font-size:13px;color:#9896A8">day${days!==1?'s':''} to go · ${tripDateLabel}</div>${endDateRow}${dueDateRow}</div>`;
     } else if (days === 0) {
       const dueDateRow = trip.due_date
         ? `<div style="margin-top:8px;font-size:11px;color:#9896A8">Friendly reminder: all bills are due by ${new Date(trip.due_date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}.</div>`
         : '';
-      countdownHTML = `<div style="background:linear-gradient(135deg,rgba(48,209,88,0.12),rgba(124,58,237,0.08));border:1px solid rgba(48,209,88,0.3);border-radius:16px;padding:20px;text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#30D158;font-weight:700;margin-bottom:8px">✈️ Trip is Active</div><div style="font-size:48px;font-weight:900;line-height:1;color:#30D158;margin-bottom:4px">🛫</div><div style="font-size:13px;color:#9896A8">Started today · ${tripDateLabel}</div>${dueDateRow}</div>`;
+      countdownHTML = `<div style="background:linear-gradient(135deg,rgba(48,209,88,0.12),rgba(124,58,237,0.08));border:1px solid rgba(48,209,88,0.3);border-radius:16px;padding:20px;text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#30D158;font-weight:700;margin-bottom:8px">${isRoommateHouse ? '🏠 House Cycle is Live' : '✈️ Trip is Active'}</div><div style="font-size:48px;font-weight:900;line-height:1;color:#30D158;margin-bottom:4px">${isRoommateHouse ? '🏡' : '🛫'}</div><div style="font-size:13px;color:#9896A8">${isRoommateHouse ? 'Cycle starts today' : 'Started today'} · ${tripDateLabel}</div>${dueDateRow}</div>`;
     } else {
       const ago = Math.abs(days);
       // Check if end_date has passed — if so, show "Trip Completed"
@@ -2361,13 +2416,13 @@ app.get('/trip/:tripId', async (req, res) => {
         ? `<div style="font-size:11px;color:#9896A8;margin-top:6px">Friendly reminder: all bills are due by ${new Date(trip.due_date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}.</div>`
         : '';
       countdownHTML = isCompleted
-        ? `<div style="background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.3);border-radius:16px;padding:16px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:700;margin-bottom:4px">✅ Trip Completed</div><div style="font-size:12px;color:#6E6B80">Started ${tripDateLabel}${trip.end_date ? ' · ended ' + new Date(trip.end_date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}) : ''}</div><div style="font-size:11px;color:#6E6B80;margin-top:4px">${completedAgo} day${completedAgo!==1?'s':''} since the trip wrapped up</div>${dueDateMsg}</div>`
+        ? `<div style="background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.3);border-radius:16px;padding:16px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:700;margin-bottom:4px">${isRoommateHouse ? '✅ House Cycle Closed' : '✅ Trip Completed'}</div><div style="font-size:12px;color:#6E6B80">Started ${tripDateLabel}${trip.end_date ? ' · ended ' + new Date(trip.end_date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}) : ''}</div><div style="font-size:11px;color:#6E6B80;margin-top:4px">${completedAgo} day${completedAgo!==1?'s':''} since the ${isRoommateHouse ? 'house cycle wrapped' : 'trip wrapped up'}</div>${dueDateMsg}</div>`
         : isActive
-          ? `<div style="background:linear-gradient(135deg,rgba(48,209,88,0.1),rgba(255,193,7,0.06));border:1px solid rgba(48,209,88,0.24);border-radius:16px;padding:18px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:700;margin-bottom:4px">🟢 Trip is Active</div><div style="font-size:12px;color:#6E6B80">From ${tripDateLabel}${trip.end_date ? ' through ' + new Date(trip.end_date+'T12:00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}) : ''}</div>${dueDateMsg}</div>`
-          : `<div style="background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.18);border-radius:16px;padding:16px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:600">✅ Trip was ${ago>0?ago+' day'+(ago!==1?'s':'')+' ago':'today'} · ${tripDateLabel}</div>${dueDateMsg}</div>`;
+          ? `<div style="background:linear-gradient(135deg,rgba(48,209,88,0.1),rgba(255,193,7,0.06));border:1px solid rgba(48,209,88,0.24);border-radius:16px;padding:18px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:700;margin-bottom:4px">${isRoommateHouse ? '🟢 House Cycle is Active' : '🟢 Trip is Active'}</div><div style="font-size:12px;color:#6E6B80">From ${tripDateLabel}${trip.end_date ? ' through ' + new Date(trip.end_date+'T12:00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}) : ''}</div>${dueDateMsg}</div>`
+          : `<div style="background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.18);border-radius:16px;padding:16px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:600">✅ ${isRoommateHouse ? 'House cycle was' : 'Trip was'} ${ago>0?ago+' day'+(ago!==1?'s':'')+' ago':'today'} · ${tripDateLabel}</div>${dueDateMsg}</div>`;
     }
   } else {
-    countdownHTML = `<div style="background:#13131A;border:1px dashed rgba(255,255,255,0.08);border-radius:14px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="font-size:13px;color:#6E6B80">📅 No trip date set</div><div style="font-size:11px;color:#6E6B80;font-style:italic">Set date in settings</div></div>`;
+    countdownHTML = `<div style="background:#13131A;border:1px dashed rgba(255,255,255,0.08);border-radius:14px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="font-size:13px;color:#6E6B80">${countdownEmptyLabel}</div><div style="font-size:11px;color:#6E6B80;font-style:italic">${countdownEmptyHint}</div></div>`;
   }
 
   const owesRows = people.map((p, i) => {
@@ -2687,6 +2742,7 @@ app.get('/trip/:tripId', async (req, res) => {
   // All user-controlled data goes into a single JSON blob read by JS — NEVER interpolated into JS template literals
   const pageData = JSON.stringify({
     tripId,
+    tripType: trip.type || '',
     shareToken: trip.share_token,
     backendUrl: baseUrl,
     tripUrl,
@@ -2722,17 +2778,17 @@ app.get('/trip/:tripId', async (req, res) => {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>✈️ ${esc(trip.name)} — RAVEN</title>
-<meta property="og:title" content="✈️ ${esc(trip.name)} — Trip Hub on RAVEN">
-<meta property="og:description" content="${people.length} people · ${(receipts||[]).length} receipts · $${totalSpend.toFixed(2)} total">
+<title>${experienceIcon} ${esc(trip.name)} — RAVEN</title>
+<meta property="og:title" content="${experienceIcon} ${esc(trip.name)} — ${pageTitleSuffix}">
+<meta property="og:description" content="${people.length} ${memberCountLabel} · ${(receipts||[]).length} ${receiptCountLabel}${(receipts||[]).length!==1?'s':''} · $${totalSpend.toFixed(2)} total">
 <meta property="og:image" content="${trip.cover_image ? baseUrl+'/trip/'+tripId+'/cover-image' : 'https://ravensplit.com/raven-hero.png'}">
 <meta property="og:image:width" content="800">
 <meta property="og:image:height" content="400">
 <meta property="og:url" content="${tripUrl}">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="✈️ ${esc(trip.name)} — Trip Hub on RAVEN">
-<meta name="twitter:description" content="${people.length} people · ${(receipts||[]).length} receipts · $${totalSpend.toFixed(2)} total">
+<meta name="twitter:title" content="${experienceIcon} ${esc(trip.name)} — ${pageTitleSuffix}">
+<meta name="twitter:description" content="${people.length} ${memberCountLabel} · ${(receipts||[]).length} ${receiptCountLabel}${(receipts||[]).length!==1?'s':''} · $${totalSpend.toFixed(2)} total">
 <meta name="twitter:image" content="${trip.cover_image ? baseUrl+'/trip/'+tripId+'/cover-image' : 'https://ravensplit.com/raven-hero.png'}">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Epilogue:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -2776,11 +2832,11 @@ ${coverHTML}
 
 <div class="sec" style="margin-top:16px">
   ${topTripStatusBadge}
-  <div style="font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:0.04em;line-height:1;margin-bottom:8px">✈️ ${esc(trip.name)}</div>
+  <div style="font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:0.04em;line-height:1;margin-bottom:8px">${experienceIcon} ${esc(trip.name)}</div>
   <div style="font-size:13px;color:#6E6B80;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-    <span>${people.length} people</span>
+    <span>${people.length} ${memberCountLabel}</span>
     <span style="width:3px;height:3px;border-radius:50%;background:rgba(255,255,255,0.12)"></span>
-    <span>${(receipts||[]).length} receipt${(receipts||[]).length!==1?'s':''}</span>
+    <span>${(receipts||[]).length} ${receiptCountLabel}${(receipts||[]).length!==1?'s':''}</span>
     <span style="width:3px;height:3px;border-radius:50%;background:rgba(255,255,255,0.12)"></span>
     ${grandTotal > 0
       ? `<span style='color:#FF9A3C;font-weight:600'>$${grandTotal.toFixed(2)} outstanding</span>`
@@ -2790,8 +2846,8 @@ ${coverHTML}
   <div style="display:flex;align-items:center;margin-top:14px;margin-bottom:6px;position:relative">
     ${avatarRow}
     <button id="open-add-members" style="width:32px;height:32px;border-radius:50%;background:#13131A;border:2px dashed rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;cursor:pointer;margin-left:4px;flex-shrink:0;font-size:14px;color:#6E6B80">+</button>
-    <button id="open-invite" style="padding:5px 14px;margin-left:10px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.25);border-radius:20px;color:#A855F7;font-family:'Epilogue',sans-serif;font-size:11px;font-weight:700;cursor:pointer">📨 Invite</button>
-    <button id="chat-open-btn" onclick="initChatDb().then(openChat)" style="padding:5px 14px;margin-left:8px;background:rgba(0,140,255,0.1);border:1px solid rgba(0,140,255,0.25);border-radius:20px;color:#4DB8FF;font-family:'Epilogue',sans-serif;font-size:11px;font-weight:700;cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation;position:relative">💬 Chat</button>
+    <button id="open-invite" style="padding:5px 14px;margin-left:10px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.25);border-radius:20px;color:#A855F7;font-family:'Epilogue',sans-serif;font-size:11px;font-weight:700;cursor:pointer">${inviteButtonLabel}</button>
+    <button id="chat-open-btn" onclick="initChatDb().then(openChat)" style="padding:5px 14px;margin-left:8px;background:rgba(0,140,255,0.1);border:1px solid rgba(0,140,255,0.25);border-radius:20px;color:#4DB8FF;font-family:'Epilogue',sans-serif;font-size:11px;font-weight:700;cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation;position:relative">${chatButtonLabel}</button>
   </div>
 </div>
 
@@ -2800,8 +2856,8 @@ ${coverHTML}
 <div class="sec" style="margin-top:16px">
   <div id="trip-reminder-wrap" style="display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 16px;background:linear-gradient(135deg,rgba(255,193,7,0.12),rgba(255,193,7,0.04));border:1px solid rgba(255,193,7,0.24);border-radius:16px">
     <div>
-      <div style="font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#FFD54A;margin-bottom:4px">Payment Reminders</div>
-      <div id="trip-reminder-text" style="font-size:13px;color:#F6E7A1;line-height:1.6">Send one reminder today to everyone who still owes for this trip.</div>
+      <div style="font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#FFD54A;margin-bottom:4px">${reminderHeading}</div>
+      <div id="trip-reminder-text" style="font-size:13px;color:#F6E7A1;line-height:1.6">${reminderMessage}</div>
     </div>
     <button id="trip-reminder-btn" style="width:46px;height:46px;border-radius:50%;border:1px solid rgba(255,193,7,0.35);background:radial-gradient(circle at 30% 30%,rgba(255,232,122,0.25),rgba(255,193,7,0.08));color:#FFD54A;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 10px 26px rgba(255,193,7,0.12);flex-shrink:0" title="Send payment reminder">
       <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -2813,18 +2869,18 @@ ${coverHTML}
 </div>
 
 <div class="sec" style="margin-top:20px">
-  <div class="sec-lbl">Who Owes What</div>
+  <div class="sec-lbl">${owesHeading}</div>
   <div class="card">
     ${owesRows}
     <div id="outstanding-footer" data-total-spend="${totalSpend.toFixed(2)}" style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:${grandTotal>0?'rgba(255,107,53,0.04)':'rgba(48,209,88,0.04)'};border-top:1px solid ${grandTotal>0?'rgba(255,107,53,0.15)':'rgba(48,209,88,0.12)'}">
       <div>
         <div id='outstanding-sublabel'>
-          <div style='font-size:12px;font-weight:700;color:${settledPeopleCount===totalPeopleCount&&totalPeopleCount>0?"#30D158":"#9896A8"}'>${settledPeopleCount}/${totalPeopleCount} people settled</div>
-          <div style='font-size:10px;color:#6E6B80;margin-top:2px'>$${totalSpend.toFixed(2)} total spent</div>
+          <div style='font-size:12px;font-weight:700;color:${settledPeopleCount===totalPeopleCount&&totalPeopleCount>0?"#30D158":"#9896A8"}'>${settledPeopleCount}/${totalPeopleCount} ${settledLabel}</div>
+          <div style='font-size:10px;color:#6E6B80;margin-top:2px'>$${totalSpend.toFixed(2)} ${totalSpendLabel}</div>
         </div>
       </div>
       <div style="text-align:right">
-        <div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:${grandTotal>0?'#FF9A3C':'#9896A8'};margin-bottom:2px" id="outstanding-label">Outstanding</div>
+        <div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:${grandTotal>0?'#FF9A3C':'#9896A8'};margin-bottom:2px" id="outstanding-label">${outstandingLabel}</div>
         <span id="outstanding-amt" style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:800;color:${grandTotal>0?'#FF9A3C':'#30D158'}">$${grandTotal.toFixed(2)}</span>
       </div>
     </div>
@@ -2832,29 +2888,29 @@ ${coverHTML}
 </div>
 
 <div class="sec" style="margin-top:16px;display:flex;flex-direction:column;gap:10px">
-  <button class="btn-g" id="open-receipt-btn">📸 Add a Receipt</button>
+  <button class="btn-g" id="open-receipt-btn">${addReceiptButtonLabel}</button>
   <div style="display:flex;gap:10px">
-    <button class="btn-p" id="open-share" style="flex:1">🔗 Share</button>
-    <button id="open-settings" style="flex:1;padding:13px;background:#13131A;border:1px solid var(--border2);border-radius:12px;color:#9896A8;font-family:'Epilogue',sans-serif;font-size:14px;font-weight:600;cursor:pointer">⚙️ Settings</button>
+    <button class="btn-p" id="open-share" style="flex:1">${shareButtonLabel}</button>
+    <button id="open-settings" style="flex:1;padding:13px;background:#13131A;border:1px solid var(--border2);border-radius:12px;color:#9896A8;font-family:'Epilogue',sans-serif;font-size:14px;font-weight:600;cursor:pointer">${settingsButtonLabel}</button>
   </div>
 </div>
 
 <div id="receipt-form-wrap" style="display:none">
   <div class="sec" style="margin-top:16px">
-    <div class="sec-lbl">New Receipt</div>
+    <div class="sec-lbl">${newReceiptHeading}</div>
     <div class="card" style="padding:20px;display:flex;flex-direction:column;gap:14px">
-      <div><div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600">Receipt Name</div><input id="r-name" type="text" placeholder="e.g. Dinner at Casa Marina"></div>
+      <div><div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600">${newReceiptNameLabel}</div><input id="r-name" type="text" placeholder="${newReceiptNamePlaceholder}"></div>
       <div>
-        <div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600">Who paid? <span style="color:#6E6B80;font-weight:400">(they'll collect from others)</span></div>
+        <div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600">${whoPaidLabel}</div>
         <select id="r-paidby" style="width:100%;padding:12px 14px;background:#13131A;border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#F0EEF8;font-family:'Epilogue',sans-serif;font-size:14px;font-weight:600">
           <option value="">— Select who paid —</option>
           ${people.map(p => '<option value="' + esc(p) + '">' + esc(p) + '</option>').join('')}
         </select>
       </div>
       <div>
-        <div style="font-size:12px;color:#6E6B80;margin-bottom:8px;font-weight:600">Photo — RAVEN scans automatically</div>
+        <div style="font-size:12px;color:#6E6B80;margin-bottom:8px;font-weight:600">${photoScanLabel}</div>
         <div id="r-drop" style="border:2px dashed rgba(48,209,88,0.25);border-radius:12px;padding:20px;text-align:center;cursor:pointer">
-          <div id="r-empty" style="color:#6E6B80;font-size:13px">📸 Tap to upload receipt photo</div>
+          <div id="r-empty" style="color:#6E6B80;font-size:13px">${photoUploadLabel}</div>
           <img id="r-preview" style="display:none;max-width:100%;border-radius:8px;max-height:220px;object-fit:contain">
         </div>
         <input id="r-file" type="file" accept="image/*" style="display:none">
@@ -2918,12 +2974,12 @@ ${coverHTML}
 
 <div class="sec" style="margin-top:20px">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;cursor:pointer" onclick="toggleReceipts()">
-    <div class="sec-lbl" style="margin-bottom:0">All Receipts (${(receipts||[]).length})</div>
+    <div class="sec-lbl" style="margin-bottom:0">${sectionReceiptsLabel} (${(receipts||[]).length})</div>
     <div id="receipts-toggle" style="font-size:12px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:8px;user-select:none">${(receipts||[]).length > 0 ? '▾ Show' : ''}</div>
   </div>
   <div id="receipts-body" style="display:none">
     ${(receipts||[]).length===0
-      ? '<div style="text-align:center;padding:28px 20px;color:#6E6B80;font-size:14px;background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:16px"><div style="font-size:32px;margin-bottom:10px">🧾</div><div style="font-weight:600;color:#9896A8;margin-bottom:4px">No receipts yet</div><div>Be the first to add one!</div></div>'
+      ? '<div style="text-align:center;padding:28px 20px;color:#6E6B80;font-size:14px;background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:16px"><div style="font-size:32px;margin-bottom:10px">🧾</div><div style="font-weight:600;color:#9896A8;margin-bottom:4px">' + emptyReceiptsTitle + '</div><div>' + emptyReceiptsBody + '</div></div>'
       : '<div class="card">' + receiptRows + '</div>'}
   </div>
 </div>
@@ -2932,7 +2988,7 @@ ${coverHTML}
   <div class="sec-lbl">Comments (${(comments||[]).length})</div>
   <div class="card" id="comments-card">
     ${(comments||[]).length===0
-      ? '<div style="padding:24px;text-align:center;color:#6E6B80;font-size:13px">No comments yet — say something! 👋</div>'
+      ? '<div style="padding:24px;text-align:center;color:#6E6B80;font-size:13px">' + commentsEmptyLabel + '</div>'
       : commentRows}
   </div>
   <div style="margin-top:12px;background:#0C0C12;border:1px solid var(--border2);border-radius:14px;overflow:hidden">
@@ -2947,14 +3003,14 @@ ${coverHTML}
         <button id="gif-clear-btn" style="padding:4px 10px;background:rgba(255,68,68,0.12);border:1px solid rgba(255,68,68,0.25);border-radius:6px;color:#FF6B6B;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">✕ Remove</button>
       </div>
     </div>
-    <textarea id="comment-body" placeholder="Add a comment..." rows="2" style="border-radius:0;border:none;border-bottom:1px solid var(--border);background:transparent;resize:none;display:block"></textarea>
+    <textarea id="comment-body" placeholder="${commentPlaceholder}" rows="2" style="border-radius:0;border:none;border-bottom:1px solid var(--border);background:transparent;resize:none;display:block"></textarea>
     <div id="gif-panel" style="display:none;border-bottom:1px solid var(--border);background:#13131A">
       <div style="padding:8px 12px"><input id="gif-search" type="text" placeholder="Search GIFs..." style="padding:10px 14px;font-size:13px;background:#1A1A24;border:1px solid var(--border);border-radius:8px"></div>
       <div id="gif-results" style="display:flex;flex-wrap:wrap;gap:4px;padding:0 12px 10px;max-height:180px;overflow-y:auto"><div style="color:#6E6B80;font-size:12px;padding:8px 0">Type to search GIFs...</div></div>
     </div>
     <div style="display:flex">
       <button id="gif-toggle-btn" style="padding:13px 16px;background:transparent;border:none;border-right:1px solid var(--border);color:#6E6B80;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;flex-shrink:0">🎭 GIF</button>
-      <button id="post-comment-btn" style="flex:1;padding:13px;background:rgba(48,209,88,0.12);border:none;color:#30D158;font-family:inherit;font-size:15px;font-weight:700;cursor:pointer">💬 Post</button>
+      <button id="post-comment-btn" style="flex:1;padding:13px;background:rgba(48,209,88,0.12);border:none;color:#30D158;font-family:inherit;font-size:15px;font-weight:700;cursor:pointer">${postCommentLabel}</button>
     </div>
   </div>
 </div>
@@ -2983,12 +3039,12 @@ ${coverHTML}
   <div style="background:#13131A;border:1px solid rgba(255,255,255,0.1);border-radius:24px 24px 0 0;padding:28px 24px 48px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto">
     <div style="width:36px;height:4px;background:rgba(255,255,255,0.15);border-radius:2px;margin:0 auto 20px"></div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-      <div style="font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:0.05em">✏️ Edit Receipt</div>
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:0.05em">${editReceiptTitle}</div>
       <button onclick="closeEditReceipt()" style="background:rgba(255,255,255,0.07);border:none;color:#9896A8;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:16px">✕</button>
     </div>
     <div style="display:flex;flex-direction:column;gap:16px">
       <div>
-        <div style="font-size:12px;color:#6E6B80;font-weight:600;margin-bottom:6px">Receipt Name</div>
+        <div style="font-size:12px;color:#6E6B80;font-weight:600;margin-bottom:6px">${editReceiptNameLabel}</div>
         <input id="edit-r-name" type="text" style="width:100%;padding:12px 14px;background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#F0EEF8;font-family:'Epilogue',sans-serif;font-size:14px">
       </div>
       <div>
@@ -3003,7 +3059,7 @@ ${coverHTML}
         <div style="position:relative"><span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#6E6B80">$</span><input id="edit-r-total" type="number" step="0.01" oninput="updateEditSplitPreview()" style="width:100%;padding:12px 14px 12px 28px;background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#F0EEF8;font-family:'Epilogue',sans-serif;font-size:14px"></div>
       </div>
       <div>
-        <div style="font-size:12px;color:#6E6B80;font-weight:600;margin-bottom:10px">Who's on this receipt?</div>
+        <div style="font-size:12px;color:#6E6B80;font-weight:600;margin-bottom:10px">${editPeopleLabel}</div>
         <div id="edit-r-people" style="display:flex;flex-direction:column;gap:8px"></div>
         <div style="font-size:11px;color:#6E6B80;margin-top:8px">Unchecked people are removed from the split. Amounts are recalculated evenly among checked people.</div>
       </div>
@@ -3020,11 +3076,11 @@ ${coverHTML}
 <div class="modal-bg" id="settings-modal">
   <div class="modal-box">
     <div class="handle"></div>
-    <div style="font-size:26px;font-weight:800;margin-bottom:16px">Trip Settings</div>
-    <div style="margin-bottom:14px"><div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">Trip Name</div><input id="settings-name" type="text" placeholder="Trip name"></div>
-    <div style="margin-bottom:16px"><div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">Trip Start Date</div><input id="settings-date" type="date"></div>
-    <div style="margin-bottom:16px"><div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">🏁 Trip End Date <span style="font-weight:400;text-transform:none;font-size:11px;letter-spacing:0">(marks trip as completed)</span></div><input id="settings-end-date" type="date"></div>
-    <div style="margin-bottom:16px"><div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">💰 Bill Due Date <span style="font-weight:400;text-transform:none;font-size:11px;letter-spacing:0">(RAVEN sends reminders after this)</span></div><input id="settings-due-date" type="date"></div>
+    <div style="font-size:26px;font-weight:800;margin-bottom:16px">${settingsTitle}</div>
+    <div style="margin-bottom:14px"><div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">${settingsNameLabel}</div><input id="settings-name" type="text" placeholder="${settingsNamePlaceholder}"></div>
+    <div style="margin-bottom:16px"><div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">${settingsDateLabel}</div><input id="settings-date" type="date"></div>
+    <div style="margin-bottom:16px"><div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">${settingsEndDateLabel} <span style="font-weight:400;text-transform:none;font-size:11px;letter-spacing:0">${settingsEndDateHint}</span></div><input id="settings-end-date" type="date"></div>
+    <div style="margin-bottom:16px"><div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">${settingsDueDateLabel} <span style="font-weight:400;text-transform:none;font-size:11px;letter-spacing:0">${settingsDueDateHint}</span></div><input id="settings-due-date" type="date"></div>
     <button class="btn-g" id="save-settings-btn" style="margin-bottom:10px">💾 Save Changes</button>
     <button class="btn-o" id="close-settings-btn">Cancel</button>
   </div>
@@ -3034,16 +3090,16 @@ ${coverHTML}
 <div class="modal-bg" id="add-members-modal">
   <div class="modal-box">
     <div class="handle"></div>
-    <div style="font-size:26px;font-weight:800;margin-bottom:4px">Add Members</div>
-    <div style="font-size:13px;color:#6E6B80;margin-bottom:16px;line-height:1.6">Enter a name or <span style="color:#A855F7;font-weight:700">@ravenid</span> — using a Raven ID links their account so the trip auto-appears in their hub.</div>
+    <div style="font-size:26px;font-weight:800;margin-bottom:4px">${addMembersTitle}</div>
+    <div style="font-size:13px;color:#6E6B80;margin-bottom:16px;line-height:1.6">${addMembersHelp}</div>
     <div style="display:flex;gap:8px;margin-bottom:14px">
       <input id="new-member-input" type="text" placeholder="Name or @ravenid" style="flex:1">
       <button id="add-member-btn" style="padding:12px 18px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.25);border-radius:10px;color:#30D158;font-family:'Epilogue',sans-serif;font-size:14px;font-weight:700;cursor:pointer;flex-shrink:0">+ Add</button>
     </div>
-    <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:8px">Current Members</div>
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:8px">${currentMembersLabel}</div>
     <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">${existingMemberRows}</div>
     <div id="new-members-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px"></div>
-    <button class="btn-g" id="save-members-btn" style="display:none;margin-bottom:10px">✓ Save New Members</button>
+    <button class="btn-g" id="save-members-btn" style="display:none;margin-bottom:10px">${saveMembersLabel}</button>
     <button class="btn-o" id="close-members-btn">Close</button>
   </div>
 </div>
@@ -3052,23 +3108,23 @@ ${coverHTML}
 <div class="modal-bg" id="invite-modal">
   <div class="modal-box">
     <div class="handle"></div>
-    <div style="font-size:26px;font-weight:800;margin-bottom:16px">Invite to Trip</div>
+    <div style="font-size:26px;font-weight:800;margin-bottom:16px">${inviteTitle}</div>
     <div style="background:#13131A;border:1px solid var(--border2);border-radius:14px;padding:16px;margin-bottom:12px">
-      <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#9896A8;margin-bottom:6px">📋 Trip Link</div>
-      <div style="font-size:12px;color:#6E6B80;margin-bottom:10px">For people already added to the trip</div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#9896A8;margin-bottom:6px">${shareLinkHeading}</div>
+      <div style="font-size:12px;color:#6E6B80;margin-bottom:10px">${shareLinkHelp}</div>
       <div id="trip-url-text" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#9896A8;background:#1A1A24;border-radius:8px;padding:8px 12px;margin-bottom:10px;word-break:break-all"></div>
       <div style="display:flex;gap:8px">
-        <button id="copy-trip-btn" style="flex:1;padding:11px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.25);border-radius:9px;color:#30D158;font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📋 Copy</button>
-        <button id="share-trip-btn" style="flex:1;padding:11px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.25);border-radius:9px;color:#30D158;font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📤 Share</button>
+        <button id="copy-trip-btn" style="flex:1;padding:11px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.25);border-radius:9px;color:#30D158;font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">${shareLinkCopy}</button>
+        <button id="share-trip-btn" style="flex:1;padding:11px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.25);border-radius:9px;color:#30D158;font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">${shareLinkShare}</button>
       </div>
     </div>
     <div style="background:#13131A;border:1px solid rgba(124,58,237,0.25);border-radius:14px;padding:16px;margin-bottom:16px">
-      <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#C084FC;margin-bottom:6px">📨 Invite Link</div>
-      <div style="font-size:12px;color:#6E6B80;margin-bottom:10px">Requires creating a RAVEN account</div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#C084FC;margin-bottom:6px">${inviteLinkHeading}</div>
+      <div style="font-size:12px;color:#6E6B80;margin-bottom:10px">${inviteLinkHelp}</div>
       <div id="invite-url-text" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#9896A8;background:#1A1A24;border-radius:8px;padding:8px 12px;margin-bottom:10px;word-break:break-all"></div>
       <div style="display:flex;gap:8px">
-        <button id="copy-invite-btn" style="flex:1;padding:11px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.3);border-radius:9px;color:#A855F7;font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📋 Copy Invite</button>
-        <button id="share-invite-btn" style="flex:1;padding:11px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.3);border-radius:9px;color:#A855F7;font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">📤 Share</button>
+        <button id="copy-invite-btn" style="flex:1;padding:11px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.3);border-radius:9px;color:#A855F7;font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">${inviteCopyLabel}</button>
+        <button id="share-invite-btn" style="flex:1;padding:11px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.3);border-radius:9px;color:#A855F7;font-family:'Epilogue',sans-serif;font-size:13px;font-weight:700;cursor:pointer">${inviteShareLabel}</button>
       </div>
     </div>
     <button class="btn-o" id="close-invite-btn">Done</button>
@@ -3087,6 +3143,7 @@ const TRIP_URL   = D.tripUrl;
 const INVITE_URL = D.inviteUrl;
 const TRIP_NAME  = D.tripName;
 const TRIP_DATE  = D.tripDate;
+const IS_ROOMMATE_HOUSE_PAGE = String(D.tripType || '').toLowerCase() === 'roommates';
 const TRIP_DUE_DATE = D.dueDate || '';
 const TRIP_REMINDER_LAST_SENT_AT = D.reminderLastSentAt || '';
 const CREATOR_EMAIL = D.creatorEmail || '';
@@ -4570,7 +4627,7 @@ function addNewMember() {
   const inp  = document.getElementById('new-member-input');
   const name = inp.value.trim();
   if (!name) return;
-  if (PEOPLE.some(p=>p.toLowerCase()===name.toLowerCase())) { toast('Already on this trip',false); return; }
+  if (PEOPLE.some(p=>p.toLowerCase()===name.toLowerCase())) { toast(IS_ROOMMATE_HOUSE_PAGE ? 'Already in this house' : 'Already on this trip',false); return; }
   if (newMembers.some(p=>p.toLowerCase()===name.toLowerCase())) { toast('Already added',false); return; }
   newMembers.push(name); inp.value=''; renderNewMembers();
 }
