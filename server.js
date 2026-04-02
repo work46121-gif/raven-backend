@@ -2083,7 +2083,21 @@ app.get('/trip/:tripId', async (req, res) => {
   const people = Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people || '[]');
 
   // Fetch payment profiles for all trip members
-  let memberPayProfiles = {}; // { "Name": { venmo, cashapp, zelle, applepay } }
+  let memberPayProfiles = {}; // keyed by first name, full name, and raven_id when available
+  const saveMemberProfileAlias = (key, profile) => {
+    if (!key) return;
+    const cleanKey = String(key).trim();
+    if (!cleanKey || memberPayProfiles[cleanKey]) return;
+    memberPayProfiles[cleanKey] = {
+      venmo: profile.venmo || '',
+      cashapp: profile.cashapp || '',
+      zelle: profile.zelle || '',
+      applepay: profile.applepay || '',
+      email: profile.email || '',
+      raven_id: profile.raven_id || '',
+      created_at: profile.created_at || ''
+    };
+  };
   try {
     // Strategy 1: use member_emails stored on trip
     let memberEmails = [];
@@ -2110,6 +2124,32 @@ app.get('/trip/:tripId', async (req, res) => {
       });
     }
   } catch(e) { console.error('Error fetching payment profiles:', e); }
+
+  try {
+    const normalizedPeople = [...new Set((people || []).map(p => String(p || '').trim()).filter(Boolean))];
+    const ravenHandles = normalizedPeople.filter(p => /^@?[a-z0-9_]{2,30}$/i.test(p)).map(p => p.replace(/^@/, '').toLowerCase());
+    const firstNames = [...new Set(normalizedPeople.map(p => p.split(' ')[0]).filter(Boolean))];
+
+    if (ravenHandles.length > 0) {
+      const { data: profilesByHandle } = await supabase.from('profiles').select('first_name,last_name,email,venmo,cashapp,zelle,applepay,raven_id,avatar_url,created_at').in('raven_id', ravenHandles);
+      (profilesByHandle || []).forEach(p => {
+        const fullName = [p.first_name, p.last_name].filter(Boolean).join(' ').trim();
+        saveMemberProfileAlias(p.first_name, p);
+        saveMemberProfileAlias(fullName, p);
+        saveMemberProfileAlias(p.raven_id, p);
+      });
+    }
+
+    if (firstNames.length > 0) {
+      const { data: profilesByName } = await supabase.from('profiles').select('first_name,last_name,email,venmo,cashapp,zelle,applepay,raven_id,avatar_url,created_at').in('first_name', firstNames);
+      (profilesByName || []).forEach(p => {
+        const fullName = [p.first_name, p.last_name].filter(Boolean).join(' ').trim();
+        saveMemberProfileAlias(p.first_name, p);
+        saveMemberProfileAlias(fullName, p);
+        saveMemberProfileAlias(p.raven_id, p);
+      });
+    }
+  } catch(e) { console.error('Extended member profile lookup error:', e); }
 
   // Net owed per person: how much each person owes TO payers (excluding what they paid themselves)
   const totals = {};       // what each person owes overall
