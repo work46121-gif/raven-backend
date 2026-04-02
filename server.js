@@ -1927,28 +1927,63 @@ document.getElementById('name-input').addEventListener('keydown', e => {
 
 
 // Helper: compute outstanding balance for a trip (respecting settled credits)
+function parseSettledPeopleRecord(raw) {
+  try {
+    let parsed = raw;
+    if (typeof parsed === 'string') { try { parsed = JSON.parse(parsed); } catch(e) {} }
+    if (typeof parsed === 'string') { try { parsed = JSON.parse(parsed); } catch(e) {} }
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && typeof parsed === 'object') return parsed;
+    return {};
+  } catch(e) {
+    return {};
+  }
+}
+
+function aggregateSettledCredits(raw, validReceiptIds) {
+  const parsed = parseSettledPeopleRecord(raw);
+  if (Array.isArray(parsed)) {
+    const credits = {};
+    parsed.forEach(name => {
+      const key = String(name || '').trim().toLowerCase();
+      if (key) credits[key] = 999999;
+    });
+    return credits;
+  }
+  const validIds = validReceiptIds instanceof Set ? validReceiptIds : null;
+  const hasReceiptKeys = {};
+  Object.keys(parsed || {}).forEach(k => {
+    if (!k.includes('::receipt::')) return;
+    const [personKey, receiptId] = k.split('::receipt::');
+    if (validIds && !validIds.has(String(receiptId))) return;
+    hasReceiptKeys[String(personKey || '').toLowerCase()] = true;
+  });
+  const credits = {};
+  Object.entries(parsed || {}).forEach(([k, v]) => {
+    const val = parseFloat(v) || 0;
+    if (val <= 0) return;
+    if (k.includes('::receipt::')) {
+      const [personKey, receiptId] = k.split('::receipt::');
+      if (validIds && !validIds.has(String(receiptId))) return;
+      const personLower = String(personKey || '').toLowerCase();
+      if (!personLower) return;
+      credits[personLower] = (credits[personLower] || 0) + val;
+      return;
+    }
+    const personLower = String(k || '').toLowerCase();
+    if (!personLower || hasReceiptKeys[personLower]) return;
+    credits[personLower] = (credits[personLower] || 0) + val;
+  });
+  return credits;
+}
+
 async function computeOutstanding(tripId) {
   try {
-    const { data: receipts } = await supabase.from('trip_receipts').select('splits,paid_by,total').eq('trip_id', tripId);
+    const { data: receipts } = await supabase.from('trip_receipts').select('id,splits,paid_by,total').eq('trip_id', tripId);
     const { data: trip } = await supabase.from('trips').select('settled_people,people').eq('id', tripId).single();
     if (!receipts || !trip) return null;
-    let settledCreds = {};
-    try {
-      let sp = trip.settled_people;
-      if (typeof sp === 'string') { try { sp = JSON.parse(sp); } catch(e){} }
-      if (typeof sp === 'string') { try { sp = JSON.parse(sp); } catch(e){} }
-      if (Array.isArray(sp)) {
-        sp.forEach(name => { settledCreds[name.toLowerCase()] = 999999; });
-      } else if (sp && typeof sp === 'object') {
-        Object.entries(sp).forEach(([k,v]) => {
-          const val = parseFloat(v) || 0;
-          if (val <= 0) return;
-          // Per-receipt keys: 'person::receipt::id' — extract person name
-          const personKey = k.includes('::receipt::') ? k.split('::receipt::')[0] : k;
-          settledCreds[personKey] = (settledCreds[personKey] || 0) + val;
-        });
-      }
-    } catch(e) {}
+    const validReceiptIds = new Set((receipts || []).map(r => String(r.id)));
+    const settledCreds = aggregateSettledCredits(trip.settled_people, validReceiptIds);
     const people = (() => { try { return Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people||'[]'); } catch(e){ return []; } })();
     const rawTotals = {};
     people.forEach(p => { rawTotals[p.toLowerCase()] = 0; });
@@ -2154,15 +2189,20 @@ app.get('/trip/:tripId', async (req, res) => {
   // Net owed per person: how much each person owes TO payers (excluding what they paid themselves)
   const totals = {};       // what each person owes overall
   const owedTo = {};       // { payerName: totalOwedToThem }
-  people.forEach(p => { totals[p] = 0; owedTo[p] = 0; });
+  const assignedTotals = {};
+  const frontedTotals = {};
+  people.forEach(p => { totals[p] = 0; owedTo[p] = 0; assignedTotals[p] = 0; frontedTotals[p] = 0; });
   (receipts || []).forEach(r => {
     try {
       const splits = typeof r.splits === 'string' ? JSON.parse(r.splits) : (r.splits || {});
       const payer = r.paid_by || '';
+      const payerKey = payer ? Object.keys(frontedTotals).find(k => k.toLowerCase() === payer.toLowerCase()) : null;
+      if (payerKey) frontedTotals[payerKey] = Math.round((frontedTotals[payerKey] + (parseFloat(r.total) || 0)) * 100) / 100;
       Object.entries(splits).forEach(([person, amt]) => {
         const key = Object.keys(totals).find(k => k.toLowerCase() === person.toLowerCase());
         if (key === undefined) return;
         const amtNum = Math.round((parseFloat(amt) || 0) * 100) / 100;
+        assignedTotals[key] = Math.round((assignedTotals[key] + amtNum) * 100) / 100;
         // If this person IS the payer, they don't owe themselves — skip
         if (payer && key.toLowerCase() === payer.toLowerCase()) return;
         totals[key] = Math.round((totals[key] + amtNum) * 100) / 100;
@@ -2177,52 +2217,13 @@ app.get('/trip/:tripId', async (req, res) => {
   // Build per-person breakdown: who owes whom and how much
   // settled_credits: { "Name": amountSettled } — stores how much each person has paid off
   // Can be stored as old list format OR new object format — handle both gracefully
-  const settledPeopleRaw = (() => { try { let r = trip.settled_people; if(typeof r==='string'){try{r=JSON.parse(r);}catch(e){}} if(typeof r==='string'){try{r=JSON.parse(r);}catch(e){}} return (r && !Array.isArray(r) && typeof r==='object') ? r : {}; } catch(e){return {};} })();
-  const settledCredits = (() => {
-    try {
-      let raw = trip.settled_people;
-      // Handle double-stringified JSONB
-      if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch(e) {} }
-      if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch(e) {} }
-      console.log('[settled_people raw]', JSON.stringify(raw));
-      if (!raw) return {};
-      const parsed = raw;
-      // Old format: array of names ["daddy","Arsalan"] — store as 999999 credit (fully settled)
-      // The per-person rawOwed check in the render will cap this at the actual amount
-      if (Array.isArray(parsed)) {
-        const credits = {};
-        parsed.forEach(name => { credits[name.toLowerCase()] = 999999; });
-        return credits;
-      }
-      // New format — may contain per-receipt keys 'person::receipt::id' or person-level keys
-      // First pass: find which people have receipt-level keys
-      const hasReceiptKeys = {};
-      Object.keys(parsed).forEach(k => {
-        if (k.includes('::receipt::')) {
-          hasReceiptKeys[k.split('::receipt::')[0].toLowerCase()] = true;
-        }
-      });
-      // Second pass: sum credits, but skip person-level key if receipt-level keys exist
-      // (avoids double-counting when both are stored together)
-      const credits = {};
-      Object.entries(parsed).forEach(([k, v]) => {
-        const val = parseFloat(v) || 0;
-        if (val <= 0) return;
-        if (k.includes('::receipt::')) {
-          const personKey = k.split('::receipt::')[0].toLowerCase();
-          credits[personKey] = (credits[personKey] || 0) + val;
-        } else {
-          // Person-level key: only count it if NO receipt-level keys exist for this person
-          const personKey = k.toLowerCase();
-          if (!hasReceiptKeys[personKey]) {
-            credits[personKey] = (credits[personKey] || 0) + val;
-          }
-          // else: skip — receipt-level keys give us the precise breakdown
-        }
-      });
-      return credits;
-    } catch(e) { return {}; }
+  const validReceiptIds = new Set((receipts || []).map(r => String(r.id)));
+  const settledPeopleRaw = (() => {
+    const parsed = parseSettledPeopleRecord(trip.settled_people);
+    console.log('[settled_people raw]', JSON.stringify(parsed));
+    return (!Array.isArray(parsed) && parsed && typeof parsed === 'object') ? parsed : {};
   })();
+  const settledCredits = aggregateSettledCredits(trip.settled_people, validReceiptIds);
 
 
   // grandTotal = outstanding (after settled credits, capped so 999999 sentinel never over-reduces)
@@ -2499,6 +2500,12 @@ app.get('/trip/:tripId', async (req, res) => {
     const effectiveIsSettled = rawOwed > 0.02 && effectiveAmtOwed <= 0.02;
     const effectiveIsPartiallySettled = settledCredit > 0 && effectiveAmtOwed > 0.02;
     const effectiveIsCreditor = amtReceivable > 0 && effectiveAmtOwed === 0;
+    const assignedTotal = Math.round((assignedTotals[p] || 0) * 100) / 100;
+    const frontedTotal = Math.round((frontedTotals[p] || 0) * 100) / 100;
+    const spendMetaParts = [];
+    if (assignedTotal > 0.005) spendMetaParts.push('assigned $' + assignedTotal.toFixed(2));
+    if (frontedTotal > 0.005) spendMetaParts.push('fronted $' + frontedTotal.toFixed(2));
+    const spendMeta = spendMetaParts.join(' · ');
 
     const personId = 'person-' + p.replace(/[^a-z0-9]/gi,'_');
 
@@ -2539,6 +2546,7 @@ app.get('/trip/:tripId', async (req, res) => {
           <div class="person-balance-display" data-original-owed="${rawOwed.toFixed(2)}" data-raw-owed="${effectiveAmtOwed.toFixed(2)}" style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${effectiveIsSettled?'#30D158':effectiveAmtOwed>0?'#FF9A3C':effectiveIsCreditor?'#A855F7':'#9896A8'}">
             ${effectiveIsSettled ? '$0 ✅' : effectiveAmtOwed>0 ? '-$'+effectiveAmtOwed.toFixed(2) : effectiveIsCreditor ? '+$'+amtReceivable.toFixed(2) : '$0.00'}
           </div>
+          ${spendMeta ? `<div style="margin-top:3px;font-size:10px;color:#6E6B80">${spendMeta}</div>` : ''}
         </div>
       </div>
       ${effectiveIsSettled
@@ -2680,6 +2688,9 @@ app.get('/trip/:tripId', async (req, res) => {
     const thumbHtml = r.photo_url
       ? '<img src="' + esc(r.photo_url) + '" style="width:44px;height:44px;border-radius:10px;object-fit:cover;flex-shrink:0;border:1px solid rgba(255,255,255,0.1)">'
       : '<div style="width:44px;height:44px;border-radius:10px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.2);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">🧾</div>';
+    const receiptAddedByHtml = r.added_by
+      ? `<div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);font-size:11px;color:#6E6B80">👤 ${esc(r.added_by)} added this receipt</div>`
+      : '';
 
     return `
     <div style="border-bottom:1px solid rgba(255,255,255,0.05)" id="${receiptId}-wrap">
@@ -2706,6 +2717,7 @@ app.get('/trip/:tripId', async (req, res) => {
           ${itemsHtml}
           ${personBreakdownHtml}
           ${totalsHtml}
+          ${receiptAddedByHtml}
         </div>
       </div>
     </div>`;
@@ -2765,6 +2777,7 @@ app.get('/trip/:tripId', async (req, res) => {
         id: r.id,
         name: r.name || 'Receipt',
         paid_by: r.paid_by || '',
+        added_by: r.added_by || '',
         total: parseFloat(r.total||0),
         splits: splitsData,
         photo_url: r.photo_url || '',
@@ -3067,6 +3080,7 @@ ${coverHTML}
         <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:8px">Split Preview</div>
         <div id="edit-r-split-rows" style="display:flex;flex-direction:column;gap:4px"></div>
       </div>
+      <div id="edit-r-added-by" style="display:none;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:10px 12px;font-size:12px;color:#9896A8"></div>
       <button id="edit-r-save" onclick="saveEditReceipt()" style="width:100%;padding:15px;background:#30D158;border:none;border-radius:12px;font-family:'Epilogue',sans-serif;font-size:15px;font-weight:700;color:#000;cursor:pointer;margin-top:4px">Save Changes</button>
     </div>
   </div>
@@ -4426,6 +4440,16 @@ function openEditReceipt(id) {
   _editReceiptId = id;
   document.getElementById('edit-r-name').value = r.name;
   document.getElementById('edit-r-total').value = r.total;
+  const addedByEl = document.getElementById('edit-r-added-by');
+  if (addedByEl) {
+    if (r.added_by) {
+      addedByEl.textContent = r.added_by + ' added this receipt';
+      addedByEl.style.display = 'block';
+    } else {
+      addedByEl.textContent = '';
+      addedByEl.style.display = 'none';
+    }
+  }
   const sel = document.getElementById('edit-r-paidby');
   sel.value = r.paid_by || '';
 
@@ -5031,6 +5055,11 @@ async function removeMember(btn, name) {
 async function saveReceipt() {
   const name=document.getElementById('r-name').value.trim()||'Receipt';
   const paidBy=(document.getElementById('r-paidby')||{}).value||'';
+  let addedBy = '';
+  try {
+    const localProfile = JSON.parse(localStorage.getItem('raven_profile') || '{}');
+    addedBy = String(localProfile.first_name || localProfile.name || sessionStorage.getItem('raven_trip_name') || '').trim();
+  } catch(e) {}
   const btn=document.getElementById('r-save');
   btn.textContent='Saving...'; btn.disabled=true;
   let total=0, splits={};
@@ -5079,6 +5108,7 @@ async function saveReceipt() {
       total,
       splits,
       token: TRIP_TOKEN,
+      added_by: addedBy || null,
       items: splitType==='itemized'?tripItems:[],
       paid_by: paidBy || null,
       discount: splitType === 'itemized'
@@ -6025,11 +6055,12 @@ app.post('/trip/:tripId/join', async (req, res) => {
 app.post('/trip/:tripId/receipt', async (req, res) => {
   try {
     const { tripId } = req.params;
-    const { name, total, splits, token, items, paid_by, tax, tip, service_fee, discount } = req.body;
+    const { name, total, splits, token, items, paid_by, tax, tip, service_fee, discount, added_by } = req.body;
     const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
     if (!trip) return res.json({ success: false, error: 'Trip not found' });
     if (trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
     const tripReceiptRow = { trip_id: tripId, name: name||'Receipt', total: parseFloat(total)||0, splits: JSON.stringify(splits||{}), items: JSON.stringify(items||[]), paid_by: paid_by||null, created_at: new Date().toISOString() };
+    if (added_by) tripReceiptRow.added_by = String(added_by).trim().slice(0, 120);
     if (parseFloat(tax) > 0) tripReceiptRow.tax = parseFloat(tax);
     if (parseFloat(tip) > 0) tripReceiptRow.tip = parseFloat(tip);
     if (parseFloat(service_fee) > 0) tripReceiptRow.service_fee = parseFloat(service_fee);
@@ -6044,10 +6075,8 @@ app.post('/trip/:tripId/receipt', async (req, res) => {
     try {
       const { data: tripForCredits } = await supabase.from('trips').select('settled_people').eq('id', tripId).single();
       if (tripForCredits?.settled_people) {
-        let raw = tripForCredits.settled_people;
-        if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch(e) {} }
-        if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch(e) {} }
-        if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+        const raw = parseSettledPeopleRecord(tripForCredits.settled_people);
+        if (raw && (Array.isArray(raw) || typeof raw === 'object')) {
           // Get ALL receipts EXCEPT the one just added (exclude by exact id, not sort order)
           const { data: allReceipts } = await supabase.from('trip_receipts')
             .select('id,splits,paid_by').eq('trip_id', tripId);
@@ -6068,13 +6097,23 @@ app.post('/trip/:tripId/receipt', async (req, res) => {
             } catch(e) {}
           });
 
-          const updatedCredits = { ...raw };
+          const updatedCredits = Array.isArray(raw) ? {} : { ...raw };
+          if (Array.isArray(raw)) {
+            raw.forEach(name => {
+              const key = String(name || '').trim().toLowerCase();
+              if (key) updatedCredits[key] = 999999;
+            });
+          }
           const newSplits = splits || {};
           Object.entries(newSplits).forEach(([person, share]) => {
             const newDebt = parseFloat(share) || 0;
             if (newDebt <= 0) return; // payer or zero share
             const key = person.toLowerCase();
-            if (updatedCredits[key] !== undefined) {
+            const hadExistingCredit = Object.keys(updatedCredits).some(existingKey => {
+              const ek = String(existingKey || '').toLowerCase();
+              return ek === key || ek.startsWith(key + '::receipt::');
+            });
+            if (hadExistingCredit) {
               // Set credit = rawOwed_before so only the new $share shows as owed
               const owedBefore = rawOwedBefore[key] || 0;
               updatedCredits[key] = owedBefore; // credit covers exactly what was settled
@@ -6814,6 +6853,9 @@ app.listen(PORT, async () => {
   } catch(e) {}
   try {
     await supabase.rpc('exec_sql', { sql: "ALTER TABLE trip_receipts ADD COLUMN IF NOT EXISTS photo_url TEXT" });
+  } catch(e) {}
+  try {
+    await supabase.rpc('exec_sql', { sql: "ALTER TABLE trip_receipts ADD COLUMN IF NOT EXISTS added_by TEXT" });
   } catch(e) {}
   try {
     await supabase.rpc('exec_sql', { sql: "ALTER TABLE bills ADD COLUMN IF NOT EXISTS live_mode BOOLEAN DEFAULT false" });
