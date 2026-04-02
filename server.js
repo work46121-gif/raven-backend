@@ -3330,7 +3330,8 @@ document.addEventListener('DOMContentLoaded', () => {
           const o = payload.old || {};
           const changed = JSON.stringify(n.settled_people) !== JSON.stringify(o.settled_people)
             || JSON.stringify(n.people) !== JSON.stringify(o.people)
-            || n.name !== o.name;
+            || n.name !== o.name
+            || n.reminder_last_sent_at !== o.reminder_last_sent_at;
           if (changed) {
             console.log('[Realtime] trips change (meaningful)');
             doLiveReload();
@@ -3418,6 +3419,16 @@ function getReminderLockKey() {
   return 'raven_trip_reminder_sent_' + TRIP_ID;
 }
 
+function lockTripReminderUI(message) {
+  const btn = document.getElementById('trip-reminder-btn');
+  const text = document.getElementById('trip-reminder-text');
+  if (!btn || !text) return;
+  btn.disabled = true;
+  btn.style.opacity = '0.55';
+  btn.style.cursor = 'not-allowed';
+  text.textContent = message || "Today's reminder has already been sent. You can send another tomorrow.";
+}
+
 function initTripReminderUI() {
   const btn = document.getElementById('trip-reminder-btn');
   const text = document.getElementById('trip-reminder-text');
@@ -3425,10 +3436,7 @@ function initTripReminderUI() {
   const localReminderStamp = sessionStorage.getItem(getReminderLockKey()) || '';
   const sentToday = (TRIP_REMINDER_LAST_SENT_AT && getEasternDateStamp(TRIP_REMINDER_LAST_SENT_AT) === getEasternDateStamp()) || localReminderStamp === getEasternDateStamp();
   if (sentToday) {
-    btn.disabled = true;
-    btn.style.opacity = '0.55';
-    btn.style.cursor = 'not-allowed';
-    text.textContent = "Today's reminder has already been sent. You can send another tomorrow.";
+    lockTripReminderUI("Today's reminder has already been sent. You can send another tomorrow.");
     return;
   }
   btn.addEventListener('click', sendTripReminder);
@@ -3452,9 +3460,7 @@ async function sendTripReminder() {
     if (d.success) {
       if ((d.sent || 0) > 0) {
         sessionStorage.setItem(getReminderLockKey(), getEasternDateStamp());
-        btn.style.opacity = '0.55';
-        btn.style.cursor = 'not-allowed';
-        if (text) text.textContent = d.message || 'Reminder sent. The bell will unlock again tomorrow.';
+        lockTripReminderUI(d.message || 'Reminder sent. The bell will unlock again tomorrow.');
         toast('🔔 Reminder sent to ' + (d.sent || 0) + ' member' + ((d.sent || 0) === 1 ? '' : 's'), true);
       } else {
         btn.disabled = false;
@@ -3466,7 +3472,10 @@ async function sendTripReminder() {
     }
     btn.disabled = false;
     btn.style.cursor = 'pointer';
-    if (text) text.textContent = d.error || prev;
+    if (d.error && d.error.toLowerCase().includes('already sent today')) {
+      sessionStorage.setItem(getReminderLockKey(), getEasternDateStamp());
+      lockTripReminderUI("Today's reminder has already been sent. You can send another tomorrow.");
+    } else if (text) text.textContent = d.error || prev;
     toast(d.error || 'Could not send reminder', false);
   } catch(e) {
     btn.disabled = false;
@@ -5130,12 +5139,14 @@ async function saveReceipt() {
     total = Math.max(0, subtotal + tax + tip + serviceFee - discount);
   }
   try{
+    const photoUrl = imgBase64 ? ('data:image/jpeg;base64,' + imgBase64) : null;
     const payload = {
       name,
       total,
       splits,
       token: TRIP_TOKEN,
       added_by: addedBy || null,
+      photo_url: photoUrl,
       items: splitType==='itemized'?tripItems:[],
       paid_by: paidBy || null,
       discount: splitType === 'itemized'
@@ -5150,6 +5161,21 @@ async function saveReceipt() {
     const r=await fetch(BACKEND+'/trip/'+TRIP_ID+'/receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     const d=await r.json();
     if(d.success){
+      if (photoUrl && d.receipt_id && !d.photo_saved) {
+        try {
+          await fetch(BACKEND+'/trip/'+TRIP_ID+'/receipt/'+d.receipt_id+'/add-photo', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ token: TRIP_TOKEN, photo_url: photoUrl })
+          });
+        } catch(e) {}
+      }
+      try {
+        if (window._currentPendingId) {
+          const pending = JSON.parse(localStorage.getItem('raven_pending_receipts') || '[]');
+          localStorage.setItem('raven_pending_receipts', JSON.stringify(pending.filter(x => x.id !== window._currentPendingId)));
+        }
+      } catch(e) {}
       toast('✅ Receipt saved!');
       // Reset form for next receipt — then reload to show updated totals
       document.getElementById('r-name').value='';
@@ -5166,6 +5192,7 @@ async function saveReceipt() {
       document.getElementById('r-item-discount').value='';
       tripScanCharges = { tax: 0, tip: 0, service_fee: 0 };
       tripItems=[]; imgBase64=null; splitType='even';
+      window._currentPendingId = null;
       setSplit('even'); renderItems(); updateItemizedSummary();
       setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 1200);
     } else{btn.textContent='Save Receipt';btn.disabled=false;toast(d.error||'Error',false);}
@@ -5633,7 +5660,7 @@ app.post('/trip/:tripId/comment', async (req, res) => {
       gif_url: gif_url || null,
       created_at: new Date().toISOString()
     });
-    res.json({ success: true });
+    res.json({ success: true, receipt_id: insertedReceipt?.id || null, photo_saved: !!tripReceiptRow.photo_url });
   } catch(err) { res.json({ success: false, error: err.message }); }
 });
 
@@ -6082,12 +6109,13 @@ app.post('/trip/:tripId/join', async (req, res) => {
 app.post('/trip/:tripId/receipt', async (req, res) => {
   try {
     const { tripId } = req.params;
-    const { name, total, splits, token, items, paid_by, tax, tip, service_fee, discount, added_by } = req.body;
+    const { name, total, splits, token, items, paid_by, tax, tip, service_fee, discount, added_by, photo_url } = req.body;
     const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
     if (!trip) return res.json({ success: false, error: 'Trip not found' });
     if (trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
     const tripReceiptRow = { trip_id: tripId, name: name||'Receipt', total: parseFloat(total)||0, splits: JSON.stringify(splits||{}), items: JSON.stringify(items||[]), paid_by: paid_by||null, created_at: new Date().toISOString() };
     if (added_by) tripReceiptRow.added_by = String(added_by).trim().slice(0, 120);
+    if (photo_url) tripReceiptRow.photo_url = String(photo_url);
     if (parseFloat(tax) > 0) tripReceiptRow.tax = parseFloat(tax);
     if (parseFloat(tip) > 0) tripReceiptRow.tip = parseFloat(tip);
     if (parseFloat(service_fee) > 0) tripReceiptRow.service_fee = parseFloat(service_fee);
@@ -6366,14 +6394,15 @@ app.get('/trip-info/:tripId', async (req, res) => {
   try {
     const { tripId } = req.params;
     const { token } = req.query;
-    const { data: trip } = await supabase.from('trips').select('name, invite_token, share_token, people, total, receipt_count, settled_people').eq('id', tripId).single();
+    const { data: trip } = await supabase.from('trips').select('name, invite_token, share_token, people, total, receipt_count, settled_people, reminder_last_sent_at').eq('id', tripId).single();
     if (!trip) return res.json({ success: false });
     if (trip.invite_token !== token && trip.share_token !== token) return res.json({ success: false });
     const people = Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people || '[]');
     const settledRaw = trip.settled_people || []; 
     const settledHash = JSON.stringify(Array.isArray(settledRaw) ? settledRaw : (typeof settledRaw === 'string' ? JSON.parse(settledRaw) : []));
-    const _hash = (trip.receipt_count || 0) + ':' + (trip.total || 0) + ':' + settledHash.length;
-    res.json({ success: true, name: trip.name, people_count: people.length, total: trip.total || 0, receipt_count: trip.receipt_count || 0, settled_hash: settledHash, _hash });
+    const reminderStamp = trip.reminder_last_sent_at ? String(trip.reminder_last_sent_at) : '';
+    const _hash = (trip.receipt_count || 0) + ':' + (trip.total || 0) + ':' + settledHash.length + ':' + reminderStamp;
+    res.json({ success: true, name: trip.name, people_count: people.length, total: trip.total || 0, receipt_count: trip.receipt_count || 0, settled_hash: settledHash, reminder_last_sent_at: trip.reminder_last_sent_at || null, _hash });
   } catch(err) { res.json({ success: false }); }
 });
 
