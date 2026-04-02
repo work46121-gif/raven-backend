@@ -2828,6 +2828,8 @@ input:focus,textarea:focus{border-color:var(--purple)}
 @keyframes spin{to{transform:rotate(360deg)}}
 .spinner{width:16px;height:16px;border:2px solid rgba(124,58,237,0.3);border-top-color:var(--purple2);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0;display:inline-block}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:0.4}}
+.raven-home-link{position:relative;transition:filter 0.2s ease, text-shadow 0.2s ease, transform 0.2s ease}
+.raven-home-link.raven-armed{filter:drop-shadow(0 0 10px rgba(48,209,88,0.55));text-shadow:0 0 14px rgba(48,209,88,0.55);transform:scale(1.03)}
 </style>
 </head>
 <body>
@@ -2837,7 +2839,7 @@ input:focus,textarea:focus{border-color:var(--purple)}
 
 <div class="hdr"><div class="hdr-inner">
   <a href="https://ravensplit.com/dashboard.html" style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;text-decoration:none;color:#9896A8;font-size:13px;font-weight:600;transition:all 0.15s" onmouseover="this.style.color='#F0EEF8';this.style.borderColor='rgba(255,255,255,0.25)'" onmouseout="this.style.color='#9896A8';this.style.borderColor='rgba(255,255,255,0.1)'">← Dashboard</a>
-  <a href="https://ravensplit.com/" style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:0.15em;text-decoration:none;color:#F0EEF8">🪶 RAVEN</a>
+  <a href="https://ravensplit.com/" id="raven-home-link" class="raven-home-link" style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:0.15em;text-decoration:none;color:#F0EEF8">🪶 RAVEN</a>
   <div style="font-size:10px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:12px;font-weight:600">${esc(tripId)}</div>
 </div></div>
 
@@ -3165,6 +3167,7 @@ let   PEOPLE     = D.people;
 const PAY_PROFILES = D.memberPayProfiles || {};
 const receiptsDataMap = {}; // keyed by receipt id — safe lookup, no user data in onclick
 (D.receiptsData || []).forEach(r => { receiptsDataMap[r.id] = r; });
+let ravenHomeArmedUntil = 0;
 
 // Determine if current viewer is admin (creator) — checked after page loads
 function checkIsAdmin() {
@@ -3199,6 +3202,30 @@ function checkIsAdmin() {
   } catch(e) { return false; }
 }
 let IS_ADMIN = false; // set after DOM loads
+
+(function setupRavenHomeLinkGuard() {
+  const link = document.getElementById('raven-home-link');
+  if (!link) return;
+  function armLink() {
+    ravenHomeArmedUntil = Date.now() + 2200;
+    link.classList.add('raven-armed');
+    toast('Tap the RAVEN logo again to go home');
+    clearTimeout(link._ravenArmTimer);
+    link._ravenArmTimer = setTimeout(() => {
+      link.classList.remove('raven-armed');
+      ravenHomeArmedUntil = 0;
+    }, 2200);
+  }
+  link.addEventListener('click', function(e) {
+    if (Date.now() <= ravenHomeArmedUntil) {
+      link.classList.remove('raven-armed');
+      ravenHomeArmedUntil = 0;
+      return;
+    }
+    e.preventDefault();
+    armLink();
+  });
+})();
 
 // Enrich PAY_PROFILES with the current user's payment methods from localStorage
 // (catches cases where server-side lookup didn't find them)
@@ -6065,7 +6092,19 @@ app.post('/trip/:tripId/receipt', async (req, res) => {
     if (parseFloat(tip) > 0) tripReceiptRow.tip = parseFloat(tip);
     if (parseFloat(service_fee) > 0) tripReceiptRow.service_fee = parseFloat(service_fee);
     if (parseFloat(discount) > 0) tripReceiptRow.discount = parseFloat(discount);
-    const { data: insertedReceipt, error: insertErr } = await supabase.from('trip_receipts').insert(tripReceiptRow).select('id').single();
+    let insertResult = await supabase.from('trip_receipts').insert(tripReceiptRow).select('id').single();
+    if (insertResult.error && tripReceiptRow.added_by) {
+      const msg = String(insertResult.error.message || '').toLowerCase();
+      const details = String(insertResult.error.details || '').toLowerCase();
+      const hint = String(insertResult.error.hint || '').toLowerCase();
+      const missingAddedBy = msg.includes('added_by') || details.includes('added_by') || hint.includes('added_by');
+      if (missingAddedBy) {
+        console.warn('[trip receipt] added_by column missing, retrying insert without added_by');
+        delete tripReceiptRow.added_by;
+        insertResult = await supabase.from('trip_receipts').insert(tripReceiptRow).select('id').single();
+      }
+    }
+    const { data: insertedReceipt, error: insertErr } = insertResult;
     if (insertErr) throw insertErr;
     const { data: all } = await supabase.from('trip_receipts').select('total').eq('trip_id', tripId);
 
