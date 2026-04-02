@@ -2620,10 +2620,11 @@ app.get('/trip/:tripId', async (req, res) => {
   const commentRows = (comments||[]).map(c => {
     const initials = c.author_name ? esc(c.author_name[0].toUpperCase()) : '?';
     const timeStr = new Date(c.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'America/New_York'});
+    const authorName = esc(c.author_name || 'Anonymous');
     return `<div style="display:flex;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)">
-      <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#30D158);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0">${initials}</div>
+      <div data-person-avatar="${authorName}" data-open-profile="${authorName}" title="View ${authorName}'s profile" style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#30D158);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden;cursor:pointer">${initials}</div>
       <div style="flex:1;min-width:0">
-        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px"><span style="font-size:13px;font-weight:700">${esc(c.author_name||'Anonymous')}</span><span style="font-size:11px;color:#6E6B80">${timeStr}</span></div>
+        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px"><span data-open-profile="${authorName}" title="View ${authorName}'s profile" style="font-size:13px;font-weight:700;cursor:pointer">${authorName}</span><span style="font-size:11px;color:#6E6B80">${timeStr}</span></div>
         ${c.body?`<div style="font-size:14px;line-height:1.6;color:#E0DEF0;word-break:break-word">${esc(c.body)}</div>`:''}
         ${c.gif_url?`<img src="${esc(c.gif_url)}" style="max-width:200px;border-radius:10px;display:block;margin-top:6px">`:''}
       </div>
@@ -3390,37 +3391,55 @@ function applyNameAndAvatar(firstName, avatarUrl) {
 }
 
 // Fetch and apply profile pictures for ALL trip members
-// Cache of member avatar URLs, keyed by lowercase first_name
+// Cache of member avatar URLs, keyed by lowercase display names and first names
 const _memberAvatarCache = {};
+
+function setCachedMemberAvatar(name, avatarUrl) {
+  if (!name) return;
+  _memberAvatarCache[name.toLowerCase()] = avatarUrl || null;
+}
+
+function applyAvatarToMatchingElements(name, avatarUrl) {
+  if (!name || !avatarUrl) return;
+  document.querySelectorAll('[data-person-avatar]').forEach(el => {
+    const target = (el.getAttribute('data-person-avatar') || '').toLowerCase();
+    if (target === name.toLowerCase()) {
+      el.innerHTML = '<img src="' + avatarUrl + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%">';
+      el.style.background = 'transparent';
+    }
+  });
+}
 
 async function applyAllMemberAvatars() {
   try {
-    if (!PEOPLE || PEOPLE.length === 0) return;
-    // PostgREST in.() filter: first_name=in.(Will,Mel,daddy,Arsalan)
-    const nameList = PEOPLE.join(',');
+    const avatarNames = [...new Set(Array.from(document.querySelectorAll('[data-person-avatar]'))
+      .map(el => (el.getAttribute('data-person-avatar') || '').trim())
+      .filter(Boolean))];
+    if (avatarNames.length === 0) return;
+    const firstNames = [...new Set(avatarNames.map(name => name.split(' ')[0]).filter(Boolean))];
+    if (firstNames.length === 0) return;
+    const nameList = firstNames.map(name => '"' + encodeURIComponent(name) + '"').join(',');
     const res = await fetch(
-      SUPA_URL + '/rest/v1/profiles?select=first_name,avatar_url&first_name=in.(' + nameList + ')',
+      SUPA_URL + '/rest/v1/profiles?select=first_name,last_name,avatar_url&first_name=in.(' + nameList + ')',
       { headers: { 'apikey': SUPA_KEY, 'Accept': 'application/json' } }
     );
     if (!res.ok) return;
     const profiles = await res.json();
     (profiles || []).forEach(prof => {
       if (!prof.first_name) return;
-      // Cache avatar (even if null, so we know the profile was fetched)
-      _memberAvatarCache[prof.first_name.toLowerCase()] = prof.avatar_url || null;
+      const firstName = prof.first_name.trim();
+      const fullName = [prof.first_name, prof.last_name].filter(Boolean).join(' ').trim();
+      setCachedMemberAvatar(firstName, prof.avatar_url || null);
+      if (fullName) setCachedMemberAvatar(fullName, prof.avatar_url || null);
       if (!prof.avatar_url) return;
-      document.querySelectorAll('[data-person-avatar]').forEach(el => {
-        if (el.getAttribute('data-person-avatar').toLowerCase() === prof.first_name.toLowerCase()) {
-          el.innerHTML = '<img src="' + prof.avatar_url + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%">';
-          el.style.background = 'transparent';
-        }
-      });
+      applyAvatarToMatchingElements(firstName, prof.avatar_url);
+      if (fullName) applyAvatarToMatchingElements(fullName, prof.avatar_url);
     });
     // Also cache the current user's avatar from localStorage
     try {
       const lp = JSON.parse(localStorage.getItem('raven_profile') || '{}');
       if (lp.first_name && lp.avatar_url) {
-        _memberAvatarCache[lp.first_name.toLowerCase()] = lp.avatar_url;
+        setCachedMemberAvatar(lp.first_name, lp.avatar_url);
       }
     } catch(e) {}
   } catch(e) { /* best effort */ }
