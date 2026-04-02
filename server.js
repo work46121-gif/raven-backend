@@ -6208,15 +6208,9 @@ app.post('/trip/:tripId/send-reminder', async (req, res) => {
       return res.json({ success: false, error: 'A reminder was already sent today for this trip.' });
     }
 
-    const { data: receipts } = await supabase.from('trip_receipts').select('splits,paid_by').eq('trip_id', tripId);
+    const { data: receipts } = await supabase.from('trip_receipts').select('id,splits,paid_by').eq('trip_id', tripId);
     const people = (() => { try { return Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people || '[]'); } catch(e) { return []; } })();
-    let settledRaw = {};
-    try {
-      let sp = trip.settled_people;
-      if (typeof sp === 'string') { try { sp = JSON.parse(sp); } catch(e) {} }
-      if (typeof sp === 'string') { try { sp = JSON.parse(sp); } catch(e) {} }
-      settledRaw = (sp && typeof sp === 'object' && !Array.isArray(sp)) ? sp : {};
-    } catch(e) {}
+    const validReceiptIds = new Set((receipts || []).map(r => String(r.id)));
 
     const owedTotals = {};
     people.forEach(p => { owedTotals[p] = 0; });
@@ -6233,13 +6227,7 @@ app.post('/trip/:tripId/send-reminder', async (req, res) => {
       } catch(e) {}
     });
 
-    const settledCredits = {};
-    Object.entries(settledRaw || {}).forEach(([k, v]) => {
-      const val = parseFloat(v) || 0;
-      if (val <= 0) return;
-      const personKey = k.includes('::receipt::') ? k.split('::receipt::')[0] : k;
-      settledCredits[personKey.toLowerCase()] = (settledCredits[personKey.toLowerCase()] || 0) + val;
-    });
+    const settledCredits = aggregateSettledCredits(trip.settled_people, validReceiptIds);
 
     const debtors = people.map(name => {
       const raw = owedTotals[name] || 0;
