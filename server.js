@@ -5977,7 +5977,8 @@ app.post('/trip/:tripId/receipt', async (req, res) => {
     if (parseFloat(tip) > 0) tripReceiptRow.tip = parseFloat(tip);
     if (parseFloat(service_fee) > 0) tripReceiptRow.service_fee = parseFloat(service_fee);
     if (parseFloat(discount) > 0) tripReceiptRow.discount = parseFloat(discount);
-    await supabase.from('trip_receipts').insert(tripReceiptRow);
+    const { data: insertedReceipt, error: insertErr } = await supabase.from('trip_receipts').insert(tripReceiptRow).select('id').single();
+    if (insertErr) throw insertErr;
     const { data: all } = await supabase.from('trip_receipts').select('total').eq('trip_id', tripId);
 
     // ── UN-SETTLE: expose only the NEW debt for previously-settled people ──
@@ -5990,11 +5991,10 @@ app.post('/trip/:tripId/receipt', async (req, res) => {
         if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch(e) {} }
         if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch(e) {} }
         if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-          // Get ALL receipts EXCEPT the one just added (it's already inserted above)
+          // Get ALL receipts EXCEPT the one just added (exclude by exact id, not sort order)
           const { data: allReceipts } = await supabase.from('trip_receipts')
-            .select('splits,paid_by').eq('trip_id', tripId).order('created_at', { ascending: true });
-          // The last receipt is the one just inserted — exclude it
-          const previousReceipts = (allReceipts || []).slice(0, -1);
+            .select('id,splits,paid_by').eq('trip_id', tripId);
+          const previousReceipts = (allReceipts || []).filter(r => r.id !== insertedReceipt?.id);
           // Compute rawOwed_before for each person
           const rawOwedBefore = {};
           previousReceipts.forEach(r => {
