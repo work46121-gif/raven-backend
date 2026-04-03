@@ -666,11 +666,16 @@ function chooseBestPaymentProfile(profiles, preferredName) {
   })[0];
 }
 
+function renderInactiveBillPage() {
+  return '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RAVEN</title><style>body{font-family:Helvetica,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px}a{color:#30D158;text-decoration:none;font-weight:700}</style></head><body><div style="max-width:360px"><div style="font-size:48px;margin-bottom:20px">🧾</div><h2>Bill Is No Longer Active</h2><p style="color:#6E6B80;margin-top:10px;line-height:1.6">This bill was deleted or is no longer available from its shared link.</p><div style="margin-top:18px"><a href="https://ravensplit.com/dashboard.html">Go back to RAVEN</a></div></div></body></html>';
+}
+
 app.get('/bill/:billId/state', async (req, res) => {
   try {
     const { billId } = req.params;
     const { data: bill } = await supabase.from('bills').select('*').eq('id', billId).single();
     if (!bill) return res.json({ success: false });
+    if (bill.status === 'deleted') return res.json({ success: false, deleted: true, error: 'Bill is no longer active' });
     const [itemsRes, selectionsRes, participantsRes] = await Promise.all([
       supabase.from('receipt_items').select('*').eq('bill_id', billId),
       supabase.from('item_selections').select('*').eq('bill_id', billId),
@@ -730,6 +735,8 @@ app.get('/bill/:billId/state', async (req, res) => {
 app.post('/bill/:billId/claim', async (req, res) => {
   try {
     const { billId } = req.params;
+    const { data: billMeta } = await supabase.from('bills').select('status').eq('id', billId).single();
+    if (!billMeta || billMeta.status === 'deleted') return res.json({ success: false, deleted: true, error: 'Bill is no longer active' });
     const { item_id, participant_name } = req.body;
     if (!item_id || !participant_name?.trim()) return res.json({ success: false, error: 'Missing fields' });
     const requestedName = normalizeBillParticipantName(participant_name);
@@ -766,6 +773,8 @@ app.post('/bill/:billId/claim', async (req, res) => {
 app.post('/bill/:billId/unclaim', async (req, res) => {
   try {
     const { billId } = req.params;
+    const { data: billMeta } = await supabase.from('bills').select('status').eq('id', billId).single();
+    if (!billMeta || billMeta.status === 'deleted') return res.json({ success: false, deleted: true, error: 'Bill is no longer active' });
     const { item_id, participant_name } = req.body;
     if (!item_id || !participant_name?.trim()) return res.json({ success: false, error: 'Missing fields' });
     const requestedKey = billParticipantKey(participant_name);
@@ -789,8 +798,9 @@ app.post('/bill/:billId/join', async (req, res) => {
     const { billId } = req.params;
     const { name } = req.body;
     if (!name?.trim()) return res.json({ success: false, error: 'Name required' });
-    const { data: bill } = await supabase.from('bills').select('share_token, live_mode, live_people_count').eq('id', billId).single();
+    const { data: bill } = await supabase.from('bills').select('share_token, live_mode, live_people_count, status').eq('id', billId).single();
     if (!bill) return res.json({ success: false, error: 'Bill not found' });
+    if (bill.status === 'deleted') return res.json({ success: false, deleted: true, error: 'Bill is no longer active' });
     const cleanName = normalizeBillParticipantName(name);
     const normalizedKey = billParticipantKey(cleanName);
     // Check if person already exists as participant
@@ -821,6 +831,8 @@ app.post('/bill/:billId/join', async (req, res) => {
 app.post('/bill/:billId/rename', async (req, res) => {
   try {
     const { billId } = req.params;
+    const { data: billMeta } = await supabase.from('bills').select('status').eq('id', billId).single();
+    if (!billMeta || billMeta.status === 'deleted') return res.json({ success: false, deleted: true, error: 'Bill is no longer active' });
     const { old_name, new_name } = req.body || {};
     const oldName = normalizeBillParticipantName(old_name);
     const newName = normalizeBillParticipantName(new_name);
@@ -911,6 +923,7 @@ app.get('/bill/:billId', async (req, res) => {
   const token = req.query.t || req.query.token;
   const { data: bill } = await supabase.from('bills').select('*').eq('id', billId).single();
   if (!bill) return res.status(404).send('<h1>Bill not found</h1>');
+  if (bill.status === 'deleted') return res.status(410).send(renderInactiveBillPage());
   if (bill.share_token && token !== bill.share_token) {
     return res.status(403).send('<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RAVEN</title><style>body{font-family:Helvetica,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px}</style></head><body><div style="max-width:360px"><div style="font-size:48px;margin-bottom:20px">🔒</div><h2>Private Bill</h2><p style="color:#6E6B80;margin-top:10px">Ask the bill creator to share the correct link.</p></div></body></html>');
   }
@@ -1381,6 +1394,8 @@ app.get('/bill/:billId', async (req, res) => {
     <div style="width:36px;height:4px;background:rgba(255,255,255,0.12);border-radius:2px;margin:0 auto 20px"></div>
     <div style="font-size:22px;font-weight:800;margin-bottom:6px">Who are you? 👋</div>
     <div style="font-size:14px;color:#6E6B80;margin-bottom:24px">Enter your name to claim items on the bill</div>
+    <div id="name-picker-list" style="display:none;flex-direction:column;gap:8px;margin-bottom:14px"></div>
+    <button id="name-picker-other" type="button" style="display:none;width:100%;padding:11px 14px;margin-bottom:12px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#9896A8;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">I'm someone else</button>
     <input id="name-input" type="text" placeholder="Your name" autocomplete="name"
       style="width:100%;padding:14px 16px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:12px;color:#F0EEF8;font-size:16px;font-family:inherit;outline:none;margin-bottom:12px">
     <button class="btn-g" onclick="submitName()">Start Claiming Items →</button>
@@ -1546,6 +1561,7 @@ const BILL_TOKEN = ${JSON.stringify(bill.share_token || '')};
 const BILL_URL = ${JSON.stringify(billUrl)};
 const BILL_NAME = ${JSON.stringify(bill.name || 'this bill')};
 const BACKEND_URL = ${JSON.stringify(baseUrl)};
+const INITIAL_PARTICIPANT_NAMES = ${JSON.stringify((participants || []).map(p => p.name).filter(Boolean))};
 function buildRavenPaymentMessage(amount, contextName, methodLabel) {
   const safeAmount = parseFloat(amount || 0).toFixed(2);
   const safeContext = contextName || 'this bill';
@@ -1627,6 +1643,48 @@ function syncClaimAsStorage() {
   else localStorage.removeItem('raven_bill_claim_as_' + BID);
 }
 
+function getUniqueInitialParticipantNames() {
+  const seen = new Set();
+  return (INITIAL_PARTICIPANT_NAMES || []).map(name => String(name || '').trim()).filter(name => {
+    const key = name.toLowerCase();
+    if (!name || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function showIdentityChooser() {
+  const modal = document.getElementById('name-modal');
+  const list = document.getElementById('name-picker-list');
+  const otherBtn = document.getElementById('name-picker-other');
+  const input = document.getElementById('name-input');
+  if (!modal || !list || !otherBtn || !input) return false;
+  const names = getUniqueInitialParticipantNames();
+  if (names.length < 2) return false;
+
+  list.style.display = 'flex';
+  otherBtn.style.display = 'block';
+  input.style.display = 'none';
+  const submitBtn = modal.querySelector('.btn-g');
+  if (submitBtn) submitBtn.textContent = 'Start Claiming Items →';
+  list.innerHTML = names.map(name =>
+    '<button type="button" data-name="' + name.replace(/"/g, '&quot;') + '" style="width:100%;padding:12px 14px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:#F0EEF8;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;text-align:left">' + name + '</button>'
+  ).join('');
+
+  list.querySelectorAll('button[data-name]').forEach(btn => {
+    btn.addEventListener('click', () => autoJoin(btn.dataset.name || ''));
+  });
+  otherBtn.onclick = function() {
+    list.style.display = 'none';
+    otherBtn.style.display = 'none';
+    input.style.display = 'block';
+    input.focus();
+  };
+
+  modal.style.display = 'flex';
+  return true;
+}
+
 function renderClaimAsOptions(participants) {
   const sel = document.getElementById('claim-as-select');
   if (!sel) return;
@@ -1668,6 +1726,7 @@ function initName() {
     autoJoin(stored, true);
     return;
   }
+  if (showIdentityChooser()) return;
   // Check Raven profile
   try {
     const p = JSON.parse(localStorage.getItem('raven_profile') || '{}');
@@ -7048,6 +7107,8 @@ app.get('/gif-search', async (req, res) => {
 app.get('/bill/:billId/comments', async (req, res) => {
   try {
     const { billId } = req.params;
+    const { data: bill } = await supabase.from('bills').select('status').eq('id', billId).single();
+    if (!bill || bill.status === 'deleted') return res.json({ success: false, deleted: true, comments: [], error: 'Bill is no longer active' });
     const { data } = await supabase.from('bill_comments').select('*').eq('bill_id', billId).order('created_at', { ascending: true });
     res.json({ success: true, comments: data || [] });
   } catch(err) { res.json({ success: false, comments: [] }); }
@@ -7056,6 +7117,8 @@ app.get('/bill/:billId/comments', async (req, res) => {
 app.post('/bill/:billId/comments', async (req, res) => {
   try {
     const { billId } = req.params;
+    const { data: billMeta } = await supabase.from('bills').select('status').eq('id', billId).single();
+    if (!billMeta || billMeta.status === 'deleted') return res.json({ success: false, deleted: true, error: 'Bill is no longer active' });
     const { name, body, gif_url } = req.body;
     if (!body?.trim() && !gif_url) return res.json({ success: false, error: 'Empty comment' });
     const { error: ie } = await supabase.from('bill_comments').insert({ bill_id: billId, name: name?.trim()||'Anonymous', body: body?.trim()||'', gif_url: gif_url||null, created_at: new Date().toISOString() });
@@ -7079,6 +7142,7 @@ app.post('/bill/:billId/mark-paid', async (req, res) => {
     const { data: bill, error: billErr } = await supabase.from('bills').select('*').eq('id', billId).single();
     if (billErr) { console.log('[mark-paid] bill fetch error:', billErr.message); return res.json({ success: false, error: billErr.message }); }
     if (!bill) { console.log('[mark-paid] bill not found'); return res.json({ success: false, error: 'Bill not found' }); }
+    if (bill.status === 'deleted') return res.json({ success: false, deleted: true, error: 'Bill is no longer active' });
 
     // Step 1: Find or create the participant row
     let participantRowId = null;
@@ -7146,6 +7210,7 @@ app.post('/bill/:billId/unmark-paid', async (req, res) => {
     const { data: bill, error: billErr } = await supabase.from('bills').select('*').eq('id', billId).single();
     if (billErr) return res.json({ success: false, error: billErr.message });
     if (!bill) return res.json({ success: false, error: 'Bill not found' });
+    if (bill.status === 'deleted') return res.json({ success: false, deleted: true, error: 'Bill is no longer active' });
 
     let query = supabase.from('participants')
       .update({ paid: false, paid_at: null, payment_method: null })
