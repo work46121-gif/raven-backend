@@ -646,6 +646,26 @@ function buildApplePayHref(value, amount, contextName) {
   return 'sms:' + e164 + '&body=' + encodeURIComponent(buildRavenPaymentMessage(amount, contextName, 'Apple Pay'));
 }
 
+function paymentMethodCount(profile) {
+  if (!profile) return 0;
+  return ['venmo', 'cashapp', 'zelle', 'applepay'].reduce((count, key) => count + (profile[key] ? 1 : 0), 0);
+}
+
+function chooseBestPaymentProfile(profiles, preferredName) {
+  const list = (profiles || []).filter(Boolean);
+  if (!list.length) return null;
+  const normalizedPreferred = String(preferredName || '').trim().toLowerCase();
+  return list.slice().sort((a, b) => {
+    const aExact = String(a.first_name || '').trim().toLowerCase() === normalizedPreferred ? 1 : 0;
+    const bExact = String(b.first_name || '').trim().toLowerCase() === normalizedPreferred ? 1 : 0;
+    if (aExact !== bExact) return bExact - aExact;
+    const aMethods = paymentMethodCount(a);
+    const bMethods = paymentMethodCount(b);
+    if (aMethods !== bMethods) return bMethods - aMethods;
+    return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+  })[0];
+}
+
 app.get('/bill/:billId/state', async (req, res) => {
   try {
     const { billId } = req.params;
@@ -934,10 +954,10 @@ app.get('/bill/:billId', async (req, res) => {
   }
 
   let creatorProfile = null;
-  const emailTry = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle,applepay').eq('email', bill.creator_phone).maybeSingle();
+  const emailTry = await supabase.from('profiles').select('first_name,phone,email,venmo,cashapp,zelle,applepay,updated_at').eq('email', bill.creator_phone).maybeSingle();
   creatorProfile = emailTry.data;
   if (!creatorProfile) {
-    const phoneTry = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle,applepay').eq('phone', bill.creator_phone).maybeSingle();
+    const phoneTry = await supabase.from('profiles').select('first_name,phone,email,venmo,cashapp,zelle,applepay,updated_at').eq('phone', bill.creator_phone).maybeSingle();
     creatorProfile = phoneTry.data;
   }
 
@@ -945,8 +965,11 @@ app.get('/bill/:billId', async (req, res) => {
   let payerProfile = null;
   const paidByName = bill.paid_by || null;
   if (paidByName) {
-    const r = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle,applepay').ilike('first_name', paidByName).maybeSingle();
-    payerProfile = r.data;
+    const r = await supabase.from('profiles')
+      .select('first_name,phone,email,venmo,cashapp,zelle,applepay,updated_at')
+      .ilike('first_name', paidByName)
+      .limit(8);
+    payerProfile = chooseBestPaymentProfile(r.data, paidByName);
   }
   const billPayerProfile = payerProfile || creatorProfile;
   if (billPayerProfile && paidByName) billPayerProfile.first_name = paidByName;
@@ -1193,8 +1216,8 @@ app.get('/bill/:billId', async (req, res) => {
       if(p.applepay && p.applepay.trim()){
         const ap = p.applepay.trim();
         const appleHref = buildApplePayHref(ap, amt, BILL_NAME);
-        if (appleHref) row('#222','Pay','Apple Pay','Opens iMessage to '+ap,appleHref,null,'Apple Pay');
-        else row('#222','Pay','Apple Pay',ap+' · tap to copy',null,ap,'Apple Pay');
+        if (appleHref) row('#222','Pay','Apple Pay','Opens iMessage · send Apple Pay manually',appleHref,null,'Apple Pay');
+        else row('#222','Pay','Apple Pay',ap+' · copy, then send Apple Pay manually',null,ap,'Apple Pay');
       }
       if(n===0){
         // No configured methods — build method buttons using DOM (no inline onclick strings)
@@ -1924,8 +1947,8 @@ function showMyPayModal(amt) {
   if (p.applepay && p.applepay.trim()) {
     const ap = p.applepay.trim();
     const appleHref = buildApplePayHref(ap, amtStr, paymentContextName);
-    if (appleHref) row('#222','Pay','Apple Pay','Opens iMessage to '+ap,appleHref,null,'Apple Pay');
-    else row('#222','Pay','Apple Pay',ap+' · tap to copy',null,ap,'Apple Pay');
+    if (appleHref) row('#222','Pay','Apple Pay','Opens iMessage · send Apple Pay manually',appleHref,null,'Apple Pay');
+    else row('#222','Pay','Apple Pay',ap+' · copy, then send Apple Pay manually',null,ap,'Apple Pay');
   }
 
   // "Paid via method" button — expands to full method list
@@ -2069,6 +2092,12 @@ function showPay(btn) {
     const zelleHref = buildZelleHref(p.zelle, amt, BILL_NAME);
     if (zelleHref) row('#6D1ED4','Z','Zelle',p.zelle + (p.zelle.includes('@') ? ' · opens Mail' : ' · opens Messages'),zelleHref,null,'Zelle');
     else row('#6D1ED4','Z','Zelle',p.zelle+' · tap to copy',null,p.zelle,'Zelle');
+  }
+  if (p.applepay && p.applepay.trim()) {
+    const ap = p.applepay.trim();
+    const appleHref = buildApplePayHref(ap, amt, BILL_NAME || 'this bill');
+    if (appleHref) row('#222','Pay','Apple Pay','Opens iMessage · send Apple Pay manually',appleHref,null,'Apple Pay');
+    else row('#222','Pay','Apple Pay',ap+' · copy, then send Apple Pay manually',null,ap,'Apple Pay');
   }
   if (n === 0) mc.innerHTML = '<p style="color:#6E6B80;text-align:center;padding:16px 0;font-size:13px">No payment methods set up yet.</p>';
   document.getElementById('pmark').onclick = () => markPaid(pid, name, 'Other');
@@ -2481,9 +2510,10 @@ app.get('/trip/:tripId', async (req, res) => {
     if (memberEmails.length > 0) {
       const { data: profilesByEmail } = await supabase.from('profiles').select('first_name,last_name,email,venmo,cashapp,zelle,applepay,raven_id,avatar_url,created_at').in('email', memberEmails);
       (profilesByEmail || []).forEach(p => {
-        const name = p.first_name || '';
-        // NOTE: avatar_url intentionally excluded — it's base64 and would bloat the inline JSON blob
-        if (name) memberPayProfiles[name] = { display_name: p.first_name || p.raven_id || name, venmo: p.venmo||'', cashapp: p.cashapp||'', zelle: p.zelle||'', applepay: p.applepay||'', email: p.email||'', raven_id: p.raven_id||'' };
+        const fullName = [p.first_name, p.last_name].filter(Boolean).join(' ').trim();
+        saveMemberProfileAlias(p.first_name, p);
+        saveMemberProfileAlias(fullName, p);
+        saveMemberProfileAlias(p.raven_id, p);
       });
     }
 
@@ -2492,9 +2522,8 @@ app.get('/trip/:tripId', async (req, res) => {
     if (people.length > 0) {
       const { data: profilesByName } = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle,applepay,raven_id,avatar_url,created_at').in('first_name', people);
       (profilesByName || []).forEach(p => {
-        if (p.first_name && !memberPayProfiles[p.first_name]) {
-          memberPayProfiles[p.first_name] = { display_name: p.first_name || p.raven_id || '', venmo: p.venmo||'', cashapp: p.cashapp||'', zelle: p.zelle||'', applepay: p.applepay||'', raven_id: p.raven_id||'' };
-        }
+        saveMemberProfileAlias(p.first_name, p);
+        saveMemberProfileAlias(p.raven_id, p);
       });
     }
   } catch(e) { console.error('Error fetching payment profiles:', e); }
@@ -4278,8 +4307,12 @@ function renderPaySlots() {
     const container = slot.querySelector('.pay-btns');
     if (!container || !payerName) return;
 
-    const profKey = Object.keys(PAY_PROFILES).find(k => k.toLowerCase() === payerName.toLowerCase());
-    const prof = profKey ? PAY_PROFILES[profKey] : null;
+    const normalizedPayer = String(payerName || '').trim().replace(/^@/, '').toLowerCase();
+    const profKey = Object.keys(PAY_PROFILES).find(k => String(k || '').trim().replace(/^@/, '').toLowerCase() === normalizedPayer);
+    const prof = profKey ? PAY_PROFILES[profKey] : (Object.values(PAY_PROFILES).find(p =>
+      String(p?.display_name || '').trim().replace(/^@/, '').toLowerCase() === normalizedPayer ||
+      String(p?.raven_id || '').trim().replace(/^@/, '').toLowerCase() === normalizedPayer
+    ) || null);
     const a = amount.toFixed(2);
 
     container.innerHTML = '';
@@ -4314,7 +4347,7 @@ function renderPaySlots() {
     if (prof.applepay) {
       const ap = prof.applepay;
       const apHref = buildApplePayHref(ap, a, TRIP_NAME || 'this trip');
-      methods.push({ label:'Apple Pay', sub: ap + (apHref ? ' · opens iMessage' : ' · tap to copy'), color:'#1c1c1e', icon:'', href: apHref, copy: ap, border:'1px solid #444' });
+      methods.push({ label:'Apple Pay', sub: apHref ? 'Opens iMessage · send Apple Pay manually' : ap + ' · copy, then send Apple Pay manually', color:'#1c1c1e', icon:'', href: apHref, copy: ap, border:'1px solid #444' });
     }
 
     methods.forEach((m, mi) => {
