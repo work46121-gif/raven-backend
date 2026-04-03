@@ -1478,6 +1478,7 @@ app.get('/bill/:billId', async (req, res) => {
     <select id="claim-as-select" style="flex:1;min-width:180px;padding:11px 12px;background:#12121A;border:1px solid rgba(255,255,255,0.08);border-radius:10px;color:#F0EEF8;font-family:inherit;font-size:13px;outline:none"></select>
     <button id="rename-bill-person-btn" onclick="renameMyBillName()" style="padding:11px 14px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.28);border-radius:10px;color:#C084FC;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit">Rename Me</button>
   </div>
+  <div style="margin-top:10px;padding:10px 12px;background:rgba(255,154,60,0.06);border:1px solid rgba(255,154,60,0.18);border-radius:12px;font-size:11px;line-height:1.5;color:#B9B5CA">Wait until all items are claimed before paying. Itemized tax and tip can still shift while people are still claiming dishes.</div>
 </div>
 
 <!-- Items section (claimable) -->
@@ -2004,8 +2005,7 @@ function renderState(d) {
           + '<div style="font-size:12px;color:' + statusColor + ';margin-top:2px">' + statusText + '</div>'
           + breakdown + '</div>' + action + '</div></div>';
       }).join('');
-      owes.innerHTML = owesRowsHtml
-        + '<div style="padding:10px 14px 2px;font-size:11px;line-height:1.5;color:#6E6B80;text-align:center">Wait until all items are claimed before paying. Itemized tax and tip can still shift while people are still claiming dishes.</div>';
+      owes.innerHTML = owesRowsHtml;
     }
   }
 
