@@ -1047,7 +1047,7 @@ app.get('/bill/:billId', async (req, res) => {
             actionEl = `<span style="font-size:20px">💳</span>`;
           } else if (p.paid) {
             statusEl = `<div id="pstatus-${p.id}" style="font-size:12px;color:#30D158;margin-top:2px">✅ Paid</div>`;
-            actionEl = `<span style="font-size:18px">✅</span>`;
+            actionEl = `<button onclick="unmarkPaid('${p.id}','${safeName}')" style="padding:9px 14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.16);border-radius:10px;color:#F0EEF8;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit;flex-shrink:0;margin-top:2px">↩ Undo</button>`;
           } else {
             statusEl = `<div id="pstatus-${p.id}" style="font-size:12px;color:#6E6B80;margin-top:2px">Owes $${parseFloat(p.amount).toFixed(2)}</div>`;
             actionEl = `<button onclick="showPay(this)" data-pid="${p.id}" data-name="${safeName}" data-amount="${parseFloat(p.amount).toFixed(2)}" id="paybtn-${p.id}" style="padding:9px 18px;background:#30D158;border:none;border-radius:10px;color:#000;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;flex-shrink:0;margin-top:2px">💳 Pay</button>`;
@@ -1281,6 +1281,14 @@ app.get('/bill/:billId', async (req, res) => {
         const r=await fetch('/bill/'+BID+'/mark-paid',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({participantId:pid, name, payment_method: method||null})});
         const d=await r.json();
         if(d.success){ closePay(); document.getElementById('paybtn-'+pid)?.remove(); const s=document.getElementById('pstatus-'+pid); if(s) s.textContent='✅ Paid'+(method&&method!=='Other'?' via '+method:''); toast('✅ Marked as paid!'); }
+      }catch(e){alert('Error. Try again.');}
+    }
+    async function unmarkPaid(pid, name) {
+      try {
+        const r=await fetch('/bill/'+BID+'/unmark-paid',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({participantId:pid, name})});
+        const d=await r.json();
+        if(d.success){ toast('↩️ Marked as unpaid'); location.reload(); }
+        else { alert('Error undoing paid status. Try again.'); }
       }catch(e){alert('Error. Try again.');}
     }
     async function loadC(){
@@ -1589,6 +1597,27 @@ function _clearOptimisticPaid(name) {
   delete _optimisticPaid[name.toLowerCase()];
 }
 
+async function unmarkPaidByName(name, participantId) {
+  try {
+    const r = await fetch(BACKEND_URL + '/bill/' + BID + '/unmark-paid', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ participantId: participantId || null, name })
+    });
+    const d = await r.json();
+    if (d.success) {
+      _clearOptimisticPaid(name);
+      toast('↩️ Marked ' + name + ' as unpaid');
+      _lastStateHash = '';
+      refreshAll();
+    } else {
+      toast('Error undoing paid status. Try again.');
+    }
+  } catch(e) {
+    toast('Error. Try again.');
+  }
+}
+
 function getActiveClaimName() {
   return (activeClaimName || myName || '').trim();
 }
@@ -1861,7 +1890,7 @@ function renderState(d) {
     if (participants.length === 0) {
       owes.innerHTML = '<div style="padding:24px;text-align:center;color:#6E6B80;font-size:13px">No participants yet — scan the QR to join!</div>';
     } else {
-      owes.innerHTML = participants.map(p => {
+      const owesRowsHtml = participants.map(p => {
         const isBillPayer = paidByLower && p.name.toLowerCase() === paidByLower;
         const isMe = myName && p.name.toLowerCase() === (myName||'').toLowerCase();
         const amt = parseFloat(p.amount || 0);
@@ -1905,7 +1934,7 @@ function renderState(d) {
         let statusText = isBillPayer ? '💳 Paid the bill' : p.paid ? '✅ Paid' + pmMethod : liveAmt > 0 ? 'Owes $' + liveAmt.toFixed(2) : anySelections ? '⏳ Nothing claimed yet' : '✓ All settled';
         let action = '';
         if (isBillPayer) action = '<div style="font-size:24px">💳</div>';
-        else if (p.paid) action = '<div style="font-size:22px">✅</div>';
+        else if (p.paid) action = '<button onclick="unmarkPaidByName(\'' + p.name.replace(/'/g,"\\'").replace(/"/g,'&quot;') + '\', \'' + p.id + '\')" style="padding:9px 14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.16);border-radius:10px;color:#F0EEF8;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit;flex-shrink:0">↩ Undo</button>';
         else if (isMe && liveAmt > 0) action = '<button onclick="showMyPayModal(' + liveAmt.toFixed(2) + ')" style="padding:10px 16px;background:#30D158;border:none;border-radius:10px;color:#000;font-weight:800;font-size:13px;cursor:pointer;font-family:inherit;flex-shrink:0;white-space:nowrap">Pay Now</button>';
         else if (!isMe && liveAmt > 0) action = '<button onclick="showPay(this)" data-pid="' + p.id + '" data-name="' + p.name.replace(/"/g,"&quot;") + '" data-amount="' + liveAmt.toFixed(2) + '" style="padding:9px 14px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.25);border-radius:10px;color:#30D158;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit;flex-shrink:0">Pay</button>';
 
@@ -1916,6 +1945,8 @@ function renderState(d) {
           + '<div style="font-size:12px;color:' + statusColor + ';margin-top:2px">' + statusText + '</div>'
           + breakdown + '</div>' + action + '</div></div>';
       }).join('');
+      owes.innerHTML = owesRowsHtml
+        + '<div style="padding:10px 14px 2px;font-size:11px;line-height:1.5;color:#6E6B80;text-align:center">Wait until all items are claimed before paying. Itemized tax and tip can still shift while people are still claiming dishes.</div>';
     }
   }
 
@@ -7103,6 +7134,40 @@ app.post('/bill/:billId/mark-paid', async (req, res) => {
     res.json({ success: true, allPaid });
   } catch(err) {
     console.error('[mark-paid] EXCEPTION:', err.message, err.stack);
+    res.json({ success: false, error: err.message });
+  }
+});
+
+app.post('/bill/:billId/unmark-paid', async (req, res) => {
+  const { billId } = req.params;
+  const { participantId, name } = req.body;
+  console.log(`[unmark-paid] START billId=${billId} name=${name} participantId=${participantId}`);
+  try {
+    const { data: bill, error: billErr } = await supabase.from('bills').select('*').eq('id', billId).single();
+    if (billErr) return res.json({ success: false, error: billErr.message });
+    if (!bill) return res.json({ success: false, error: 'Bill not found' });
+
+    let query = supabase.from('participants')
+      .update({ paid: false, paid_at: null, payment_method: null })
+      .eq('bill_id', billId);
+
+    if (participantId && !String(participantId).startsWith('ghost-')) {
+      query = query.eq('id', participantId);
+    } else if (name) {
+      query = query.ilike('name', name);
+    } else {
+      return res.json({ success: false, error: 'Missing participant reference' });
+    }
+
+    const { data: updated, error: updateErr } = await query.select('id,name,paid,payment_method');
+    if (updateErr) return res.json({ success: false, error: updateErr.message });
+    if (!updated || updated.length === 0) return res.json({ success: false, error: 'Participant not found' });
+
+    await supabase.from('bills').update({ status: 'active' }).eq('id', billId);
+    console.log(`[unmark-paid] SUCCESS updated=${JSON.stringify(updated)}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[unmark-paid] EXCEPTION:', err.message, err.stack);
     res.json({ success: false, error: err.message });
   }
 });
