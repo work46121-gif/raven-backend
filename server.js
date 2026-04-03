@@ -1538,6 +1538,32 @@ const BILL_TOKEN = ${JSON.stringify(bill.share_token || '')};
 const BILL_URL = ${JSON.stringify(billUrl)};
 const BILL_NAME = ${JSON.stringify(bill.name || 'this bill')};
 const BACKEND_URL = ${JSON.stringify(baseUrl)};
+function buildRavenPaymentMessage(amount, contextName, methodLabel) {
+  const safeAmount = parseFloat(amount || 0).toFixed(2);
+  const safeContext = contextName || 'this bill';
+  return 'Sending $' + safeAmount + ' via RAVEN on ' + methodLabel + ' for ' + safeContext;
+}
+function buildZelleHref(value, amount, contextName) {
+  const target = String(value || '').trim();
+  if (!target) return null;
+  const message = buildRavenPaymentMessage(amount, contextName, 'Zelle');
+  if (target.includes('@')) {
+    return 'mailto:' + encodeURIComponent(target) + '?subject=' + encodeURIComponent('RAVEN payment') + '&body=' + encodeURIComponent(message);
+  }
+  const digits = target.replace(/\D/g, '');
+  if (digits.length >= 7) {
+    const e164 = digits.length === 10 ? '+1' + digits : (digits[0] === '1' ? '+' + digits : '+' + digits);
+    return 'sms:' + e164 + '&body=' + encodeURIComponent(message);
+  }
+  return null;
+}
+function buildApplePayHref(value, amount, contextName) {
+  const target = String(value || '').trim();
+  const digits = target.replace(/\D/g, '');
+  if (digits.length < 7) return null;
+  const e164 = digits.length === 10 ? '+1' + digits : (digits[0] === '1' ? '+' + digits : '+' + digits);
+  return 'sms:' + e164 + '&body=' + encodeURIComponent(buildRavenPaymentMessage(amount, contextName, 'Apple Pay'));
+}
 // Init myName from localStorage OR URL param
 let myName = localStorage.getItem('raven_bill_name_' + BID) || '';
 let activeClaimName = localStorage.getItem('raven_bill_claim_as_' + BID) || '';
