@@ -479,6 +479,144 @@ app.post('/sms', async (req, res) => {
 // ─── BILL UI ─────────────────────────────────────────────────────────────────
 
 // ── BILL: GET state (items + selections + participants) — for polling ──────────
+function normalizeBillParticipantName(name) {
+  return String(name || '').trim().replace(/\s+/g, ' ');
+}
+
+function billParticipantKey(name) {
+  return normalizeBillParticipantName(name).toLowerCase();
+}
+
+function titleCaseBillParticipantName(name) {
+  return normalizeBillParticipantName(name)
+    .split(' ')
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ');
+}
+
+function chooseCanonicalBillParticipantName(names) {
+  const clean = names.map(normalizeBillParticipantName).filter(Boolean);
+  if (!clean.length) return '';
+  const titled = clean.find(n => /[A-Z]/.test(n.charAt(0)));
+  if (titled) return titled;
+  return titleCaseBillParticipantName(clean[0]);
+}
+
+async function canonicalizeBillParticipantState(billId, participantsInput, selectionsInput) {
+  let participants = Array.isArray(participantsInput) ? [...participantsInput] : [];
+  let selections = Array.isArray(selectionsInput) ? [...selectionsInput] : [];
+  const buckets = new Map();
+
+  participants.forEach(row => {
+    const key = billParticipantKey(row.name);
+    if (!key) return;
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(row);
+  });
+
+  const canonicalByKey = {};
+  const participantOps = [];
+  const selectionOps = [];
+  const duplicateDeletes = [];
+
+  buckets.forEach((rows, key) => {
+    rows.sort((a, b) => {
+      const aPhone = String(a.phone || '');
+      const bPhone = String(b.phone || '');
+      const aGuest = aPhone.startsWith('guest:') ? 1 : 0;
+      const bGuest = bPhone.startsWith('guest:') ? 1 : 0;
+      if (aGuest !== bGuest) return aGuest - bGuest;
+      return String(a.id).localeCompare(String(b.id));
+    });
+
+    const canonical = rows[0];
+    const canonicalName = chooseCanonicalBillParticipantName(rows.map(r => r.name));
+    const canonicalPhone = String(canonical.phone || '').startsWith('guest:') ? ('guest:' + key) : canonical.phone;
+    const canonicalRow = {
+      id: canonical.id,
+      name: canonicalName,
+      paid: rows.some(r => !!r.paid),
+      paid_at: rows.map(r => r.paid_at).filter(Boolean).sort().slice(-1)[0] || canonical.paid_at || null,
+      payment_method: rows.map(r => r.payment_method).find(Boolean) || canonical.payment_method || null,
+      amount: rows.reduce((max, r) => Math.max(max, parseFloat(r.amount || 0)), 0),
+      phone: canonicalPhone
+    };
+    canonicalByKey[key] = canonicalRow;
+
+    if (
+      canonical.name !== canonicalRow.name ||
+      canonical.phone !== canonicalRow.phone ||
+      (!!canonical.paid) !== canonicalRow.paid ||
+      String(canonical.payment_method || '') !== String(canonicalRow.payment_method || '') ||
+      Number(parseFloat(canonical.amount || 0).toFixed(2)) !== Number(canonicalRow.amount.toFixed(2))
+    ) {
+      participantOps.push(
+        supabase.from('participants').update({
+          name: canonicalRow.name,
+          phone: canonicalRow.phone,
+          paid: canonicalRow.paid,
+          paid_at: canonicalRow.paid ? canonicalRow.paid_at : null,
+          payment_method: canonicalRow.paid ? canonicalRow.payment_method : null,
+          amount: canonicalRow.amount
+        }).eq('id', canonical.id)
+      );
+    }
+
+    rows.slice(1).forEach(dup => {
+      duplicateDeletes.push(supabase.from('participants').delete().eq('id', dup.id));
+    });
+  });
+
+  selections.forEach(sel => {
+    const key = billParticipantKey(sel.participant_name);
+    if (!key || !canonicalByKey[key]) return;
+    const canonicalName = canonicalByKey[key].name;
+    if (normalizeBillParticipantName(sel.participant_name) !== canonicalName) {
+      selectionOps.push(
+        supabase.from('item_selections').update({ participant_name: canonicalName }).eq('id', sel.id)
+      );
+      sel.participant_name = canonicalName;
+    }
+  });
+
+  const seenSelectionKeys = new Set();
+  selections.forEach(sel => {
+    const uniqueKey = String(sel.item_id) + '::' + billParticipantKey(sel.participant_name);
+    if (seenSelectionKeys.has(uniqueKey)) {
+      duplicateDeletes.push(supabase.from('item_selections').delete().eq('id', sel.id));
+      return;
+    }
+    seenSelectionKeys.add(uniqueKey);
+  });
+
+  if (participantOps.length || selectionOps.length || duplicateDeletes.length) {
+    await Promise.all([...participantOps, ...selectionOps, ...duplicateDeletes]);
+    const [freshParticipants, freshSelections] = await Promise.all([
+      supabase.from('participants').select('*').eq('bill_id', billId).order('name'),
+      supabase.from('item_selections').select('*').eq('bill_id', billId)
+    ]);
+    participants = freshParticipants.data || [];
+    selections = freshSelections.data || [];
+  } else {
+    participants = participants
+      .reduce((acc, row) => {
+        const key = billParticipantKey(row.name);
+        if (!key || acc.some(existing => billParticipantKey(existing.name) === key)) return acc;
+        const canonical = canonicalByKey[key];
+        acc.push({ ...row, name: canonical.name, phone: canonical.phone, paid: canonical.paid, paid_at: canonical.paid_at, payment_method: canonical.payment_method, amount: canonical.amount });
+        return acc;
+      }, [])
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+    selections = selections.map(sel => {
+      const key = billParticipantKey(sel.participant_name);
+      return key && canonicalByKey[key] ? { ...sel, participant_name: canonicalByKey[key].name } : sel;
+    });
+  }
+
+  return { participants, selections, canonicalByKey };
+}
+
 app.get('/bill/:billId/state', async (req, res) => {
   try {
     const { billId } = req.params;
@@ -491,14 +629,12 @@ app.get('/bill/:billId/state', async (req, res) => {
     ]);
     // Safety net: anyone with item_selections but no participant row gets added
     const dbParticipants = participantsRes.data || [];
-    const dbNames = new Set(dbParticipants.map(p => p.name.toLowerCase()));
+    const initialSelections = selectionsRes.data || [];
+    const dbNames = new Set(dbParticipants.map(p => billParticipantKey(p.name)));
     const extraNames = new Set();
-    // Build a map of lowercase name -> canonical name from DB for case normalization
-    const dbNameCanonical = {};
-    dbParticipants.forEach(p => { dbNameCanonical[p.name.toLowerCase()] = p.name; });
-    (selectionsRes.data || []).forEach(s => {
-      if (s.participant_name && !dbNames.has(s.participant_name.toLowerCase())) {
-        extraNames.add(s.participant_name);
+    initialSelections.forEach(s => {
+      if (s.participant_name && !dbNames.has(billParticipantKey(s.participant_name))) {
+        extraNames.add(normalizeBillParticipantName(s.participant_name));
       }
     });
     let needsRecalc = false;
@@ -507,42 +643,35 @@ app.get('/bill/:billId/state', async (req, res) => {
       // Await the insert so we return a real DB id, not a ghost id
       let realRow = null;
       const { data: inserted, error: insErr } = await supabase.from('participants')
-        .insert({ bill_id: billId, name: ghostName, amount: 0, paid: false, phone: 'guest:' + ghostName })
+        .insert({ bill_id: billId, name: chooseCanonicalBillParticipantName([ghostName]), amount: 0, paid: false, phone: 'guest:' + billParticipantKey(ghostName) })
         .select().maybeSingle();
       if (inserted) {
         realRow = inserted;
+        needsRecalc = true;
       } else {
         // Already exists (duplicate) — fetch the real row
         const { data: found } = await supabase.from('participants').select('*').eq('bill_id', billId).ilike('name', ghostName).maybeSingle();
         realRow = found;
         // Row already existed — no need to recalc, just add to response
       }
-      if (!realRow) {
-        // Truly new row was inserted
-        needsRecalc = true;
-      }
       const ghostRow = realRow || { id: 'ghost-' + ghostName, bill_id: billId, name: ghostName, amount: 0, paid: false };
       dbParticipants.push(ghostRow);
-      dbNames.add(ghostName.toLowerCase());
+      dbNames.add(billParticipantKey(ghostName));
     }
+    const canon = await canonicalizeBillParticipantState(billId, dbParticipants, initialSelections);
     // Only recalc and re-fetch if we genuinely inserted a new participant row
     if (needsRecalc) {
       await recalcBillAmounts(billId);
-      const { data: fresh } = await supabase.from('participants').select('*').eq('bill_id', billId).order('name');
-      if (fresh) {
-        const freshMap = {};
-        fresh.forEach(p => { freshMap[p.name.toLowerCase()] = p; });
-        for (let i = 0; i < dbParticipants.length; i++) {
-          const key = dbParticipants[i].name.toLowerCase();
-          if (freshMap[key]) dbParticipants[i] = freshMap[key];
-        }
-      }
     }
+    const [finalParticipantsRes, finalSelectionsRes] = await Promise.all([
+      supabase.from('participants').select('*').eq('bill_id', billId).order('name'),
+      supabase.from('item_selections').select('*').eq('bill_id', billId)
+    ]);
     res.json({
       success: true,
       items: itemsRes.data || [],
-      selections: selectionsRes.data || [],
-      participants: dbParticipants,
+      selections: finalSelectionsRes.data || canon.selections,
+      participants: finalParticipantsRes.data || canon.participants,
       bill: { total: bill.total, tax: bill.tax, tip: bill.tip, paid_by: bill.paid_by, subtotal: bill.subtotal }
     });
   } catch(e) { res.json({ success: false, error: e.message }); }
@@ -554,15 +683,30 @@ app.post('/bill/:billId/claim', async (req, res) => {
     const { billId } = req.params;
     const { item_id, participant_name } = req.body;
     if (!item_id || !participant_name?.trim()) return res.json({ success: false, error: 'Missing fields' });
-    const name = participant_name.trim();
+    const requestedName = normalizeBillParticipantName(participant_name);
+    const requestedKey = billParticipantKey(requestedName);
+    const [allParticipantsRes, allSelectionsRes] = await Promise.all([
+      supabase.from('participants').select('*').eq('bill_id', billId).order('name'),
+      supabase.from('item_selections').select('*').eq('bill_id', billId)
+    ]);
+    const canonicalState = await canonicalizeBillParticipantState(billId, allParticipantsRes.data || [], allSelectionsRes.data || []);
+    let canonicalName = canonicalState.canonicalByKey[requestedKey]?.name;
+    if (!canonicalName) {
+      canonicalName = chooseCanonicalBillParticipantName([requestedName]);
+      await supabase.from('participants').upsert(
+        { bill_id: billId, name: canonicalName, amount: 0, paid: false, phone: 'guest:' + requestedKey },
+        { onConflict: 'bill_id,phone', ignoreDuplicates: true }
+      );
+    }
     // Check if already claimed by this person
-    const { data: existing } = await supabase.from('item_selections')
-      .select('id').eq('bill_id', billId).eq('item_id', item_id).eq('participant_name', name).maybeSingle();
+    const { data: existingRows } = await supabase.from('item_selections')
+      .select('id,participant_name').eq('bill_id', billId).eq('item_id', item_id);
+    const existing = (existingRows || []).find(row => billParticipantKey(row.participant_name) === requestedKey);
     if (existing) return res.json({ success: true, action: 'already_claimed' });
-    await supabase.from('item_selections').insert({ bill_id: billId, item_id, participant_name: name });
+    await supabase.from('item_selections').insert({ bill_id: billId, item_id, participant_name: canonicalName });
     // If person was marked paid, un-mark them since their order changed
     await supabase.from('participants').update({ paid: false, paid_at: null, payment_method: null })
-      .eq('bill_id', billId).ilike('name', name).eq('paid', true);
+      .eq('bill_id', billId).ilike('name', canonicalName).eq('paid', true);
     // Recalculate amounts for all participants
     await recalcBillAmounts(billId);
     res.json({ success: true, action: 'claimed' });
@@ -575,12 +719,16 @@ app.post('/bill/:billId/unclaim', async (req, res) => {
     const { billId } = req.params;
     const { item_id, participant_name } = req.body;
     if (!item_id || !participant_name?.trim()) return res.json({ success: false, error: 'Missing fields' });
-    const name = participant_name.trim();
-    await supabase.from('item_selections')
-      .delete().eq('bill_id', billId).eq('item_id', item_id).eq('participant_name', name);
+    const requestedKey = billParticipantKey(participant_name);
+    const { data: existingRows } = await supabase.from('item_selections')
+      .select('id,participant_name').eq('bill_id', billId).eq('item_id', item_id);
+    const target = (existingRows || []).find(row => billParticipantKey(row.participant_name) === requestedKey);
+    if (target) {
+      await supabase.from('item_selections').delete().eq('id', target.id);
+    }
     // If person was marked paid, un-mark them since their order changed
     await supabase.from('participants').update({ paid: false, paid_at: null, payment_method: null })
-      .eq('bill_id', billId).ilike('name', name).eq('paid', true);
+      .eq('bill_id', billId).ilike('name', normalizeBillParticipantName(participant_name)).eq('paid', true);
     await recalcBillAmounts(billId);
     res.json({ success: true, action: 'unclaimed' });
   } catch(e) { res.json({ success: false, error: e.message }); }
@@ -594,11 +742,13 @@ app.post('/bill/:billId/join', async (req, res) => {
     if (!name?.trim()) return res.json({ success: false, error: 'Name required' });
     const { data: bill } = await supabase.from('bills').select('share_token, live_mode, live_people_count').eq('id', billId).single();
     if (!bill) return res.json({ success: false, error: 'Bill not found' });
-    const cleanName = name.trim();
+    const cleanName = normalizeBillParticipantName(name);
+    const normalizedKey = billParticipantKey(cleanName);
     // Check if person already exists as participant
-    const { data: existing } = await supabase.from('participants')
-      .select('id').eq('bill_id', billId).ilike('name', cleanName).maybeSingle();
-    if (existing) return res.json({ success: true, name: cleanName }); // already joined
+    const { data: existingRows } = await supabase.from('participants')
+      .select('id,name').eq('bill_id', billId).ilike('name', cleanName).limit(1);
+    const existing = (existingRows || [])[0];
+    if (existing) return res.json({ success: true, name: chooseCanonicalBillParticipantName([existing.name]) }); // already joined
     // Soft max check — warn the UI but always allow join
     // Hard blocking would prevent legitimate QR users from getting their row in "Who Owes What"
     let maxReached = false;
@@ -608,12 +758,42 @@ app.post('/bill/:billId/join', async (req, res) => {
     }
     try {
       await supabase.from('participants')
-        .upsert({ bill_id: billId, name: cleanName, amount: 0, paid: false, phone: 'guest:' + cleanName },
+        .upsert({ bill_id: billId, name: chooseCanonicalBillParticipantName([cleanName]), amount: 0, paid: false, phone: 'guest:' + normalizedKey },
                  { onConflict: 'bill_id,phone', ignoreDuplicates: true });
     } catch(insertErr) {
       console.warn('[join] insert warn (may be duplicate):', insertErr.message);
     }
-    res.json({ success: true, name: cleanName, maxReached, maxCount: bill.live_people_count });
+    const { data: freshParticipants } = await supabase.from('participants').select('*').eq('bill_id', billId).order('name');
+    const canon = await canonicalizeBillParticipantState(billId, freshParticipants || [], []);
+    res.json({ success: true, name: canon.canonicalByKey[normalizedKey]?.name || chooseCanonicalBillParticipantName([cleanName]), maxReached, maxCount: bill.live_people_count });
+  } catch(e) { res.json({ success: false, error: e.message }); }
+});
+
+app.post('/bill/:billId/rename', async (req, res) => {
+  try {
+    const { billId } = req.params;
+    const { old_name, new_name } = req.body || {};
+    const oldName = normalizeBillParticipantName(old_name);
+    const newName = normalizeBillParticipantName(new_name);
+    if (!oldName || !newName) return res.json({ success: false, error: 'Both names are required' });
+    const oldKey = billParticipantKey(oldName);
+    const newKey = billParticipantKey(newName);
+    const canonicalName = chooseCanonicalBillParticipantName([newName]);
+    const { data: participants } = await supabase.from('participants').select('*').eq('bill_id', billId).order('name');
+    const canon = await canonicalizeBillParticipantState(billId, participants || [], []);
+    const current = canon.canonicalByKey[oldKey];
+    if (!current) return res.json({ success: false, error: 'Participant not found' });
+    if (newKey !== oldKey && canon.canonicalByKey[newKey]) {
+      return res.json({ success: false, error: 'That name is already taken on this bill' });
+    }
+    await supabase.from('participants').update({ name: canonicalName, phone: 'guest:' + newKey }).eq('id', current.id);
+    await supabase.from('item_selections').update({ participant_name: canonicalName }).eq('bill_id', billId).ilike('participant_name', current.name);
+    const { data: bill } = await supabase.from('bills').select('paid_by').eq('id', billId).single();
+    if (bill?.paid_by && billParticipantKey(bill.paid_by) === oldKey) {
+      await supabase.from('bills').update({ paid_by: canonicalName }).eq('id', billId);
+    }
+    await recalcBillAmounts(billId);
+    res.json({ success: true, name: canonicalName });
   } catch(e) { res.json({ success: false, error: e.message }); }
 });
 
@@ -627,33 +807,34 @@ async function recalcBillAmounts(billId) {
       supabase.from('bills').select('tax,tip,subtotal,total,paid_by').eq('id', billId).single()
     ]);
     const items = itemsRes.data || [];
-    const selections = selectionsRes.data || [];
-    const participants = participantsRes.data || [];
+    const canon = await canonicalizeBillParticipantState(billId, participantsRes.data || [], selectionsRes.data || []);
+    const selections = canon.selections || [];
+    const participants = canon.participants || [];
     const bill = billRes.data;
     if (!bill || items.length === 0 || participants.length === 0) return;
 
     const billSubtotal = items.reduce((s, i) => s + parseFloat(i.price || 0), 0);
     const tax = parseFloat(bill.tax || 0);
     const tip = parseFloat(bill.tip || 0);
-    const paidByLower = (bill.paid_by || '').toLowerCase();
+    const paidByLower = billParticipantKey(bill.paid_by || '');
 
     // Build item → claimers map
     const itemClaimers = {};
     items.forEach(i => { itemClaimers[String(i.id)] = []; });
     selections.forEach(s => {
-      if (itemClaimers[String(s.item_id)]) itemClaimers[String(s.item_id)].push(s.participant_name.toLowerCase());
+      if (itemClaimers[String(s.item_id)]) itemClaimers[String(s.item_id)].push(billParticipantKey(s.participant_name));
     });
 
     // Check if anyone has claimed anything
     const anySelections = Object.values(itemClaimers).some(c => c.length > 0);
 
     for (const p of participants) {
-      if (paidByLower && p.name.toLowerCase() === paidByLower) {
+      if (paidByLower && billParticipantKey(p.name) === paidByLower) {
         // Payer owes nothing
         await supabase.from('participants').update({ amount: 0 }).eq('id', p.id);
         continue;
       }
-      const pLower = p.name.toLowerCase();
+      const pLower = billParticipantKey(p.name);
       let itemsTotal = 0;
       if (anySelections) {
         items.forEach(item => {
@@ -664,7 +845,7 @@ async function recalcBillAmounts(billId) {
         });
       } else {
         // No selections yet — split evenly (excluding payer)
-        const nonPayers = participants.filter(pp => pp.name.toLowerCase() !== paidByLower);
+        const nonPayers = participants.filter(pp => billParticipantKey(pp.name) !== paidByLower);
         itemsTotal = billSubtotal / Math.max(nonPayers.length, 1);
       }
       const proportion = billSubtotal > 0 ? itemsTotal / billSubtotal : 0;
@@ -691,31 +872,36 @@ app.get('/bill/:billId', async (req, res) => {
     supabase.from('participants').select('*').eq('bill_id', billId).order('name')
   ]);
   const items = itemsRes.data || [];
-  const selections = selectionsRes.data || [];
-  const participants = participantsRes.data || [];
+  let selections = selectionsRes.data || [];
+  let participants = participantsRes.data || [];
 
   // Flush any ghost participants (QR joiners with item_selections but no participant row)
   {
-    const existingNames = new Set(participants.map(p => p.name.toLowerCase()));
+    const existingNames = new Set(participants.map(p => billParticipantKey(p.name)));
     const ghostNames = new Set();
     (selections || []).forEach(s => {
-      if (s.participant_name && !existingNames.has(s.participant_name.toLowerCase())) {
-        ghostNames.add(s.participant_name);
+      if (s.participant_name && !existingNames.has(billParticipantKey(s.participant_name))) {
+        ghostNames.add(normalizeBillParticipantName(s.participant_name));
       }
     });
     for (const ghostName of ghostNames) {
       const { data: inserted } = await supabase.from('participants')
-        .insert({ bill_id: billId, name: ghostName, amount: 0, paid: false, phone: 'guest:' + ghostName })
+        .insert({ bill_id: billId, name: chooseCanonicalBillParticipantName([ghostName]), amount: 0, paid: false, phone: 'guest:' + billParticipantKey(ghostName) })
         .select().maybeSingle();
       if (inserted) {
         participants.push(inserted);
-        existingNames.add(ghostName.toLowerCase());
+        existingNames.add(billParticipantKey(ghostName));
       } else {
         // May already exist (race condition) — fetch it
         const { data: found } = await supabase.from('participants').select('*').eq('bill_id', billId).ilike('name', ghostName).maybeSingle();
-        if (found) { participants.push(found); existingNames.add(ghostName.toLowerCase()); }
+        if (found) { participants.push(found); existingNames.add(billParticipantKey(ghostName)); }
       }
     }
+  }
+  {
+    const canon = await canonicalizeBillParticipantState(billId, participants, selections);
+    participants = canon.participants;
+    selections = canon.selections;
   }
 
   let creatorProfile = null;
@@ -744,12 +930,12 @@ app.get('/bill/:billId', async (req, res) => {
     ? `<div style="padding:16px 20px 0;max-width:500px;margin:0 auto"><div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:8px">Receipt</div><img src="data:image/jpeg;base64,${bill.receipt_image}" style="width:100%;border-radius:14px;display:block"></div>` : '';
 
   const participantItems = {};
-  participants.forEach(p => { participantItems[p.name.toLowerCase()] = []; });
+  participants.forEach(p => { participantItems[billParticipantKey(p.name)] = []; });
   if (items.length > 0 && selections.length > 0) {
     items.forEach(item => {
       const claimers = selections.filter(s => String(s.item_id) === String(item.id)).map(s => s.participant_name);
       claimers.forEach(claimer => {
-        const key = claimer.toLowerCase();
+        const key = billParticipantKey(claimer);
         if (participantItems[key] !== undefined) {
           participantItems[key].push({ name: item.name, price: parseFloat(item.price), splitWith: claimers.length });
         }
@@ -758,7 +944,7 @@ app.get('/bill/:billId', async (req, res) => {
     const hasAny = Object.values(participantItems).some(a => a.length > 0);
     if (!hasAny) {
       participants.forEach(p => {
-        participantItems[p.name.toLowerCase()] = items.map(i => ({ name: i.name, price: parseFloat(i.price), splitWith: participants.length }));
+        participantItems[billParticipantKey(p.name)] = items.map(i => ({ name: i.name, price: parseFloat(i.price), splitWith: participants.length }));
       });
     }
   }
@@ -792,7 +978,7 @@ app.get('/bill/:billId', async (req, res) => {
     return `<div style="margin-top:8px;background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px">${rows}${divider}<div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:4px;padding-top:5px;display:flex;justify-content:space-between"><span style="font-size:11px;font-weight:700;color:#F0EEF8">Total</span><span style="font-size:12px;font-weight:700;color:#30D158;font-family:monospace">$${amount.toFixed(2)}</span></div></div>`;
   }
 
-  const paidByLower = (bill.paid_by || '').toLowerCase();
+  const paidByLower = billParticipantKey(bill.paid_by || '');
   const participantsHTML = participants.length > 0 ? `
     <div style="max-width:800px;margin:20px auto 0;padding:0 20px">
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:10px">Who owes what</div>
@@ -1174,6 +1360,14 @@ app.get('/bill/:billId', async (req, res) => {
   </div>
 </div>
 
+<div class="sec" style="margin-top:10px">
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:14px">
+    <div style="font-size:11px;color:#6E6B80;text-transform:uppercase;letter-spacing:0.08em;font-weight:700">Claiming For</div>
+    <select id="claim-as-select" style="flex:1;min-width:180px;padding:11px 12px;background:#12121A;border:1px solid rgba(255,255,255,0.08);border-radius:10px;color:#F0EEF8;font-family:inherit;font-size:13px;outline:none"></select>
+    <button id="rename-bill-person-btn" onclick="renameMyBillName()" style="padding:11px 14px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.28);border-radius:10px;color:#C084FC;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit">Rename Me</button>
+  </div>
+</div>
+
 <!-- Items section (claimable) -->
 ${items.length > 0 ? `
 <div class="sec" style="margin-top:16px">
@@ -1256,11 +1450,16 @@ const BILL_URL = ${JSON.stringify(billUrl)};
 const BACKEND_URL = ${JSON.stringify(baseUrl)};
 // Init myName from localStorage OR URL param
 let myName = localStorage.getItem('raven_bill_name_' + BID) || '';
+let activeClaimName = localStorage.getItem('raven_bill_claim_as_' + BID) || '';
 if (!myName) {
   const _urlN = new URLSearchParams(window.location.search).get('name');
   if (_urlN) {
     myName = decodeURIComponent(_urlN);
     localStorage.setItem('raven_bill_name_' + BID, myName);
+    if (!activeClaimName) {
+      activeClaimName = myName;
+      localStorage.setItem('raven_bill_claim_as_' + BID, activeClaimName);
+    }
   }
 }
 let pollTimer = null;
@@ -1273,6 +1472,45 @@ function _setOptimisticPaid(name, method) {
 function _clearOptimisticPaid(name) {
   delete _optimisticPaid[name.toLowerCase()];
 }
+
+function getActiveClaimName() {
+  return (activeClaimName || myName || '').trim();
+}
+
+function syncClaimAsStorage() {
+  if (activeClaimName) localStorage.setItem('raven_bill_claim_as_' + BID, activeClaimName);
+  else localStorage.removeItem('raven_bill_claim_as_' + BID);
+}
+
+function renderClaimAsOptions(participants) {
+  const sel = document.getElementById('claim-as-select');
+  if (!sel) return;
+  const names = [];
+  const seen = new Set();
+  (participants || []).forEach(p => {
+    const name = (p && p.name ? String(p.name).trim() : '');
+    const key = name.toLowerCase();
+    if (!name || seen.has(key)) return;
+    seen.add(key);
+    names.push(name);
+  });
+  if (myName && !seen.has(myName.toLowerCase())) names.unshift(myName);
+  if (!activeClaimName || !names.some(n => n.toLowerCase() === activeClaimName.toLowerCase())) {
+    activeClaimName = names.find(n => myName && n.toLowerCase() === myName.toLowerCase()) || myName || names[0] || '';
+    syncClaimAsStorage();
+  }
+  sel.innerHTML = names.map(name => '<option value="' + name.replace(/"/g, '&quot;') + '">' + name + (myName && name.toLowerCase() === myName.toLowerCase() ? ' (me)' : '') + '</option>').join('');
+  if (activeClaimName) sel.value = names.find(n => n.toLowerCase() === activeClaimName.toLowerCase()) || activeClaimName;
+  setNameUI(myName);
+}
+
+document.getElementById('claim-as-select')?.addEventListener('change', function(e) {
+  activeClaimName = (e.target.value || '').trim();
+  syncClaimAsStorage();
+  setNameUI(myName);
+  _lastStateHash = '';
+  refreshAll();
+});
 
 // ── NAME SETUP ──
 function initName() {
@@ -1312,6 +1550,10 @@ async function autoJoin(name, silent) {
     if (d.success) {
       myName = d.name;
       localStorage.setItem('raven_bill_name_' + BID, myName);
+      if (!activeClaimName || activeClaimName.toLowerCase() === name.toLowerCase()) {
+        activeClaimName = myName;
+        syncClaimAsStorage();
+      }
       if (!silent) document.getElementById('name-modal').style.display = 'none';
       setNameUI(myName);
       const cn = document.getElementById('cname');
@@ -1336,11 +1578,18 @@ async function autoJoin(name, silent) {
 
 function setNameUI(name) {
   const b = document.getElementById('you-badge');
-  if (b) { b.textContent = '👤 ' + name; b.style.display = 'block'; }
+  if (b) {
+    const acting = getActiveClaimName();
+    b.textContent = '👤 ' + name + (acting && acting.toLowerCase() !== String(name || '').toLowerCase() ? (' • claiming for ' + acting) : '');
+    b.style.display = 'block';
+  }
+  const renameBtn = document.getElementById('rename-bill-person-btn');
+  if (renameBtn) renameBtn.textContent = name ? ('Rename ' + name) : 'Rename Me';
 }
 
 // ── ITEM CLAIMING ──
 async function toggleClaim(itemId, itemName) {
+  const actingName = getActiveClaimName();
   if (!myName) {
     document.getElementById('name-modal').style.display = 'flex';
     document.getElementById('name-input').focus();
@@ -1352,14 +1601,51 @@ async function toggleClaim(itemId, itemName) {
   try {
     const r = await fetch(BACKEND_URL + '/bill/' + BID + '/' + endpoint, {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ item_id: itemId, participant_name: myName })
+      body: JSON.stringify({ item_id: itemId, participant_name: actingName })
     });
     const d = await r.json();
     if (d.success) {
-      toast(isClaimed ? '✓ Removed ' + itemName : '✓ Claimed ' + itemName);
+      toast(isClaimed ? ('✓ Removed ' + itemName + ' for ' + actingName) : ('✓ Claimed ' + itemName + ' for ' + actingName));
       _lastStateHash = ''; // force immediate re-render
       await refreshAll(); // await so UI updates before next interaction
     } else { toast('Error: ' + (d.error || 'try again')); }
+  } catch(e) { toast('Network error'); }
+}
+
+async function renameMyBillName() {
+  if (!myName) {
+    document.getElementById('name-modal').style.display = 'flex';
+    document.getElementById('name-input').focus();
+    return;
+  }
+  const nextName = prompt('Change your name for this active bill', myName);
+  if (!nextName) return;
+  const trimmed = nextName.trim();
+  if (!trimmed) return;
+  try {
+    const r = await fetch(BACKEND_URL + '/bill/' + BID + '/rename', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ old_name: myName, new_name: trimmed })
+    });
+    const d = await r.json();
+    if (d.success) {
+      const oldName = myName;
+      myName = d.name;
+      localStorage.setItem('raven_bill_name_' + BID, myName);
+      if (!activeClaimName || activeClaimName.toLowerCase() === oldName.toLowerCase()) {
+        activeClaimName = myName;
+        syncClaimAsStorage();
+      }
+      setNameUI(myName);
+      const cn = document.getElementById('cname');
+      if (cn) cn.value = myName;
+      _lastStateHash = '';
+      toast('✅ Name updated to ' + myName);
+      await refreshAll();
+    } else {
+      toast(d.error || 'Could not rename');
+    }
   } catch(e) { toast('Network error'); }
 }
 
@@ -1402,7 +1688,8 @@ async function refreshAll() {
 
 function renderState(d) {
   const { items, selections, participants, bill } = d;
-  const paidByLower = (bill.paid_by || '').toLowerCase();
+  renderClaimAsOptions(participants);
+  const paidByLower = String(bill.paid_by || '').trim().toLowerCase();
   // Hoist shared computed values — available to all sections
   const tax = parseFloat(bill.tax || 0);
   const tip = parseFloat(bill.tip || 0);
@@ -1419,7 +1706,7 @@ function renderState(d) {
   items.forEach(item => {
     const key = String(item.id);
     const claimers = selMap[key] || [];
-    const myN = (myName || '').toLowerCase();
+    const myN = (getActiveClaimName() || '').toLowerCase();
     const iMine = claimers.some(c => c.toLowerCase() === myN);
     const othersCount = claimers.filter(c => c.toLowerCase() !== myN).length;
 
@@ -1439,7 +1726,8 @@ function renderState(d) {
     const claimersEl = document.getElementById('claimers-' + item.id);
     if (claimersEl) {
       if (claimers.length === 0) {
-        claimersEl.innerHTML = '<span style="color:#6E6B80;font-size:11px">Tap to claim</span>';
+        const actingName = getActiveClaimName();
+        claimersEl.innerHTML = '<span style="color:#6E6B80;font-size:11px">' + (actingName ? ('Tap to claim for ' + actingName) : 'Tap to claim') + '</span>';
       } else {
         const isSplit = claimers.length > 1;
         const nameHtml = claimers.map(c => {
