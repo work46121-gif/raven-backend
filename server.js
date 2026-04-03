@@ -3573,6 +3573,35 @@ const receiptsDataMap = {}; // keyed by receipt id — safe lookup, no user data
 (D.receiptsData || []).forEach(r => { receiptsDataMap[r.id] = r; });
 let ravenHomeArmedUntil = 0;
 
+function buildRavenPaymentMessage(amount, contextName, methodLabel) {
+  const safeAmount = parseFloat(amount || 0).toFixed(2);
+  const safeContext = contextName || 'this trip';
+  return 'Sending $' + safeAmount + ' via RAVEN on ' + methodLabel + ' for ' + safeContext;
+}
+
+function buildZelleHref(value, amount, contextName) {
+  const target = String(value || '').trim();
+  if (!target) return null;
+  const message = buildRavenPaymentMessage(amount, contextName, 'Zelle');
+  if (target.includes('@')) {
+    return 'mailto:' + encodeURIComponent(target) + '?subject=' + encodeURIComponent('RAVEN payment') + '&body=' + encodeURIComponent(message);
+  }
+  const digits = target.replace(/\D/g, '');
+  if (digits.length >= 7) {
+    const e164 = digits.length === 10 ? '+1' + digits : (digits[0] === '1' ? '+' + digits : '+' + digits);
+    return 'sms:' + e164 + '&body=' + encodeURIComponent(message);
+  }
+  return null;
+}
+
+function buildApplePayHref(value, amount, contextName) {
+  const target = String(value || '').trim();
+  const digits = target.replace(/\D/g, '');
+  if (digits.length < 7) return null;
+  const e164 = digits.length === 10 ? '+1' + digits : (digits[0] === '1' ? '+' + digits : '+' + digits);
+  return 'sms:' + e164 + '&body=' + encodeURIComponent(buildRavenPaymentMessage(amount, contextName, 'Apple Pay'));
+}
+
 // Determine if current viewer is admin (creator) — checked after page loads
 function checkIsAdmin() {
   try {
