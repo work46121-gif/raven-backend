@@ -1806,7 +1806,9 @@ function renderState(d) {
         const liveAmt = isBillPayer ? 0 : Math.round((itemsTotal + myTax + myTip) * 100) / 100;
 
         let breakdown = '';
-        if (!isBillPayer && myItems.length > 0) {
+        if (myItems.length > 0) {
+          const breakdownTotal = isBillPayer ? Math.round((itemsTotal + myTax + myTip) * 100) / 100 : liveAmt;
+          const breakdownLabel = isBillPayer ? 'Fronted Total' : 'Total';
           breakdown = '<div style="margin-top:10px;background:rgba(255,255,255,0.03);border-radius:10px;padding:10px 12px">'
             + myItems.map(i => {
                 const share = (i.price / i.splitWith).toFixed(2);
@@ -1815,7 +1817,7 @@ function renderState(d) {
               }).join('')
             + (myTax > 0 ? '<div style="display:flex;justify-content:space-between;padding:3px 0;border-top:1px solid rgba(255,255,255,0.06);margin-top:4px"><span style="font-size:11px;color:#6E6B80">Tax</span><span style="font-size:11px;color:#6E6B80;font-family:monospace">$' + myTax.toFixed(2) + '</span></div>' : '')
             + (myTip > 0 ? '<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6E6B80">Tip</span><span style="font-size:11px;color:#6E6B80;font-family:monospace">$' + myTip.toFixed(2) + '</span></div>' : '')
-            + '<div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:6px;padding-top:6px;display:flex;justify-content:space-between"><span style="font-size:12px;font-weight:700;color:#F0EEF8">Total</span><span style="font-size:13px;font-weight:800;color:#30D158;font-family:monospace">$' + liveAmt.toFixed(2) + '</span></div>'
+            + '<div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:6px;padding-top:6px;display:flex;justify-content:space-between"><span style="font-size:12px;font-weight:700;color:#F0EEF8">' + breakdownLabel + '</span><span style="font-size:13px;font-weight:800;color:#30D158;font-family:monospace">$' + breakdownTotal.toFixed(2) + '</span></div>'
             + '</div>';
         } else if (!isBillPayer && anySelections && myItems.length === 0) {
           breakdown = '<div style="margin-top:8px;padding:8px 12px;background:rgba(255,255,255,0.02);border-radius:8px;font-size:12px;color:#6E6B80;font-style:italic">Tap items above to claim your order</div>';
