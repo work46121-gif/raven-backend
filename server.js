@@ -617,6 +617,35 @@ async function canonicalizeBillParticipantState(billId, participantsInput, selec
   return { participants, selections, canonicalByKey };
 }
 
+function buildRavenPaymentMessage(amount, contextName, methodLabel) {
+  const cleanAmount = parseFloat(amount || 0).toFixed(2);
+  const cleanContext = String(contextName || 'your split').trim();
+  return 'Sending $' + cleanAmount + ' via RAVEN' + (methodLabel ? ' on ' + methodLabel : '') + ' for ' + cleanContext;
+}
+
+function buildZelleHref(value, amount, contextName) {
+  const target = String(value || '').trim();
+  if (!target) return null;
+  const message = buildRavenPaymentMessage(amount, contextName, 'Zelle');
+  if (target.includes('@')) {
+    return 'mailto:' + encodeURIComponent(target) + '?subject=' + encodeURIComponent('RAVEN payment') + '&body=' + encodeURIComponent(message);
+  }
+  const digits = target.replace(/\D/g, '');
+  if (digits.length >= 7) {
+    const e164 = digits.length === 10 ? '+1' + digits : (digits[0] === '1' ? '+' + digits : '+' + digits);
+    return 'sms:' + e164 + '&body=' + encodeURIComponent(message);
+  }
+  return null;
+}
+
+function buildApplePayHref(value, amount, contextName) {
+  const target = String(value || '').trim();
+  const digits = target.replace(/\D/g, '');
+  if (digits.length < 7) return null;
+  const e164 = digits.length === 10 ? '+1' + digits : (digits[0] === '1' ? '+' + digits : '+' + digits);
+  return 'sms:' + e164 + '&body=' + encodeURIComponent(buildRavenPaymentMessage(amount, contextName, 'Apple Pay'));
+}
+
 app.get('/bill/:billId/state', async (req, res) => {
   try {
     const { billId } = req.params;
@@ -1156,7 +1185,17 @@ app.get('/bill/:billId', async (req, res) => {
       }
       if(p.venmo){const h='@'+p.venmo.replace('@','');row('#008CFF','V','Venmo',h+' · $'+amt,'venmo://paycharge?txn=pay&recipients='+p.venmo.replace('@','')+'&amount='+amt+'&note=Bill',null,'Venmo');}
       if(p.cashapp){const t=p.cashapp.replace('$','');row('#00D632','$','Cash App','$'+t+' · $'+amt,'https://cash.app/$'+t+'/'+amt,null,'Cash App');}
-      if(p.zelle){row('#6D1ED4','Z','Zelle',p.zelle+' · tap to copy',null,p.zelle,'Zelle');}
+      if(p.zelle){
+        const zelleHref = buildZelleHref(p.zelle, amt, BILL_NAME);
+        if (zelleHref) row('#6D1ED4','Z','Zelle',p.zelle + (p.zelle.includes('@') ? ' · opens Mail' : ' · opens Messages'),zelleHref,null,'Zelle');
+        else row('#6D1ED4','Z','Zelle',p.zelle+' · tap to copy',null,p.zelle,'Zelle');
+      }
+      if(p.applepay && p.applepay.trim()){
+        const ap = p.applepay.trim();
+        const appleHref = buildApplePayHref(ap, amt, BILL_NAME);
+        if (appleHref) row('#222','Pay','Apple Pay','Opens iMessage to '+ap,appleHref,null,'Apple Pay');
+        else row('#222','Pay','Apple Pay',ap+' · tap to copy',null,ap,'Apple Pay');
+      }
       if(n===0){
         // No configured methods — build method buttons using DOM (no inline onclick strings)
         const noMethodDiv = document.createElement('div');
@@ -1447,6 +1486,7 @@ ${bill.receipt_image ? `
 const BID = ${JSON.stringify(billId)};
 const BILL_TOKEN = ${JSON.stringify(bill.share_token || '')};
 const BILL_URL = ${JSON.stringify(billUrl)};
+const BILL_NAME = ${JSON.stringify(bill.name || 'this bill')};
 const BACKEND_URL = ${JSON.stringify(baseUrl)};
 // Init myName from localStorage OR URL param
 let myName = localStorage.getItem('raven_bill_name_' + BID) || '';
@@ -1844,6 +1884,7 @@ function showMyPayModal(amt) {
   document.getElementById('pname').textContent = payeeName;
   document.getElementById('pamt').textContent = '$' + parseFloat(amt).toFixed(2);
   const amtStr = parseFloat(amt).toFixed(2);
+  const paymentContextName = BILL_NAME || 'this bill';
   const mc = document.getElementById('pmethods');
   mc.innerHTML = '';
   let n = 0;
@@ -1873,13 +1914,16 @@ function showMyPayModal(amt) {
 
   if (p.venmo) row('#008CFF','V','Venmo','@'+p.venmo.replace('@','')+' · $'+amtStr,'venmo://paycharge?txn=pay&recipients='+p.venmo.replace('@','')+'&amount='+amtStr+'&note=Bill+Split',null,'Venmo');
   if (p.cashapp) { const t=p.cashapp.replace('$',''); row('#00D632','$','Cash App','$'+t+' · $'+amtStr,'https://cash.app/$'+t+'/'+amtStr,null,'Cash App'); }
-  if (p.zelle) row('#6D1ED4','Z','Zelle',p.zelle+' · tap to copy',null,p.zelle,'Zelle');
+  if (p.zelle) {
+    const zelleHref = buildZelleHref(p.zelle, amtStr, paymentContextName);
+    if (zelleHref) row('#6D1ED4','Z','Zelle',p.zelle + (p.zelle.includes('@') ? ' · opens Mail' : ' · opens Messages'),zelleHref,null,'Zelle');
+    else row('#6D1ED4','Z','Zelle',p.zelle+' · tap to copy',null,p.zelle,'Zelle');
+  }
   if (p.applepay && p.applepay.trim()) {
-    const ap = p.applepay.trim(), dig = ap.replace(/\D/g,'');
-    if (dig.length >= 7) {
-      const e164 = dig.length===10?'1'+dig:dig;
-      row('#222','Pay','Apple Pay','Opens iMessage to '+ap,'sms:+'+e164+'&body='+encodeURIComponent('Sending $'+amtStr+' via Apple Pay'),null,'Apple Pay');
-    } else { row('#222','Pay','Apple Pay',ap+' · tap to copy',null,ap,'Apple Pay'); }
+    const ap = p.applepay.trim();
+    const appleHref = buildApplePayHref(ap, amtStr, paymentContextName);
+    if (appleHref) row('#222','Pay','Apple Pay','Opens iMessage to '+ap,appleHref,null,'Apple Pay');
+    else row('#222','Pay','Apple Pay',ap+' · tap to copy',null,ap,'Apple Pay');
   }
 
   // "Paid via method" button — expands to full method list
@@ -2019,7 +2063,11 @@ function showPay(btn) {
   }
   if (p.venmo) row('#008CFF','V','Venmo','@'+p.venmo.replace('@','')+' · $'+amt,'venmo://paycharge?txn=pay&recipients='+p.venmo.replace('@','')+'&amount='+amt+'&note=Bill',null,'Venmo');
   if (p.cashapp) { const t=p.cashapp.replace('$',''); row('#00D632','$','Cash App','$'+t+' · $'+amt,'https://cash.app/$'+t+'/'+amt,null,'Cash App'); }
-  if (p.zelle) row('#6D1ED4','Z','Zelle',p.zelle+' · tap to copy',null,p.zelle,'Zelle');
+  if (p.zelle) {
+    const zelleHref = buildZelleHref(p.zelle, amt, BILL_NAME);
+    if (zelleHref) row('#6D1ED4','Z','Zelle',p.zelle + (p.zelle.includes('@') ? ' · opens Mail' : ' · opens Messages'),zelleHref,null,'Zelle');
+    else row('#6D1ED4','Z','Zelle',p.zelle+' · tap to copy',null,p.zelle,'Zelle');
+  }
   if (n === 0) mc.innerHTML = '<p style="color:#6E6B80;text-align:center;padding:16px 0;font-size:13px">No payment methods set up yet.</p>';
   document.getElementById('pmark').onclick = () => markPaid(pid, name, 'Other');
   document.getElementById('pmod').style.display = 'block';
@@ -4258,20 +4306,13 @@ function renderPaySlots() {
     if (prof.cashapp) { const t=prof.cashapp.replace('$',''); methods.push({ label:'Cash App', sub:'$'+t,    color:'#00D632', icon:'$', href:'https://cash.app/$'+t+'/'+a }); }
     if (prof.zelle)   {
       const zelleVal = prof.zelle;
-      const dig = zelleVal.replace(/\D/g,'');
-      const zelleHref = dig.length >= 7
-        ? 'zelle://send?phone=' + encodeURIComponent(zelleVal)
-        : 'https://enroll.zellepay.com/';
-      methods.push({ label:'Zelle', sub: zelleVal + ' · opens Zelle app', color:'#6D1ED4', icon:'Z', href: zelleHref, copy: zelleVal });
+      const zelleHref = buildZelleHref(zelleVal, a, TRIP_NAME || 'this trip');
+      methods.push({ label:'Zelle', sub: zelleVal + (zelleVal.includes('@') ? ' · opens Mail' : ' · opens Messages'), color:'#6D1ED4', icon:'Z', href: zelleHref, copy: zelleVal });
     }
     if (prof.applepay) {
       const ap = prof.applepay;
-      const dig = ap.replace(/\D/g,'');
-      const e164 = dig.length===10?'+1'+dig:(dig.length===11&&dig[0]==='1'?'+'+dig:null);
-      const apHref = e164
-        ? 'sms:' + e164 + '&body=' + encodeURIComponent('Sending $' + a + ' via Apple Pay 🪶')
-        : null;
-      methods.push({ label:'Apple Pay', sub: ap + (e164 ? ' · opens iMessage' : ' · tap to copy'), color:'#1c1c1e', icon:'', href: apHref, copy: ap, border:'1px solid #444' });
+      const apHref = buildApplePayHref(ap, a, TRIP_NAME || 'this trip');
+      methods.push({ label:'Apple Pay', sub: ap + (apHref ? ' · opens iMessage' : ' · tap to copy'), color:'#1c1c1e', icon:'', href: apHref, copy: ap, border:'1px solid #444' });
     }
 
     methods.forEach((m, mi) => {
