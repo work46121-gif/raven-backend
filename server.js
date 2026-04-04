@@ -1446,9 +1446,11 @@ app.get('/bill/:billId', async (req, res) => {
     </div>
     <button onclick="showMyPayModal(parseFloat(document.getElementById('bar-amt').textContent.replace('$','')))" style="padding:14px 28px;background:#30D158;border:none;border-radius:14px;color:#000;font-weight:900;font-size:15px;cursor:pointer;font-family:inherit;flex-shrink:0">💳 Pay Now</button>
   </div>
-  <div style="max-width:800px;margin:8px auto 0;font-size:11px;line-height:1.45;color:#6E6B80;text-align:center">
-    New to RAVEN?
-    <a href="https://ravensplit.com/dashboard.html" style="color:#30D158;font-weight:700;text-decoration:none">Create, split, and share your own bills for free</a>.
+  <div style="max-width:800px;margin:10px auto 0">
+    <a href="https://ravensplit.com/dashboard.html" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 14px;background:linear-gradient(135deg,rgba(48,209,88,0.08),rgba(124,58,237,0.08));border:1px solid rgba(48,209,88,0.16);border-radius:12px;color:#B9B5CA;text-decoration:none;font-size:11px;line-height:1.4;text-align:center">
+      <span style="color:#30D158;font-size:13px;flex-shrink:0">🪶</span>
+      <span>New to RAVEN? <strong style="color:#30D158;font-weight:800">Create, split, and share your own bills for free</strong></span>
+    </a>
   </div>
 </div>
 
