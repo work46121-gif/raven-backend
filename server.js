@@ -1256,7 +1256,7 @@ app.get('/bill/:billId', async (req, res) => {
       const mc = document.getElementById('pmethods'); mc.innerHTML = ''; let n = 0;
       function row(bg, icon, title, sub, href, copy, method) {
         const el = document.createElement(href?'a':'button'); el.className = 'pm-row';
-        if (title === 'Apple Pay') sub = href ? 'Opens Messages only - use Apple Pay there - do not send a text' : String(copy || '').trim() + ' - copy the contact, then use Apple Pay manually';
+        if (title === 'Apple Pay') sub = href ? 'Opens Messages so you can send Apple Pay there' : String(copy || '').trim() + ' - copy the contact, then use Apple Pay manually';
         if(href){ el.href=href; el.target='_blank'; }
         if(copy){ el.addEventListener('click',function(e){ e.preventDefault(); navigator.clipboard.writeText(copy).then(()=>toast('Copied: '+copy)).catch(()=>{}); }); }
         el.addEventListener('click', function() { setTimeout(() => markPaid(pid, name, method), 300); });
@@ -2098,7 +2098,7 @@ function showMyPayModal(amt) {
   function row(bg, icon, title, sub, href, copy, method) {
     const el = document.createElement(href?'a':'button');
     el.className = 'pm-row';
-    if (title === 'Apple Pay') sub = href ? 'Opens Messages only - use Apple Pay there - do not send a text' : String(copy || '').trim() + ' - copy the contact, then use Apple Pay manually';
+    if (title === 'Apple Pay') sub = href ? 'Opens Messages so you can send Apple Pay there' : String(copy || '').trim() + ' - copy the contact, then use Apple Pay manually';
     if (href) { el.href = href; el.target = '_blank'; el.rel = 'noopener'; }
     if (copy) { el.addEventListener('click', e => { e.preventDefault(); navigator.clipboard.writeText(copy).catch(()=>{}); toast('Copied: '+copy); }); }
     // Clicking opens the payment app — then user taps confirm below
@@ -2260,7 +2260,7 @@ function showPay(btn) {
   function row(bg, icon, title, sub, href, copy, method) {
     const el = document.createElement(href?'a':'button');
     el.className = 'pm-row';
-    if (title === 'Apple Pay') sub = href ? 'Opens Messages only - use Apple Pay there - do not send a text' : String(copy || '').trim() + ' - copy the contact, then use Apple Pay manually';
+    if (title === 'Apple Pay') sub = href ? 'Opens Messages so you can send Apple Pay there' : String(copy || '').trim() + ' - copy the contact, then use Apple Pay manually';
     if (href) { el.href = href; el.target = '_blank'; }
     if (copy) { el.addEventListener('click', e => { e.preventDefault(); navigator.clipboard.writeText(copy).catch(()=>{}); toast('Copied: '+copy); }); }
     el.addEventListener('click', () => setTimeout(() => markPaid(pid, name, method), 300));
@@ -4562,7 +4562,7 @@ function renderPaySlots() {
 
     methods.forEach((m, mi) => {
       if (m.label === 'Apple Pay') {
-        m.sub = m.href ? 'Opens Messages only - use Apple Pay there - do not send a text' : String(m.copy || '').trim() + ' - copy the contact, then use Apple Pay manually';
+        m.sub = m.href ? 'Opens Messages so you can send Apple Pay there' : String(m.copy || '').trim() + ' - copy the contact, then use Apple Pay manually';
       }
       const row = document.createElement('a');
       row.href = m.href || '#';
