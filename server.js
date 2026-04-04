@@ -1399,6 +1399,7 @@ app.get('/bill/:billId', async (req, res) => {
     <input id="name-input" type="text" placeholder="Your name" autocomplete="name"
       style="width:100%;padding:14px 16px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:12px;color:#F0EEF8;font-size:16px;font-family:inherit;outline:none;margin-bottom:12px">
     <button class="btn-g" onclick="submitName()">Start Claiming Items →</button>
+    <div style="margin-top:8px;font-size:11px;line-height:1.5;color:#6E6B80;text-align:center">New to RAVEN? <a href="https://ravensplit.com/dashboard.html" style="color:#30D158;font-weight:700;text-decoration:none">Create, split, and share your own bills for free</a>.</div>
   </div>
 </div>
 
@@ -1755,10 +1756,8 @@ async function autoJoin(name, silent) {
     if (d.success) {
       myName = d.name;
       localStorage.setItem('raven_bill_name_' + BID, myName);
-      if (!activeClaimName || activeClaimName.toLowerCase() === name.toLowerCase()) {
-        activeClaimName = myName;
-        syncClaimAsStorage();
-      }
+      activeClaimName = myName;
+      syncClaimAsStorage();
       if (!silent) document.getElementById('name-modal').style.display = 'none';
       setNameUI(myName);
       const cn = document.getElementById('cname');
