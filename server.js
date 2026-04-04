@@ -1376,9 +1376,9 @@ app.get('/bill/:billId', async (req, res) => {
     .pm-info b{font-size:14px;font-weight:600;color:#F0EEF8}
     .pm-info span{font-size:11px;color:#6E6B80}
     .toast-el{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1A1A24;border:1px solid rgba(48,209,88,0.3);color:#30D158;padding:10px 20px;border-radius:20px;font-size:13px;font-weight:600;z-index:9999;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity 0.3s}
-    .name-modal{position:fixed;inset:0;z-index:500;display:flex;align-items:flex-end;justify-content:center;width:100vw}
+    .name-modal{position:fixed;top:0;right:0;bottom:0;left:0;z-index:500;display:flex;align-items:flex-end;justify-content:stretch;width:100vw;overflow:hidden}
     .name-modal-bg{position:absolute;inset:0;background:rgba(0,0,0,0.8);backdrop-filter:blur(8px)}
-    .name-modal-box{position:relative;background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:24px 24px 0 0;padding:28px 20px 48px;width:min(100vw,600px);max-width:none;box-sizing:border-box;margin:0 auto;z-index:1}
+    .name-modal-box{position:relative;background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:24px 24px 0 0;padding:28px 20px 48px;box-sizing:border-box;z-index:1;width:100%;max-width:100%;margin:0;left:0;right:0}
     .btn-g{width:100%;padding:14px;background:#30D158;border:none;border-radius:12px;color:#000;font-family:inherit;font-size:15px;font-weight:800;cursor:pointer}
     .qr-section{max-width:800px;margin:20px auto 0;padding:0 16px;display:flex;flex-direction:column;align-items:center;gap:12px}
     .pulse{animation:pulse 2s infinite}
