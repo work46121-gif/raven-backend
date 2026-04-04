@@ -1376,9 +1376,9 @@ app.get('/bill/:billId', async (req, res) => {
     .pm-info b{font-size:14px;font-weight:600;color:#F0EEF8}
     .pm-info span{font-size:11px;color:#6E6B80}
     .toast-el{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1A1A24;border:1px solid rgba(48,209,88,0.3);color:#30D158;padding:10px 20px;border-radius:20px;font-size:13px;font-weight:600;z-index:9999;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity 0.3s}
-    .name-modal{position:fixed;top:0;right:0;bottom:0;left:0;z-index:500;display:flex;align-items:flex-end;justify-content:stretch;width:100vw;overflow:hidden}
+    .name-modal{position:fixed;top:0;right:0;bottom:0;left:0;z-index:500;display:block;width:100vw;height:100vh;overflow:hidden}
     .name-modal-bg{position:absolute;inset:0;background:rgba(0,0,0,0.8);backdrop-filter:blur(8px)}
-    .name-modal-box{position:relative;background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:24px 24px 0 0;padding:28px 20px 48px;box-sizing:border-box;z-index:1;width:100%;max-width:100%;margin:0;left:0;right:0}
+    .name-modal-box{position:fixed;inset:0;background:#0C0C12;border:none;border-radius:0;padding:28px 20px calc(48px + env(safe-area-inset-bottom));box-sizing:border-box;z-index:1;width:100vw;height:100vh;max-width:none;max-height:none;margin:0;overflow-y:auto}
     .btn-g{width:100%;padding:14px;background:#30D158;border:none;border-radius:12px;color:#000;font-family:inherit;font-size:15px;font-weight:800;cursor:pointer}
     .qr-section{max-width:800px;margin:20px auto 0;padding:0 16px;display:flex;flex-direction:column;align-items:center;gap:12px}
     .pulse{animation:pulse 2s infinite}
@@ -1390,7 +1390,7 @@ app.get('/bill/:billId', async (req, res) => {
 <!-- Name entry modal -->
 <div id="name-modal" class="name-modal" style="display:none">
   <div class="name-modal-bg" id="name-modal-bg"></div>
-  <div class="name-modal-box">
+  <div class="name-modal-box" style="position:fixed;inset:0;width:100vw;height:100vh;max-width:none;max-height:none;min-height:100vh;margin:0;border-radius:0;padding:28px 20px calc(48px + env(safe-area-inset-bottom));overflow-y:auto;">
     <div style="width:36px;height:4px;background:rgba(255,255,255,0.12);border-radius:2px;margin:0 auto 20px"></div>
     <div style="font-size:22px;font-weight:800;margin-bottom:6px">Who are you? 👋</div>
     <div style="font-size:14px;color:#6E6B80;margin-bottom:24px">Enter your name to claim items on the bill</div>
