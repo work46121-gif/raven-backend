@@ -1401,6 +1401,7 @@ app.get('/bill/:billId', async (req, res) => {
     <button class="btn-g" onclick="submitName()">Start Claiming Items →</button>
     <div style="margin-top:8px;font-size:11px;line-height:1.5;color:#6E6B80;text-align:center">New to RAVEN? <a href="https://ravensplit.com/dashboard.html" style="color:#30D158;font-weight:700;text-decoration:none">Create, split, and share your own bills for free</a>.</div>
   </div>
+  <div style="max-width:800px;margin:8px auto 0;font-size:11px;line-height:1.5;color:#6E6B80;text-align:center">New to RAVEN? <a href="https://ravensplit.com/dashboard.html" style="color:#30D158;font-weight:700;text-decoration:none">Create, split, and share your own bills for free</a>.</div>
 </div>
 
 <!-- Pay modal -->
