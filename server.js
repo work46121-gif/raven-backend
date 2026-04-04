@@ -1688,6 +1688,16 @@ function showIdentityChooser() {
   return true;
 }
 
+function reopenIdentityChooser() {
+  const modal = document.getElementById('name-modal');
+  const list = document.getElementById('name-picker-list');
+  const otherBtn = document.getElementById('name-picker-other');
+  const input = document.getElementById('name-input');
+  if (!modal || !list || !otherBtn || !input) return;
+  input.style.display = 'none';
+  showIdentityChooser();
+}
+
 function renderClaimAsOptions(participants) {
   const sel = document.getElementById('claim-as-select');
   if (!sel) return;
@@ -1787,6 +1797,9 @@ function setNameUI(name) {
     const acting = getActiveClaimName();
     b.textContent = '👤 ' + name + (acting && acting.toLowerCase() !== String(name || '').toLowerCase() ? (' • claiming for ' + acting) : '');
     b.style.display = 'block';
+    b.style.cursor = 'pointer';
+    b.title = 'Tap to switch who you are';
+    b.onclick = reopenIdentityChooser;
   }
   const renameBtn = document.getElementById('rename-bill-person-btn');
   if (renameBtn) renameBtn.textContent = name ? ('Rename ' + name) : 'Rename Me';
