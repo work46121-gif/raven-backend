@@ -1235,7 +1235,7 @@ app.get('/bill/:billId', async (req, res) => {
       const digits = target.replace(/\D/g, '');
       if (digits.length < 7) return null;
       const e164 = digits.length === 10 ? '+1' + digits : (digits[0] === '1' ? '+' + digits : '+' + digits);
-      return 'sms:' + e164 + '&body=' + encodeURIComponent(buildRavenPaymentMessage(amount, contextName, 'Apple Pay'));
+      return 'sms:' + e164;
     }
     (function(){
       try {
@@ -1256,6 +1256,7 @@ app.get('/bill/:billId', async (req, res) => {
       const mc = document.getElementById('pmethods'); mc.innerHTML = ''; let n = 0;
       function row(bg, icon, title, sub, href, copy, method) {
         const el = document.createElement(href?'a':'button'); el.className = 'pm-row';
+        if (title === 'Apple Pay') sub = href ? 'Opens Messages only - use Apple Pay there - do not send a text' : String(copy || '').trim() + ' - copy the contact, then use Apple Pay manually';
         if(href){ el.href=href; el.target='_blank'; }
         if(copy){ el.addEventListener('click',function(e){ e.preventDefault(); navigator.clipboard.writeText(copy).then(()=>toast('Copied: '+copy)).catch(()=>{}); }); }
         el.addEventListener('click', function() { setTimeout(() => markPaid(pid, name, method), 300); });
@@ -1611,7 +1612,7 @@ function buildApplePayHref(value, amount, contextName) {
   const digits = target.replace(/\D/g, '');
   if (digits.length < 7) return null;
   const e164 = digits.length === 10 ? '+1' + digits : (digits[0] === '1' ? '+' + digits : '+' + digits);
-  return 'sms:' + e164 + '&body=' + encodeURIComponent(buildRavenPaymentMessage(amount, contextName, 'Apple Pay'));
+  return 'sms:' + e164;
 }
 // Init myName from localStorage OR URL param
 let myName = localStorage.getItem('raven_bill_name_' + BID) || '';
@@ -2097,6 +2098,7 @@ function showMyPayModal(amt) {
   function row(bg, icon, title, sub, href, copy, method) {
     const el = document.createElement(href?'a':'button');
     el.className = 'pm-row';
+    if (title === 'Apple Pay') sub = href ? 'Opens Messages only - use Apple Pay there - do not send a text' : String(copy || '').trim() + ' - copy the contact, then use Apple Pay manually';
     if (href) { el.href = href; el.target = '_blank'; el.rel = 'noopener'; }
     if (copy) { el.addEventListener('click', e => { e.preventDefault(); navigator.clipboard.writeText(copy).catch(()=>{}); toast('Copied: '+copy); }); }
     // Clicking opens the payment app — then user taps confirm below
@@ -2258,6 +2260,7 @@ function showPay(btn) {
   function row(bg, icon, title, sub, href, copy, method) {
     const el = document.createElement(href?'a':'button');
     el.className = 'pm-row';
+    if (title === 'Apple Pay') sub = href ? 'Opens Messages only - use Apple Pay there - do not send a text' : String(copy || '').trim() + ' - copy the contact, then use Apple Pay manually';
     if (href) { el.href = href; el.target = '_blank'; }
     if (copy) { el.addEventListener('click', e => { e.preventDefault(); navigator.clipboard.writeText(copy).catch(()=>{}); toast('Copied: '+copy); }); }
     el.addEventListener('click', () => setTimeout(() => markPaid(pid, name, method), 300));
@@ -3750,7 +3753,7 @@ function buildApplePayHref(value, amount, contextName) {
   const digits = target.replace(/\D/g, '');
   if (digits.length < 7) return null;
   const e164 = digits.length === 10 ? '+1' + digits : (digits[0] === '1' ? '+' + digits : '+' + digits);
-  return 'sms:' + e164 + '&body=' + encodeURIComponent(buildRavenPaymentMessage(amount, contextName, 'Apple Pay'));
+  return 'sms:' + e164;
 }
 
 // Determine if current viewer is admin (creator) — checked after page loads
@@ -4558,6 +4561,9 @@ function renderPaySlots() {
     }
 
     methods.forEach((m, mi) => {
+      if (m.label === 'Apple Pay') {
+        m.sub = m.href ? 'Opens Messages only - use Apple Pay there - do not send a text' : String(m.copy || '').trim() + ' - copy the contact, then use Apple Pay manually';
+      }
       const row = document.createElement('a');
       row.href = m.href || '#';
       if (m.href && (m.href.startsWith('http') || m.href.startsWith('venmo') || m.href.startsWith('zelle'))) row.target = '_blank';
