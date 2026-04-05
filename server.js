@@ -1477,6 +1477,10 @@ app.get('/bill/:billId', async (req, res) => {
       <div style="font-size:13px;color:#6E6B80;margin-top:4px">
         $${parseFloat(bill.total||0).toFixed(2)} total · ${participants.length} people
       </div>
+      ${participants.length ? `<div style="font-size:12px;color:#30D158;margin-top:4px;font-weight:700">${(() => {
+        const paidByKey = String(bill.paid_by || '').trim().toLowerCase();
+        return participants.filter(p => !!p.paid || (paidByKey && String(p.name || '').trim().toLowerCase() === paidByKey)).length;
+      })()}/${participants.length} paid</div>` : ''}
     </div>
     <div style="font-size:32px;font-weight:900;color:#30D158;font-family:'Courier New',monospace">$${parseFloat(bill.total||0).toFixed(2)}</div>
   </div>
@@ -1564,7 +1568,7 @@ ${bill.receipt_image ? `
   </div>
   <div class="card">
     <div style="display:flex;border-bottom:1px solid rgba(255,255,255,0.07)">
-      <input id="cname" type="text" placeholder="Your name" style="flex:1;padding:12px 16px;background:transparent;border:none;color:#F0EEF8;font-family:inherit;font-size:14px;outline:none"/>
+      <input id="cname" type="text" placeholder="Raven member required" readonly style="flex:1;padding:12px 16px;background:transparent;border:none;color:#F0EEF8;font-family:inherit;font-size:14px;font-weight:700;outline:none;cursor:default"/>
     </div>
     <textarea id="cbody" placeholder="Add a comment..." rows="2" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#F0EEF8;font-family:inherit;font-size:14px;outline:none;resize:none;line-height:1.5"></textarea>
     <button onclick="postC()" style="width:100%;padding:13px;background:rgba(48,209,88,0.1);border:none;color:#30D158;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">💬 Post Comment</button>
