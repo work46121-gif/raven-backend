@@ -189,6 +189,7 @@ Rules:
     console.error('Claude receipt parse error:', err);
     return null;
   }
+  if (!identity && btnEl) btnEl.textContent = 'Create a RAVEN account';
 }
 
 async function handleReceiptImage(fromPhone, mediaUrl, billName) {
@@ -1660,8 +1661,9 @@ let _optimisticPaid = {};
 function getRavenCommentIdentity() {
   try {
     const profile = JSON.parse(localStorage.getItem('raven_profile') || '{}');
-    const display = String(profile.first_name || profile.raven_id || '').trim();
-    return (profile.user_id || profile.email || profile.raven_id || profile.first_name) && display ? display : '';
+    const ravenId = String(profile.raven_id || profile.username || '').trim();
+    const hasAccount = !!(profile.user_id || profile.email);
+    return hasAccount && ravenId ? ravenId : '';
   } catch (e) {
     return '';
   }
@@ -1807,8 +1809,7 @@ function initName() {
   const stored = myName;
   if (stored) {
     setNameUI(stored);
-    const cn = document.getElementById('cname');
-    if (cn) cn.value = stored;
+    initBillCommentComposer();
     // Always ensure participant record exists — silent so no modal pops up
     autoJoin(stored, true);
     return;
@@ -1845,8 +1846,7 @@ async function autoJoin(name, silent) {
       syncClaimAsStorage();
       if (!silent) document.getElementById('name-modal').style.display = 'none';
       setNameUI(myName);
-      const cn = document.getElementById('cname');
-      if (cn) cn.value = myName;
+      initBillCommentComposer();
       if (d.maxReached && !silent) toast('⚠️ Over guest limit — tax/tip splits may vary');
       _lastStateHash = ''; // force immediate re-render to show self in owes section
       refreshAll();
@@ -1930,8 +1930,7 @@ async function renameMyBillName() {
         syncClaimAsStorage();
       }
       setNameUI(myName);
-      const cn = document.getElementById('cname');
-      if (cn) cn.value = myName;
+      initBillCommentComposer();
       _lastStateHash = '';
       toast('✅ Name updated to ' + myName);
       await refreshAll();
