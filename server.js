@@ -1237,14 +1237,31 @@ app.get('/bill/:billId', async (req, res) => {
       const e164 = digits.length === 10 ? '+1' + digits : (digits[0] === '1' ? '+' + digits : '+' + digits);
       return 'sms:' + e164;
     }
-    (function(){
+    function getRavenCommentIdentity(){
       try {
-        const urlName = new URLSearchParams(window.location.search).get('name');
-        if(urlName){ const el=document.getElementById('cname'); if(el){el.value=decodeURIComponent(urlName);} return; }
         const profile = JSON.parse(localStorage.getItem('raven_profile')||'{}');
-        if(profile.first_name){ const el=document.getElementById('cname'); if(el){el.value=profile.first_name;} }
-      } catch(e){}
-    })();
+        const display = String(profile.first_name || profile.raven_id || '').trim();
+        return (profile.user_id || profile.email || profile.raven_id || profile.first_name) && display ? display : '';
+      } catch(e) { return ''; }
+    }
+    function initBillCommentComposer(){
+      const nameEl = document.getElementById('cname');
+      const bodyEl = document.getElementById('cbody');
+      const noteEl = document.getElementById('comment-auth-note');
+      const btnEl = document.getElementById('bill-comment-post');
+      const identity = getRavenCommentIdentity();
+      if (nameEl) nameEl.value = identity || 'Join RAVEN to comment';
+      if (identity) {
+        if (bodyEl) { bodyEl.disabled = false; bodyEl.placeholder = 'Add a comment...'; bodyEl.style.opacity = '1'; }
+        if (noteEl) noteEl.textContent = 'Posting as ' + identity + ' from this RAVEN account.';
+        if (btnEl) { btnEl.disabled = false; btnEl.style.opacity = '1'; btnEl.textContent = '💬 Post Comment'; }
+      } else {
+        if (bodyEl) { bodyEl.disabled = true; bodyEl.placeholder = 'Create or sign in to a RAVEN account to comment'; bodyEl.style.opacity = '0.6'; }
+        if (noteEl) noteEl.innerHTML = 'Join <a href="https://ravensplit.com/dashboard.html" style="color:#30D158;text-decoration:none;font-weight:700">RAVEN</a> to comment from your account.';
+        if (btnEl) { btnEl.disabled = true; btnEl.style.opacity = '0.55'; btnEl.textContent = '💬 RAVEN account required'; }
+      }
+    }
+    initBillCommentComposer();
     function showPay(btn) {
       const pid = btn.dataset.pid, name = btn.dataset.name, amount = btn.dataset.amount;
       let p = {}; try { p = JSON.parse(atob(document.getElementById('pd').value||'')); } catch(e) {}
@@ -1571,7 +1588,8 @@ ${bill.receipt_image ? `
       <input id="cname" type="text" placeholder="Raven member required" readonly style="flex:1;padding:12px 16px;background:transparent;border:none;color:#F0EEF8;font-family:inherit;font-size:14px;font-weight:700;outline:none;cursor:default"/>
     </div>
     <textarea id="cbody" placeholder="Add a comment..." rows="2" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#F0EEF8;font-family:inherit;font-size:14px;outline:none;resize:none;line-height:1.5"></textarea>
-    <button onclick="postC()" style="width:100%;padding:13px;background:rgba(48,209,88,0.1);border:none;color:#30D158;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">💬 Post Comment</button>
+    <div id="comment-auth-note" style="padding:10px 16px;font-size:12px;color:#6E6B80;border-bottom:1px solid rgba(255,255,255,0.07)">Comments post from your signed-in RAVEN account.</div>
+    <button id="bill-comment-post" onclick="postC()" style="width:100%;padding:13px;background:rgba(48,209,88,0.1);border:none;color:#30D158;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">💬 Post Comment</button>
   </div>
 </div>
 
@@ -1636,6 +1654,32 @@ let pollTimer = null;
 let lastState = null;
 // Optimistic paid state — keeps UI showing paid while DB write is in flight
 let _optimisticPaid = {};
+function getRavenCommentIdentity() {
+  try {
+    const profile = JSON.parse(localStorage.getItem('raven_profile') || '{}');
+    const display = String(profile.first_name || profile.raven_id || '').trim();
+    return (profile.user_id || profile.email || profile.raven_id || profile.first_name) && display ? display : '';
+  } catch (e) {
+    return '';
+  }
+}
+function initBillCommentComposer() {
+  const nameEl = document.getElementById('cname');
+  const bodyEl = document.getElementById('cbody');
+  const noteEl = document.getElementById('comment-auth-note');
+  const btnEl = document.getElementById('bill-comment-post');
+  const identity = getRavenCommentIdentity();
+  if (nameEl) nameEl.value = identity || 'Join RAVEN to comment';
+  if (identity) {
+    if (bodyEl) { bodyEl.disabled = false; bodyEl.placeholder = 'Add a comment...'; bodyEl.style.opacity = '1'; }
+    if (noteEl) noteEl.textContent = 'Posting as ' + identity + ' from this RAVEN account.';
+    if (btnEl) { btnEl.disabled = false; btnEl.style.opacity = '1'; btnEl.textContent = '💬 Post Comment'; }
+  } else {
+    if (bodyEl) { bodyEl.disabled = true; bodyEl.placeholder = 'Create or sign in to a RAVEN account to comment'; bodyEl.style.opacity = '0.6'; }
+    if (noteEl) noteEl.innerHTML = 'Join <a href="https://ravensplit.com/dashboard.html" style="color:#30D158;text-decoration:none;font-weight:700">RAVEN</a> to comment from your account.';
+    if (btnEl) { btnEl.disabled = true; btnEl.style.opacity = '0.55'; btnEl.textContent = '💬 RAVEN account required'; }
+  }
+}
 function _setOptimisticPaid(name, method) {
   _optimisticPaid[name.toLowerCase()] = { method: method || null };
 }
@@ -2339,15 +2383,16 @@ async function loadC() {
 }
 
 async function postC() {
-  const name = document.getElementById('cname').value.trim() || myName;
+  const name = getRavenCommentIdentity();
   const body = document.getElementById('cbody').value.trim();
+  if (!name) { toast('Join RAVEN to comment'); return; }
   if (!body) { toast('Write something first'); return; }
-  const btn = document.querySelector('[onclick="postC()"]');
+  const btn = document.getElementById('bill-comment-post');
   if (btn) { btn.textContent = 'Posting...'; btn.disabled = true; }
   try {
     const r = await fetch(BACKEND_URL + '/bill/' + BID + '/comments', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ name: name || 'Anonymous', body, gif_url: null })
+      body: JSON.stringify({ name, body, gif_url: null })
     });
     const d = await r.json();
     if (d.success) { document.getElementById('cbody').value = ''; toast('✅ Posted!'); loadC(); }
@@ -2402,6 +2447,7 @@ function toast(msg, ok) {
 // ── INIT ──
 initName();
 refreshAll();
+initBillCommentComposer();
 loadC();
 
 // ── DELEGATED CLAIM HANDLER — works on all devices, no double-fire ──
