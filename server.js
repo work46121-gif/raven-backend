@@ -1697,7 +1697,7 @@ function initBillCommentComposer() {
   const avatarEl = document.getElementById('cavatar');
   const profile = getRavenCommentProfile();
   const identity = profile.ravenId;
-  if (nameEl) nameEl.value = identity ? ('@' + identity) : 'Create a RAVEN account';
+  if (nameEl) nameEl.value = identity ? ('@' + identity) : 'Guest viewer';
   if (avatarEl) {
     if (profile.avatarUrl) avatarEl.innerHTML = '<img src="' + profile.avatarUrl + '" style="width:100%;height:100%;object-fit:cover;display:block">';
     else avatarEl.textContent = ((profile.firstName || identity || 'R').charAt(0) || 'R').toUpperCase();
@@ -1705,12 +1705,14 @@ function initBillCommentComposer() {
   if (identity) {
     if (bodyEl) { bodyEl.disabled = false; bodyEl.placeholder = 'Add a comment...'; bodyEl.style.opacity = '1'; }
     if (noteEl) noteEl.textContent = 'Posting as @' + identity + ' from this RAVEN account.';
-    if (gifBtn) { gifBtn.disabled = false; gifBtn.style.opacity = '1'; }
+    if (btnEl) btnEl.style.display = 'block';
+    if (gifBtn) { gifBtn.disabled = false; gifBtn.style.opacity = '1'; gifBtn.style.display = 'block'; }
     if (btnEl) { btnEl.disabled = false; btnEl.style.opacity = '1'; btnEl.textContent = '💬 Post Comment'; }
   } else {
-    if (bodyEl) { bodyEl.disabled = true; bodyEl.placeholder = 'Create a RAVEN account to comment'; bodyEl.style.opacity = '0.6'; }
+    if (bodyEl) { bodyEl.disabled = true; bodyEl.placeholder = ''; bodyEl.style.opacity = '0.6'; }
     if (noteEl) noteEl.innerHTML = 'Create a <a href="https://ravensplit.com/dashboard.html" style="color:#30D158;text-decoration:none;font-weight:700">RAVEN account</a> to comment.';
-    if (gifBtn) { gifBtn.disabled = true; gifBtn.style.opacity = '0.55'; }
+    if (btnEl) btnEl.style.display = 'none';
+    if (gifBtn) { gifBtn.disabled = true; gifBtn.style.opacity = '0.55'; gifBtn.style.display = 'none'; }
     if (btnEl) { btnEl.disabled = true; btnEl.style.opacity = '0.55'; btnEl.textContent = '💬 RAVEN account required'; }
   }
 }
