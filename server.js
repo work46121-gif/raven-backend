@@ -119,6 +119,7 @@ async function sendSMS(to, body) {
   } catch (err) {
     console.error(`Failed to send SMS to ${to}:`, err.message);
   }
+  if (!identity && btnEl) btnEl.textContent = 'Create a RAVEN account';
 }
 
 async function lookupContact(ownerPhone, name) {
@@ -403,6 +404,7 @@ async function handleRemind(fromPhone, text) {
         await sendSMS(p.phone, `🪶 RAVEN — Reminder!\n\nHey ${p.name}, you still owe ${formatMoney(p.amount)} for ${bill.name}.\n\nReply: PAID ${billId} ${p.name}`);
         reminded++;
       }
+      if (!identity && btnEl) btnEl.textContent = 'Create a RAVEN account';
     }
     const names = unpaid.map(p => p.name).join(', ');
     let response = `🪶 RAVEN — Reminders Sent!\n\n📋 ${bill.name} (${billId})\n⏳ Still owe: ${names}`;
@@ -1240,8 +1242,9 @@ app.get('/bill/:billId', async (req, res) => {
     function getRavenCommentIdentity(){
       try {
         const profile = JSON.parse(localStorage.getItem('raven_profile')||'{}');
-        const display = String(profile.first_name || profile.raven_id || '').trim();
-        return (profile.user_id || profile.email || profile.raven_id || profile.first_name) && display ? display : '';
+        const ravenId = String(profile.raven_id || profile.username || '').trim();
+        const hasAccount = !!(profile.user_id || profile.email);
+        return hasAccount && ravenId ? ravenId : '';
       } catch(e) { return ''; }
     }
     function initBillCommentComposer(){
@@ -1250,14 +1253,14 @@ app.get('/bill/:billId', async (req, res) => {
       const noteEl = document.getElementById('comment-auth-note');
       const btnEl = document.getElementById('bill-comment-post');
       const identity = getRavenCommentIdentity();
-      if (nameEl) nameEl.value = identity || 'Join RAVEN to comment';
+      if (nameEl) nameEl.value = identity ? ('@' + identity) : 'Create a RAVEN account';
       if (identity) {
         if (bodyEl) { bodyEl.disabled = false; bodyEl.placeholder = 'Add a comment...'; bodyEl.style.opacity = '1'; }
-        if (noteEl) noteEl.textContent = 'Posting as ' + identity + ' from this RAVEN account.';
+        if (noteEl) noteEl.textContent = 'Posting as @' + identity + ' from this RAVEN account.';
         if (btnEl) { btnEl.disabled = false; btnEl.style.opacity = '1'; btnEl.textContent = '💬 Post Comment'; }
       } else {
-        if (bodyEl) { bodyEl.disabled = true; bodyEl.placeholder = 'Create or sign in to a RAVEN account to comment'; bodyEl.style.opacity = '0.6'; }
-        if (noteEl) noteEl.innerHTML = 'Join <a href="https://ravensplit.com/dashboard.html" style="color:#30D158;text-decoration:none;font-weight:700">RAVEN</a> to comment from your account.';
+        if (bodyEl) { bodyEl.disabled = true; bodyEl.placeholder = 'Create a RAVEN account to comment'; bodyEl.style.opacity = '0.6'; }
+        if (noteEl) noteEl.innerHTML = 'Create a <a href="https://ravensplit.com/dashboard.html" style="color:#30D158;text-decoration:none;font-weight:700">RAVEN account</a> to comment.';
         if (btnEl) { btnEl.disabled = true; btnEl.style.opacity = '0.55'; btnEl.textContent = '💬 RAVEN account required'; }
       }
     }
@@ -1669,14 +1672,14 @@ function initBillCommentComposer() {
   const noteEl = document.getElementById('comment-auth-note');
   const btnEl = document.getElementById('bill-comment-post');
   const identity = getRavenCommentIdentity();
-  if (nameEl) nameEl.value = identity || 'Join RAVEN to comment';
+  if (nameEl) nameEl.value = identity ? ('@' + identity) : 'Create a RAVEN account';
   if (identity) {
     if (bodyEl) { bodyEl.disabled = false; bodyEl.placeholder = 'Add a comment...'; bodyEl.style.opacity = '1'; }
-    if (noteEl) noteEl.textContent = 'Posting as ' + identity + ' from this RAVEN account.';
+    if (noteEl) noteEl.textContent = 'Posting as @' + identity + ' from this RAVEN account.';
     if (btnEl) { btnEl.disabled = false; btnEl.style.opacity = '1'; btnEl.textContent = '💬 Post Comment'; }
   } else {
-    if (bodyEl) { bodyEl.disabled = true; bodyEl.placeholder = 'Create or sign in to a RAVEN account to comment'; bodyEl.style.opacity = '0.6'; }
-    if (noteEl) noteEl.innerHTML = 'Join <a href="https://ravensplit.com/dashboard.html" style="color:#30D158;text-decoration:none;font-weight:700">RAVEN</a> to comment from your account.';
+    if (bodyEl) { bodyEl.disabled = true; bodyEl.placeholder = 'Create a RAVEN account to comment'; bodyEl.style.opacity = '0.6'; }
+    if (noteEl) noteEl.innerHTML = 'Create a <a href="https://ravensplit.com/dashboard.html" style="color:#30D158;text-decoration:none;font-weight:700">RAVEN account</a> to comment.';
     if (btnEl) { btnEl.disabled = true; btnEl.style.opacity = '0.55'; btnEl.textContent = '💬 RAVEN account required'; }
   }
 }
