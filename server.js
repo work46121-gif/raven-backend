@@ -1588,11 +1588,23 @@ ${bill.receipt_image ? `
     <div id="no-c" style="color:#6E6B80;font-size:13px;text-align:center;padding:12px 0">No comments yet</div>
   </div>
   <div class="card">
-    <div style="display:flex;border-bottom:1px solid rgba(255,255,255,0.07)">
+    <div style="display:flex;align-items:center;border-bottom:1px solid rgba(255,255,255,0.07)">
+      <div id="cavatar" style="width:42px;height:42px;border-radius:50%;margin:10px 0 10px 12px;background:linear-gradient(135deg,#8B5CF6,#34D399);display:flex;align-items:center;justify-content:center;color:#fff;font-size:15px;font-weight:800;flex-shrink:0;overflow:hidden">R</div>
       <input id="cname" type="text" placeholder="Raven member required" readonly style="flex:1;padding:12px 16px;background:transparent;border:none;color:#F0EEF8;font-family:inherit;font-size:14px;font-weight:700;outline:none;cursor:default"/>
     </div>
     <textarea id="cbody" placeholder="Add a comment..." rows="2" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#F0EEF8;font-family:inherit;font-size:14px;outline:none;resize:none;line-height:1.5"></textarea>
+    <div id="bill-comment-gif-preview-wrap" style="display:none;padding:10px 16px;border-bottom:1px solid rgba(255,255,255,0.07)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+        <img id="bill-comment-gif-preview-img" style="height:80px;border-radius:10px;object-fit:cover;display:block">
+        <button id="bill-comment-gif-clear-btn" type="button" style="padding:6px 10px;background:rgba(255,68,68,0.12);border:1px solid rgba(255,68,68,0.25);border-radius:8px;color:#FF6B6B;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">✕ Remove</button>
+      </div>
+    </div>
+    <div id="bill-comment-gif-panel" style="display:none;border-bottom:1px solid rgba(255,255,255,0.07);background:#13131A">
+      <div style="padding:8px 12px"><input id="bill-comment-gif-search" type="text" placeholder="Search GIFs..." style="width:100%;padding:10px 14px;font-size:13px;background:#1A1A24;border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:#F0EEF8;font-family:inherit;outline:none"></div>
+      <div id="bill-comment-gif-results" style="display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 10px;max-height:180px;overflow-y:auto"><div style="color:#6E6B80;font-size:12px;padding:8px 0">Type to search GIFs...</div></div>
+    </div>
     <div id="comment-auth-note" style="padding:10px 16px;font-size:12px;color:#6E6B80;border-bottom:1px solid rgba(255,255,255,0.07)">Comments post from your signed-in RAVEN account.</div>
+    <button id="bill-comment-gif-toggle-btn" type="button" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#6E6B80;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🎭 Add GIF</button>
     <button id="bill-comment-post" onclick="postC()" style="width:100%;padding:13px;background:rgba(48,209,88,0.1);border:none;color:#30D158;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">💬 Post Comment</button>
   </div>
 </div>
@@ -1658,32 +1670,109 @@ let pollTimer = null;
 let lastState = null;
 // Optimistic paid state — keeps UI showing paid while DB write is in flight
 let _optimisticPaid = {};
-function getRavenCommentIdentity() {
+let billCommentGifUrl = null, billCommentGifTimer = null, billCommentGifPanelOpen = false;
+function getRavenCommentProfile() {
   try {
     const profile = JSON.parse(localStorage.getItem('raven_profile') || '{}');
     const ravenId = String(profile.raven_id || profile.username || '').trim();
     const hasAccount = !!(profile.user_id || profile.email);
-    return hasAccount && ravenId ? ravenId : '';
+    return {
+      ravenId: hasAccount && ravenId ? ravenId : '',
+      avatarUrl: String(profile.avatar_url || '').trim(),
+      firstName: String(profile.first_name || '').trim()
+    };
   } catch (e) {
-    return '';
+    return { ravenId: '', avatarUrl: '', firstName: '' };
   }
+}
+function getRavenCommentIdentity() {
+  return getRavenCommentProfile().ravenId;
 }
 function initBillCommentComposer() {
   const nameEl = document.getElementById('cname');
   const bodyEl = document.getElementById('cbody');
   const noteEl = document.getElementById('comment-auth-note');
   const btnEl = document.getElementById('bill-comment-post');
-  const identity = getRavenCommentIdentity();
+  const gifBtn = document.getElementById('bill-comment-gif-toggle-btn');
+  const avatarEl = document.getElementById('cavatar');
+  const profile = getRavenCommentProfile();
+  const identity = profile.ravenId;
   if (nameEl) nameEl.value = identity ? ('@' + identity) : 'Create a RAVEN account';
+  if (avatarEl) {
+    if (profile.avatarUrl) avatarEl.innerHTML = '<img src="' + profile.avatarUrl + '" style="width:100%;height:100%;object-fit:cover;display:block">';
+    else avatarEl.textContent = ((profile.firstName || identity || 'R').charAt(0) || 'R').toUpperCase();
+  }
   if (identity) {
     if (bodyEl) { bodyEl.disabled = false; bodyEl.placeholder = 'Add a comment...'; bodyEl.style.opacity = '1'; }
     if (noteEl) noteEl.textContent = 'Posting as @' + identity + ' from this RAVEN account.';
+    if (gifBtn) { gifBtn.disabled = false; gifBtn.style.opacity = '1'; }
     if (btnEl) { btnEl.disabled = false; btnEl.style.opacity = '1'; btnEl.textContent = '💬 Post Comment'; }
   } else {
     if (bodyEl) { bodyEl.disabled = true; bodyEl.placeholder = 'Create a RAVEN account to comment'; bodyEl.style.opacity = '0.6'; }
     if (noteEl) noteEl.innerHTML = 'Create a <a href="https://ravensplit.com/dashboard.html" style="color:#30D158;text-decoration:none;font-weight:700">RAVEN account</a> to comment.';
+    if (gifBtn) { gifBtn.disabled = true; gifBtn.style.opacity = '0.55'; }
     if (btnEl) { btnEl.disabled = true; btnEl.style.opacity = '0.55'; btnEl.textContent = '💬 RAVEN account required'; }
   }
+}
+function clearBillCommentGif() {
+  billCommentGifUrl = null;
+  const wrap = document.getElementById('bill-comment-gif-preview-wrap');
+  const img = document.getElementById('bill-comment-gif-preview-img');
+  if (wrap) wrap.style.display = 'none';
+  if (img) img.src = '';
+}
+function toggleBillCommentGifPanel() {
+  if (!getRavenCommentIdentity()) return;
+  billCommentGifPanelOpen = !billCommentGifPanelOpen;
+  const panel = document.getElementById('bill-comment-gif-panel');
+  const btn = document.getElementById('bill-comment-gif-toggle-btn');
+  if (panel) panel.style.display = billCommentGifPanelOpen ? 'block' : 'none';
+  if (btn) btn.style.color = billCommentGifPanelOpen ? '#30D158' : '#6E6B80';
+  if (billCommentGifPanelOpen) document.getElementById('bill-comment-gif-search')?.focus();
+}
+function searchBillCommentGifs(q) {
+  clearTimeout(billCommentGifTimer);
+  const container = document.getElementById('bill-comment-gif-results');
+  if (!container) return;
+  if (!q.trim()) {
+    container.innerHTML = '<div style="color:#6E6B80;font-size:12px;padding:8px 0">Type to search GIFs...</div>';
+    return;
+  }
+  container.innerHTML = '<div style="color:#6E6B80;font-size:12px;padding:8px 0">Searching...</div>';
+  billCommentGifTimer = setTimeout(() => {
+    fetch(BACKEND_URL + '/gif-search?q=' + encodeURIComponent(q))
+      .then(r => r.json())
+      .then(d => {
+        const gifs = d.gifs || [];
+        if (!gifs.length) {
+          container.innerHTML = '<div style="color:#6E6B80;font-size:12px;padding:8px 0">No results</div>';
+          return;
+        }
+        container.innerHTML = '';
+        gifs.forEach(g => {
+          const url = g.preview || g.full || '';
+          if (!url) return;
+          const img = document.createElement('img');
+          img.src = url;
+          img.style.cssText = 'height:80px;width:auto;border-radius:8px;cursor:pointer;object-fit:cover;border:2px solid transparent';
+          img.addEventListener('mouseover', function(){ this.style.borderColor = "#30D158"; });
+          img.addEventListener('mouseout', function(){ this.style.borderColor = "transparent"; });
+          img.addEventListener('click', () => {
+            billCommentGifUrl = g.full || url;
+            document.getElementById('bill-comment-gif-preview-img').src = billCommentGifUrl;
+            document.getElementById('bill-comment-gif-preview-wrap').style.display = 'block';
+            billCommentGifPanelOpen = false;
+            document.getElementById('bill-comment-gif-panel').style.display = 'none';
+            document.getElementById('bill-comment-gif-toggle-btn').style.color = '#6E6B80';
+            document.getElementById('bill-comment-gif-search').value = '';
+            container.innerHTML = '';
+            toast('GIF selected âœ“');
+          });
+          container.appendChild(img);
+        });
+      })
+      .catch(() => { container.innerHTML = '<div style="color:#FF6B6B;font-size:12px;padding:8px 0">Error loading GIFs</div>'; });
+  }, 400);
 }
 function _setOptimisticPaid(name, method) {
   _optimisticPaid[name.toLowerCase()] = { method: method || null };
@@ -2375,11 +2464,18 @@ async function loadC() {
     if (none) none.style.display = 'none';
     list.innerHTML = comments.map(c => {
       const dt = new Date(c.created_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+      const fallback = ((c.display_name || c.name || 'A').charAt(0) || 'A').toUpperCase();
+      const avatar = c.avatar_url
+        ? '<img src="' + c.avatar_url + '" style="width:38px;height:38px;border-radius:50%;object-fit:cover;display:block">'
+        : '<div style="width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#8B5CF6,#34D399);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:800;flex-shrink:0">' + fallback + '</div>';
       return '<div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:14px 16px">'
-        + '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px;font-weight:700">'+(c.name||'Anonymous')+'</span><span style="font-size:11px;color:#6E6B80">'+dt+'</span></div>'
+        + '<div style="display:flex;align-items:flex-start;gap:10px">'
+        + avatar
+        + '<div style="flex:1;min-width:0">'
+        + '<div style="display:flex;justify-content:space-between;gap:10px;margin-bottom:6px"><span style="font-size:13px;font-weight:700">' + (c.name || 'Anonymous') + '</span><span style="font-size:11px;color:#6E6B80;white-space:nowrap">' + dt + '</span></div>'
         + (c.body ? '<div style="font-size:14px;color:#9896A8;line-height:1.5">'+c.body+'</div>' : '')
         + (c.gif_url ? '<img src="'+c.gif_url+'" style="max-width:100%;border-radius:8px;margin-top:8px;display:block">' : '')
-        + '</div>';
+        + '</div></div></div>';
     }).join('');
   } catch(e) {}
 }
@@ -2388,16 +2484,16 @@ async function postC() {
   const name = getRavenCommentIdentity();
   const body = document.getElementById('cbody').value.trim();
   if (!name) { toast('Join RAVEN to comment'); return; }
-  if (!body) { toast('Write something first'); return; }
+  if (!body && !billCommentGifUrl) { toast('Add a message or GIF'); return; }
   const btn = document.getElementById('bill-comment-post');
   if (btn) { btn.textContent = 'Posting...'; btn.disabled = true; }
   try {
     const r = await fetch(BACKEND_URL + '/bill/' + BID + '/comments', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ name, body, gif_url: null })
+      body: JSON.stringify({ name, body, gif_url: billCommentGifUrl || null })
     });
     const d = await r.json();
-    if (d.success) { document.getElementById('cbody').value = ''; toast('✅ Posted!'); loadC(); }
+    if (d.success) { document.getElementById('cbody').value = ''; clearBillCommentGif(); toast('✅ Posted!'); loadC(); }
     else toast('Error: ' + (d.error || 'try again'));
   } catch(e) { toast('Network error'); }
   finally { if (btn) { btn.textContent = '💬 Post Comment'; btn.disabled = false; } }
@@ -2451,6 +2547,9 @@ initName();
 refreshAll();
 initBillCommentComposer();
 loadC();
+document.getElementById('bill-comment-gif-toggle-btn')?.addEventListener('click', toggleBillCommentGifPanel);
+document.getElementById('bill-comment-gif-clear-btn')?.addEventListener('click', clearBillCommentGif);
+document.getElementById('bill-comment-gif-search')?.addEventListener('input', function() { searchBillCommentGifs(this.value); });
 
 // ── DELEGATED CLAIM HANDLER — works on all devices, no double-fire ──
 (function() {
@@ -7203,7 +7302,27 @@ app.get('/bill/:billId/comments', async (req, res) => {
     const { data: bill } = await supabase.from('bills').select('status').eq('id', billId).single();
     if (!bill || bill.status === 'deleted') return res.json({ success: false, deleted: true, comments: [], error: 'Bill is no longer active' });
     const { data } = await supabase.from('bill_comments').select('*').eq('bill_id', billId).order('created_at', { ascending: true });
-    res.json({ success: true, comments: data || [] });
+    const comments = data || [];
+    const lookupKeys = [...new Set(comments.map(c => String(c.name || '').trim().replace(/^@/, '').toLowerCase()).filter(Boolean))];
+    let profiles = [];
+    if (lookupKeys.length) {
+      const { data: byRaven } = await supabase.from('profiles').select('first_name,raven_id,username,avatar_url').in('raven_id', lookupKeys);
+      const { data: byUsername } = await supabase.from('profiles').select('first_name,raven_id,username,avatar_url').in('username', lookupKeys);
+      profiles = [...(byRaven || []), ...(byUsername || [])];
+    }
+    const avatarMap = new Map();
+    profiles.forEach(p => {
+      [p?.raven_id, p?.username].filter(Boolean).forEach(v => {
+        const key = String(v).trim().toLowerCase();
+        if (!avatarMap.has(key)) avatarMap.set(key, { avatar_url: p.avatar_url || '', display_name: p.first_name || '' });
+      });
+    });
+    const hydrated = comments.map(c => {
+      const key = String(c.name || '').trim().replace(/^@/, '').toLowerCase();
+      const meta = avatarMap.get(key) || {};
+      return { ...c, avatar_url: meta.avatar_url || '', display_name: meta.display_name || '' };
+    });
+    res.json({ success: true, comments: hydrated });
   } catch(err) { res.json({ success: false, comments: [] }); }
 });
 
