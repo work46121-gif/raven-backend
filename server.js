@@ -1824,6 +1824,18 @@ let lastState = null;
 // Optimistic paid state — keeps UI showing paid while DB write is in flight
 let _optimisticPaid = {};
 let billCommentGifUrl = null, billCommentGifTimer = null, billCommentGifPanelOpen = false;
+let billCommentsCache = [];
+function escapeBillCommentHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+function billCommentOwnerKey(value) {
+  return String(value || '').trim().replace(/^@/, '').toLowerCase();
+}
 function getRavenCommentProfile() {
   try {
     const profile = JSON.parse(localStorage.getItem('raven_profile') || '{}');
@@ -2622,26 +2634,71 @@ async function loadC() {
     const r = await fetch(BACKEND_URL + '/bill/' + BID + '/comments');
     const d = await r.json();
     const comments = d.comments || [];
+    billCommentsCache = comments;
     const list = document.getElementById('clist');
     const none = document.getElementById('no-c');
     if (comments.length === 0) { if (none) none.style.display = 'block'; return; }
     if (none) none.style.display = 'none';
+    const currentAuthorKey = billCommentOwnerKey(getRavenCommentIdentity());
     list.innerHTML = comments.map(c => {
       const dt = new Date(c.created_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
       const fallback = ((c.display_name || c.name || 'A').charAt(0) || 'A').toUpperCase();
+      const ownComment = currentAuthorKey && billCommentOwnerKey(c.name) === currentAuthorKey;
       const avatar = c.avatar_url
-        ? '<img src="' + c.avatar_url + '" style="width:38px;height:38px;border-radius:50%;object-fit:cover;display:block">'
+        ? '<img src="' + escapeBillCommentHtml(c.avatar_url) + '" style="width:38px;height:38px;border-radius:50%;object-fit:cover;display:block">'
         : '<div style="width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#8B5CF6,#34D399);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:800;flex-shrink:0">' + fallback + '</div>';
+      const actions = ownComment
+        ? '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">'
+          + '<button onclick="editBillComment(\'' + escapeBillCommentHtml(c.id) + '\')" style="background:transparent;border:none;color:#A855F7;font-size:11px;font-weight:700;cursor:pointer;padding:0">Edit</button>'
+          + '<button onclick="deleteBillComment(\'' + escapeBillCommentHtml(c.id) + '\')" style="background:transparent;border:none;color:#FF6B6B;font-size:11px;font-weight:700;cursor:pointer;padding:0">Delete</button>'
+          + '</div>'
+        : '';
       return '<div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:14px 16px">'
         + '<div style="display:flex;align-items:flex-start;gap:10px">'
         + avatar
         + '<div style="flex:1;min-width:0">'
-        + '<div style="display:flex;justify-content:space-between;gap:10px;margin-bottom:6px"><span style="font-size:13px;font-weight:700">' + (c.name || 'Anonymous') + '</span><span style="font-size:11px;color:#6E6B80;white-space:nowrap">' + dt + '</span></div>'
-        + (c.body ? '<div style="font-size:14px;color:#9896A8;line-height:1.5">'+c.body+'</div>' : '')
-        + (c.gif_url ? '<img src="'+c.gif_url+'" style="max-width:100%;border-radius:8px;margin-top:8px;display:block">' : '')
+        + '<div style="display:flex;justify-content:space-between;gap:10px;margin-bottom:6px"><div style="display:flex;flex-direction:column;gap:2px;min-width:0"><span style="font-size:13px;font-weight:700">' + escapeBillCommentHtml(c.name || 'Anonymous') + '</span><span style="font-size:11px;color:#6E6B80;white-space:nowrap">' + dt + '</span></div>' + actions + '</div>'
+        + (c.body ? '<div style="font-size:14px;color:#9896A8;line-height:1.5">'+escapeBillCommentHtml(c.body)+'</div>' : '')
+        + (c.gif_url ? '<img src="'+escapeBillCommentHtml(c.gif_url)+'" style="max-width:100%;border-radius:8px;margin-top:8px;display:block">' : '')
         + '</div></div></div>';
     }).join('');
   } catch(e) {}
+}
+
+async function editBillComment(commentId) {
+  const currentAuthor = getRavenCommentIdentity();
+  if (!currentAuthor) { toast('Join RAVEN to edit comments'); return; }
+  const comment = billCommentsCache.find(c => String(c.id) === String(commentId));
+  if (!comment) { toast('Comment not found'); return; }
+  const nextBody = window.prompt('Edit your comment', comment.body || '');
+  if (nextBody === null) return;
+  if (!nextBody.trim() && !comment.gif_url) { toast('Comment cannot be empty'); return; }
+  try {
+    const r = await fetch(BACKEND_URL + '/bill/' + BID + '/comments/' + encodeURIComponent(commentId), {
+      method: 'PATCH',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ name: currentAuthor, body: nextBody.trim() })
+    });
+    const d = await r.json();
+    if (d.success) { toast('✅ Comment updated'); loadC(); }
+    else toast('Error: ' + (d.error || 'try again'));
+  } catch(e) { toast('Network error'); }
+}
+
+async function deleteBillComment(commentId) {
+  const currentAuthor = getRavenCommentIdentity();
+  if (!currentAuthor) { toast('Join RAVEN to delete comments'); return; }
+  if (!window.confirm('Delete this comment?')) return;
+  try {
+    const r = await fetch(BACKEND_URL + '/bill/' + BID + '/comments/' + encodeURIComponent(commentId), {
+      method: 'DELETE',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ name: currentAuthor })
+    });
+    const d = await r.json();
+    if (d.success) { toast('🗑️ Comment deleted'); loadC(); }
+    else toast('Error: ' + (d.error || 'try again'));
+  } catch(e) { toast('Network error'); }
 }
 
 async function postC() {
@@ -7796,7 +7853,45 @@ app.post('/bill/:billId/comments', async (req, res) => {
         ? `🪶 RAVEN — New comment on ${bill.name}:\n"${body.trim().substring(0,100)}"\n— ${name||'Anonymous'}`
         : `🪶 RAVEN — ${name||'Anonymous'} sent a GIF on ${bill.name}`;
       await sendSMS(bill.creator_phone, msg);
-    }
+  }
+  res.json({ success: true });
+} catch(err) { res.json({ success: false, error: err.message }); }
+});
+
+app.patch('/bill/:billId/comments/:commentId', async (req, res) => {
+  try {
+    const { billId, commentId } = req.params;
+    const { name, body } = req.body || {};
+    const authorName = String(name || '').trim();
+    const nextBody = String(body || '').trim();
+    const { data: billMeta } = await supabase.from('bills').select('status').eq('id', billId).single();
+    if (!billMeta || billMeta.status === 'deleted') return res.json({ success: false, deleted: true, error: 'Bill is no longer active' });
+    const { data: comment } = await supabase.from('bill_comments').select('id,name,gif_url').eq('id', commentId).eq('bill_id', billId).maybeSingle();
+    if (!comment) return res.json({ success: false, error: 'Comment not found' });
+    const currentKey = String(comment.name || '').trim().replace(/^@/, '').toLowerCase();
+    const requestKey = authorName.replace(/^@/, '').toLowerCase();
+    if (!requestKey || currentKey !== requestKey) return res.json({ success: false, error: 'You can only edit your own comment' });
+    if (!nextBody && !comment.gif_url) return res.json({ success: false, error: 'Comment cannot be empty' });
+    const { error } = await supabase.from('bill_comments').update({ body: nextBody }).eq('id', commentId).eq('bill_id', billId);
+    if (error) return res.json({ success: false, error: error.message });
+    res.json({ success: true });
+  } catch(err) { res.json({ success: false, error: err.message }); }
+});
+
+app.delete('/bill/:billId/comments/:commentId', async (req, res) => {
+  try {
+    const { billId, commentId } = req.params;
+    const { name } = req.body || {};
+    const authorName = String(name || '').trim();
+    const { data: billMeta } = await supabase.from('bills').select('status').eq('id', billId).single();
+    if (!billMeta || billMeta.status === 'deleted') return res.json({ success: false, deleted: true, error: 'Bill is no longer active' });
+    const { data: comment } = await supabase.from('bill_comments').select('id,name').eq('id', commentId).eq('bill_id', billId).maybeSingle();
+    if (!comment) return res.json({ success: false, error: 'Comment not found' });
+    const currentKey = String(comment.name || '').trim().replace(/^@/, '').toLowerCase();
+    const requestKey = authorName.replace(/^@/, '').toLowerCase();
+    if (!requestKey || currentKey !== requestKey) return res.json({ success: false, error: 'You can only delete your own comment' });
+    const { error } = await supabase.from('bill_comments').delete().eq('id', commentId).eq('bill_id', billId);
+    if (error) return res.json({ success: false, error: error.message });
     res.json({ success: true });
   } catch(err) { res.json({ success: false, error: err.message }); }
 });
