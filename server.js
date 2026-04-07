@@ -5287,26 +5287,34 @@ function toggleReceipt(id) {
 // ── MEMBER PROFILE MODAL ──
 function openMemberProfile(name) {
   const allProfs = PAY_PROFILES;
-  const profKey = Object.keys(allProfs).find(k => k.toLowerCase() === name.toLowerCase());
+  const normalizedName = String(name || '').trim().replace(/^@/, '').toLowerCase();
+  const profKey = Object.keys(allProfs).find(k => {
+    const key = String(k || '').trim().replace(/^@/, '').toLowerCase();
+    if (key === normalizedName) return true;
+    const profile = allProfs[k] || {};
+    return [profile.first_name, profile.display_name, profile.raven_id, profile.username, profile.email]
+      .some(v => String(v || '').trim().replace(/^@/, '').toLowerCase() === normalizedName);
+  });
   const prof = profKey ? allProfs[profKey] : null;
   let selfProfile = {};
   try { selfProfile = JSON.parse(localStorage.getItem('raven_profile') || '{}'); } catch(e) {}
   const selfRavenId = String(selfProfile.raven_id || '').toLowerCase();
   const selfEmail = String(selfProfile.email || '').toLowerCase();
   const selfFirstName = String(selfProfile.first_name || '').toLowerCase();
+  const displayName = (prof?.first_name || prof?.display_name || String(name || '').replace(/^@/, '') || 'Someone').trim();
   const isOwnProfile = !!(
     (prof?.raven_id && String(prof.raven_id).toLowerCase() === selfRavenId) ||
     (prof?.email && String(prof.email).toLowerCase() === selfEmail) ||
-    (!prof?.raven_id && !prof?.email && String(name || '').toLowerCase() === selfFirstName)
+    (!prof?.raven_id && !prof?.email && displayName.toLowerCase() === selfFirstName)
   );
   const modal = document.getElementById("member-profile-modal");
   const avEl = document.getElementById("mp-avatar");
   const colors = ["linear-gradient(135deg,#7C3AED,#A855F7)","linear-gradient(135deg,#E8633A,#FF6B35)","linear-gradient(135deg,#0EA5E9,#7C3AED)","linear-gradient(135deg,#30D158,#0EA5E9)","linear-gradient(135deg,#F59E0B,#EF4444)","linear-gradient(135deg,#EC4899,#8B5CF6)"];
   // avatar_url is not in PAY_PROFILES (excluded to avoid bloating inline JSON)
   // Use the cached value from applyAllMemberAvatars, falling back to localStorage for self
-  const cachedAvatar = _memberAvatarCache[name.toLowerCase()] || null;
-  if (avEl) { if (cachedAvatar) { avEl.innerHTML = '<img src="'+cachedAvatar+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%">'; avEl.style.background="transparent"; } else { avEl.innerHTML = ''; avEl.textContent=name[0].toUpperCase(); avEl.style.background=colors[name.charCodeAt(0)%colors.length]; } }
-  const nameEl=document.getElementById("mp-name"); if(nameEl) nameEl.textContent=name;
+  const cachedAvatar = _memberAvatarCache[normalizedName] || _memberAvatarCache[displayName.toLowerCase()] || null;
+  if (avEl) { if (cachedAvatar) { avEl.innerHTML = '<img src="'+cachedAvatar+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%">'; avEl.style.background="transparent"; } else { avEl.innerHTML = ''; avEl.textContent=displayName[0].toUpperCase(); avEl.style.background=colors[displayName.charCodeAt(0)%colors.length]; } }
+  const nameEl=document.getElementById("mp-name"); if(nameEl) nameEl.textContent=displayName;
   const ridEl=document.getElementById("mp-raven-id"); if(ridEl) ridEl.textContent=prof?.raven_id?"@"+prof.raven_id:"";
   const sinceEl=document.getElementById("mp-member-since"); if(sinceEl) { if(prof?.created_at){const d=new Date(prof.created_at);sinceEl.textContent="🪶 RAVEN member since "+d.toLocaleDateString("en-US",{month:"long",year:"numeric"});}else{sinceEl.textContent="🪶 RAVEN member";}}
   const chipsEl=document.getElementById("mp-payment-chips"); if(chipsEl){const chips=[];if(prof?.venmo)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#0084FF;border-radius:8px;font-size:12px;font-weight:700;color:#fff">V Venmo</span>');if(prof?.cashapp)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#00D632;border-radius:8px;font-size:12px;font-weight:700;color:#000">$ Cash App</span>');if(prof?.zelle)chips.push('<span style="padding:5px 11px;background:#6D1ED4;border-radius:8px;font-size:12px;font-weight:700;color:#fff">Z Zelle</span>');if(prof?.applepay)chips.push('<span style="padding:5px 11px;background:#1a1a1a;border:1px solid #555;border-radius:8px;font-size:12px;font-weight:700;color:#fff">✦ Apple Pay</span>');chipsEl.innerHTML=chips.length?chips.join(""):'<span style="font-size:12px;color:#6E6B80">No payment methods set up</span>';}
