@@ -5712,12 +5712,45 @@ async function tripFriendSessionInfo() {
 }
 
 async function tripProfileIsFriend(profile) {
-  const { currentUserId, accessToken } = await tripFriendSessionInfo();
-  if (!currentUserId || !accessToken) return false;
-  const headers = { apikey: SUPA_KEY, Authorization: 'Bearer ' + accessToken, Accept: 'application/json' };
   const targetRid = String(profile?.raven_id || '').replace(/^@/, '').toLowerCase();
   const targetEmail = String(profile?.email || '').toLowerCase();
   let targetProfileId = String(profile?.id || '').trim();
+
+  try {
+    if (window.supabase && window.supabase.createClient) {
+      const db = window.supabase.createClient(SUPA_URL, SUPA_KEY);
+      const sess = await db.auth.getSession();
+      const currentUserId = String(sess?.data?.session?.user?.id || '').trim();
+      if (currentUserId) {
+        if (!targetProfileId && targetRid) {
+          const { data: profByRid } = await db.from('profiles').select('id,email,raven_id').eq('raven_id', targetRid).maybeSingle();
+          if (profByRid) targetProfileId = String(profByRid.id || '').trim();
+        }
+        if (!targetProfileId && targetEmail) {
+          const { data: profByEmail } = await db.from('profiles').select('id,email,raven_id').eq('email', targetEmail).maybeSingle();
+          if (profByEmail) targetProfileId = String(profByEmail.id || '').trim();
+        }
+        const { data: friendships } = await db.from('raven_friends')
+          .select('user_id,friend_id,status')
+          .or('user_id.eq.' + currentUserId + ',friend_id.eq.' + currentUserId)
+          .eq('status', 'accepted');
+        const friendIds = [...new Set((friendships || []).map(f => String(f.user_id) === currentUserId ? String(f.friend_id || '').trim() : String(f.user_id || '').trim()).filter(Boolean))];
+        if (targetProfileId && friendIds.includes(targetProfileId)) return true;
+        if (friendIds.length) {
+          const { data: friendProfiles } = await db.from('profiles').select('id,email,raven_id').in('id', friendIds);
+          if ((friendProfiles || []).some(fp => {
+            const friendRid = String(fp?.raven_id || '').replace(/^@/, '').toLowerCase();
+            const friendEmail = String(fp?.email || '').toLowerCase();
+            return (!!targetRid && friendRid === targetRid) || (!!targetEmail && friendEmail === targetEmail) || (!!targetProfileId && String(fp?.id || '') === targetProfileId);
+          })) return true;
+        }
+      }
+    }
+  } catch (e) {}
+
+  const { currentUserId, accessToken } = await tripFriendSessionInfo();
+  if (!currentUserId || !accessToken) return false;
+  const headers = { apikey: SUPA_KEY, Authorization: 'Bearer ' + accessToken, Accept: 'application/json' };
 
   if (!targetProfileId && targetEmail) {
     const byEmail = await fetch(SUPA_URL + '/rest/v1/profiles?select=id,email,raven_id&email=eq.' + encodeURIComponent(targetEmail), { headers });
