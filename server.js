@@ -636,6 +636,45 @@ async function canonicalizeBillParticipantState(billId, participantsInput, selec
   return { participants, selections, canonicalByKey };
 }
 
+function normalizeTripAlias(value) {
+  return String(value || '').trim().replace(/^@/, '').toLowerCase();
+}
+
+function tripProfileAliases(profile, fallbackKey) {
+  return [...new Set(
+    [fallbackKey, profile?.first_name, profile?.display_name, profile?.raven_id, profile?.username, profile?.email]
+      .map(normalizeTripAlias)
+      .filter(Boolean)
+  )];
+}
+
+function resolveTripProfile(name) {
+  const normalized = normalizeTripAlias(name);
+  if (!normalized) return null;
+  const directKey = Object.keys(PAY_PROFILES).find(key => normalizeTripAlias(key) === normalized);
+  if (directKey) return PAY_PROFILES[directKey] || null;
+  for (const key of Object.keys(PAY_PROFILES)) {
+    const profile = PAY_PROFILES[key] || {};
+    if (tripProfileAliases(profile, key).includes(normalized)) return profile;
+  }
+  return null;
+}
+
+function getTripProfileDisplayName(name) {
+  const profile = resolveTripProfile(name);
+  return (profile?.first_name || profile?.display_name || String(name || '').trim().replace(/^@/, '') || 'Someone').trim();
+}
+
+function getTripProfileAvatar(name) {
+  const profile = resolveTripProfile(name);
+  const aliases = profile ? tripProfileAliases(profile, name) : [normalizeTripAlias(name)];
+  if (profile?.avatar_url) return profile.avatar_url;
+  for (const alias of aliases) {
+    if (_memberAvatarCache[alias]) return _memberAvatarCache[alias];
+  }
+  return '';
+}
+
 function buildRavenPaymentMessage(amount, contextName, methodLabel) {
   const cleanAmount = parseFloat(amount || 0).toFixed(2);
   const cleanContext = String(contextName || 'your split').trim();
@@ -2845,6 +2884,8 @@ app.get('/trip/:tripId', async (req, res) => {
       applepay: profile.applepay || '',
       email: profile.email || '',
       raven_id: profile.raven_id || '',
+      username: profile.username || '',
+      avatar_url: profile.avatar_url || '',
       created_at: profile.created_at || ''
     };
   };
@@ -3993,11 +4034,21 @@ let IS_ADMIN = false; // set after DOM loads
     const local = JSON.parse(localStorage.getItem('raven_profile') || '{}');
     const name = local.first_name || '';
     if (!name) return;
-    if (!PAY_PROFILES[name]) PAY_PROFILES[name] = {};
-    if (local.venmo)    PAY_PROFILES[name].venmo    = local.venmo;
-    if (local.cashapp)  PAY_PROFILES[name].cashapp  = local.cashapp;
-    if (local.zelle)    PAY_PROFILES[name].zelle    = local.zelle;
-    if (local.applepay) PAY_PROFILES[name].applepay = local.applepay;
+    const aliasKeys = [name, local.raven_id, local.username, local.email].map(v => String(v || '').trim()).filter(Boolean);
+    if (!aliasKeys.length) aliasKeys.push(name);
+    aliasKeys.forEach(alias => {
+      if (!PAY_PROFILES[alias]) PAY_PROFILES[alias] = {};
+      PAY_PROFILES[alias].first_name = PAY_PROFILES[alias].first_name || local.first_name || '';
+      PAY_PROFILES[alias].display_name = PAY_PROFILES[alias].display_name || local.first_name || '';
+      PAY_PROFILES[alias].raven_id = PAY_PROFILES[alias].raven_id || local.raven_id || local.username || '';
+      PAY_PROFILES[alias].username = PAY_PROFILES[alias].username || local.username || local.raven_id || '';
+      PAY_PROFILES[alias].email = PAY_PROFILES[alias].email || local.email || '';
+      PAY_PROFILES[alias].avatar_url = PAY_PROFILES[alias].avatar_url || local.avatar_url || '';
+      if (local.venmo)    PAY_PROFILES[alias].venmo    = local.venmo;
+      if (local.cashapp)  PAY_PROFILES[alias].cashapp  = local.cashapp;
+      if (local.zelle)    PAY_PROFILES[alias].zelle    = local.zelle;
+      if (local.applepay) PAY_PROFILES[alias].applepay = local.applepay;
+    });
   } catch(e) {}
 })();
 
@@ -4031,7 +4082,15 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Build saved receipts photo gallery — runs after DOM ready so it works on mobile too
-  try { buildSavedReceiptsGallery(); } catch(e) { console.error('Gallery error:', e); }
+  const deferTripEnhancement = window.requestIdleCallback
+    ? function(fn) { window.requestIdleCallback(fn, { timeout: 1200 }); }
+    : function(fn) { setTimeout(fn, 220); };
+  deferTripEnhancement(() => {
+    try { buildSavedReceiptsGallery(); } catch(e) { console.error('Gallery error:', e); }
+  });
+  deferTripEnhancement(() => {
+    try { applyAllMemberAvatars(); } catch(e) {}
+  });
 
   // ── REALTIME — Supabase live sync so all members see changes instantly ──
   setTimeout(() => { loadTripComments(); }, 120);
@@ -4289,16 +4348,22 @@ function renderTripComments(comments) {
     return;
   }
   card.innerHTML = rows.map(c => {
-    const authorName = escapeHtml(c.author_name || 'Anonymous');
-    const initials = escapeHtml(String(c.author_name || '?').trim().charAt(0).toUpperCase() || '?');
+    const rawAuthor = c.author_name || 'Anonymous';
+    const displayAuthor = getTripProfileDisplayName(rawAuthor);
+    const avatarUrl = getTripProfileAvatar(rawAuthor);
+    const authorName = escapeHtml(displayAuthor);
+    const initials = escapeHtml(String(displayAuthor || '?').trim().charAt(0).toUpperCase() || '?');
     const timeStr = escapeHtml(formatTripCommentTime(c.created_at));
     const profileTitle = 'View ' + authorName + '&rsquo;s profile';
     const body = c.body ? '<div style="font-size:14px;line-height:1.6;color:#E0DEF0;word-break:break-word">' + escapeHtml(c.body) + '</div>' : '';
     const gif = c.gif_url ? '<img src="' + escapeHtml(c.gif_url) + '" style="max-width:200px;border-radius:10px;display:block;margin-top:6px">' : '';
+    const avatarHtml = avatarUrl
+      ? '<img src="' + escapeHtml(avatarUrl) + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%">'
+      : initials;
     return '<div style="display:flex;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)">'
-      + '<div data-person-avatar="' + authorName + '" data-open-profile="' + authorName + '" title="' + profileTitle + '" style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#30D158);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden;cursor:pointer">' + initials + '</div>'
+      + '<div data-person-avatar="' + escapeHtml(rawAuthor) + '" data-open-profile="' + escapeHtml(rawAuthor) + '" title="' + profileTitle + '" style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#30D158);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden;cursor:pointer">' + avatarHtml + '</div>'
       + '<div style="flex:1;min-width:0">'
-      + '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px"><span data-open-profile="' + authorName + '" title="' + profileTitle + '" style="font-size:13px;font-weight:700;cursor:pointer">' + authorName + '</span><span style="font-size:11px;color:#6E6B80">' + timeStr + '</span></div>'
+      + '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px"><span data-open-profile="' + escapeHtml(rawAuthor) + '" title="' + profileTitle + '" style="font-size:13px;font-weight:700;cursor:pointer">' + authorName + '</span><span style="font-size:11px;color:#6E6B80">' + timeStr + '</span></div>'
       + body
       + gif
       + '</div></div>';
@@ -4365,7 +4430,9 @@ function applyNameAndAvatar(firstName, avatarUrl) {
   // Update ALL avatar circles on the page for this user (receipt breakdowns, people row, etc.)
   if (firstName) {
     document.querySelectorAll('[data-person-avatar]').forEach(el => {
-      if (el.getAttribute('data-person-avatar').toLowerCase() === firstName.toLowerCase()) {
+      const target = el.getAttribute('data-person-avatar') || '';
+      const targetName = getTripProfileDisplayName(target);
+      if (normalizeTripAlias(target) === normalizeTripAlias(firstName) || normalizeTripAlias(targetName) === normalizeTripAlias(firstName)) {
         if (avatarUrl) {
           el.innerHTML = '<img src="' + avatarUrl + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%">';
           el.style.background = 'transparent';
@@ -4381,14 +4448,17 @@ const _memberAvatarCache = {};
 
 function setCachedMemberAvatar(name, avatarUrl) {
   if (!name) return;
-  _memberAvatarCache[name.toLowerCase()] = avatarUrl || null;
+  _memberAvatarCache[normalizeTripAlias(name)] = avatarUrl || null;
 }
 
 function applyAvatarToMatchingElements(name, avatarUrl) {
   if (!name || !avatarUrl) return;
   document.querySelectorAll('[data-person-avatar]').forEach(el => {
-    const target = (el.getAttribute('data-person-avatar') || '').toLowerCase();
-    if (target === name.toLowerCase()) {
+    const target = el.getAttribute('data-person-avatar') || '';
+    const targetProfile = resolveTripProfile(target);
+    const nameProfile = resolveTripProfile(name);
+    const sameProfile = targetProfile && nameProfile && tripProfileAliases(targetProfile, target).some(alias => tripProfileAliases(nameProfile, name).includes(alias));
+    if (sameProfile || normalizeTripAlias(target) === normalizeTripAlias(name)) {
       el.innerHTML = '<img src="' + avatarUrl + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%">';
       el.style.background = 'transparent';
     }
@@ -4400,12 +4470,15 @@ async function applyAllMemberAvatars() {
     const avatarNames = [...new Set(Array.from(document.querySelectorAll('[data-person-avatar]'))
       .map(el => (el.getAttribute('data-person-avatar') || '').trim())
       .filter(Boolean))];
-    if (avatarNames.length === 0) return;
-    const firstNames = [...new Set(avatarNames.map(name => name.split(' ')[0]).filter(Boolean))];
+    const firstNames = [...new Set(
+      avatarNames.map(name => getTripProfileDisplayName(name))
+        .concat(Object.keys(PAY_PROFILES).map(name => getTripProfileDisplayName(name)))
+        .filter(Boolean)
+    )];
     if (firstNames.length === 0) return;
     const nameList = firstNames.map(name => '"' + encodeURIComponent(name) + '"').join(',');
     const res = await fetch(
-      SUPA_URL + '/rest/v1/profiles?select=first_name,last_name,avatar_url&first_name=in.(' + nameList + ')',
+      SUPA_URL + '/rest/v1/profiles?select=first_name,last_name,avatar_url,raven_id,username,email&first_name=in.(' + nameList + ')',
       { headers: { 'apikey': SUPA_KEY, 'Accept': 'application/json' } }
     );
     if (!res.ok) return;
@@ -4414,17 +4487,35 @@ async function applyAllMemberAvatars() {
       if (!prof.first_name) return;
       const firstName = prof.first_name.trim();
       const fullName = [prof.first_name, prof.last_name].filter(Boolean).join(' ').trim();
+      const matchingKeys = Object.keys(PAY_PROFILES).filter(key => {
+        const profile = PAY_PROFILES[key] || {};
+        return tripProfileAliases(profile, key).includes(normalizeTripAlias(firstName))
+          || (prof.raven_id && tripProfileAliases(profile, key).includes(normalizeTripAlias(prof.raven_id)))
+          || (prof.username && tripProfileAliases(profile, key).includes(normalizeTripAlias(prof.username)))
+          || (prof.email && tripProfileAliases(profile, key).includes(normalizeTripAlias(prof.email)));
+      });
       setCachedMemberAvatar(firstName, prof.avatar_url || null);
       if (fullName) setCachedMemberAvatar(fullName, prof.avatar_url || null);
+      if (prof.raven_id) setCachedMemberAvatar(prof.raven_id, prof.avatar_url || null);
+      if (prof.username) setCachedMemberAvatar(prof.username, prof.avatar_url || null);
+      if (prof.email) setCachedMemberAvatar(prof.email, prof.avatar_url || null);
+      matchingKeys.forEach(key => {
+        PAY_PROFILES[key].avatar_url = prof.avatar_url || PAY_PROFILES[key].avatar_url || '';
+        tripProfileAliases(PAY_PROFILES[key], key).forEach(alias => setCachedMemberAvatar(alias, prof.avatar_url || null));
+      });
       if (!prof.avatar_url) return;
       applyAvatarToMatchingElements(firstName, prof.avatar_url);
       if (fullName) applyAvatarToMatchingElements(fullName, prof.avatar_url);
+      if (prof.raven_id) applyAvatarToMatchingElements(prof.raven_id, prof.avatar_url);
+      if (prof.username) applyAvatarToMatchingElements(prof.username, prof.avatar_url);
+      if (prof.email) applyAvatarToMatchingElements(prof.email, prof.avatar_url);
     });
     // Also cache the current user's avatar from localStorage
     try {
       const lp = JSON.parse(localStorage.getItem('raven_profile') || '{}');
       if (lp.first_name && lp.avatar_url) {
-        setCachedMemberAvatar(lp.first_name, lp.avatar_url);
+        [lp.first_name, lp.raven_id, lp.username, lp.email].forEach(alias => setCachedMemberAvatar(alias, lp.avatar_url));
+        [lp.first_name, lp.raven_id, lp.username, lp.email].forEach(alias => applyAvatarToMatchingElements(alias, lp.avatar_url));
       }
     } catch(e) {}
   } catch(e) { /* best effort */ }
@@ -4472,7 +4563,6 @@ async function applyAllMemberAvatars() {
 })();
 
 // Apply all trip members' profile pictures to avatar circles
-applyAllMemberAvatars();
 
 // ── AUTO-OPEN receipt form ──
 if (new URLSearchParams(window.location.search).get('action') === 'receipt') {
@@ -5313,7 +5403,7 @@ function openMemberProfile(name) {
   const colors = ["linear-gradient(135deg,#7C3AED,#A855F7)","linear-gradient(135deg,#E8633A,#FF6B35)","linear-gradient(135deg,#0EA5E9,#7C3AED)","linear-gradient(135deg,#30D158,#0EA5E9)","linear-gradient(135deg,#F59E0B,#EF4444)","linear-gradient(135deg,#EC4899,#8B5CF6)"];
   // avatar_url is not in PAY_PROFILES (excluded to avoid bloating inline JSON)
   // Use the cached value from applyAllMemberAvatars, falling back to localStorage for self
-  const cachedAvatar = _memberAvatarCache[normalizedName] || _memberAvatarCache[displayName.toLowerCase()] || null;
+  const cachedAvatar = getTripProfileAvatar(name) || _memberAvatarCache[normalizedName] || _memberAvatarCache[displayName.toLowerCase()] || null;
   if (avEl) { if (cachedAvatar) { avEl.innerHTML = '<img src="'+cachedAvatar+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%">'; avEl.style.background="transparent"; } else { avEl.innerHTML = ''; avEl.textContent=displayName[0].toUpperCase(); avEl.style.background=colors[displayName.charCodeAt(0)%colors.length]; } }
   const nameEl=document.getElementById("mp-name"); if(nameEl) nameEl.textContent=displayName;
   const ridEl=document.getElementById("mp-raven-id"); if(ridEl) ridEl.textContent=prof?.raven_id?"@"+prof.raven_id:"";
@@ -6249,8 +6339,8 @@ function appendMsg(msg, scroll) {
   const container = document.getElementById('chat-msgs');
   const isMe = msg.user_id === (window._ravenUserId || '');
   const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const firstName = (msg.sender_name || 'Member').split(' ')[0];
-  const avatarUrl = msg.avatar_url || '';
+  const firstName = getTripProfileDisplayName(msg.sender_name || 'Member').split(' ')[0];
+  const avatarUrl = getTripProfileAvatar(msg.sender_name || '') || msg.avatar_url || '';
 
   const outer = document.createElement('div');
   outer.setAttribute('data-msg-id', msg.id || '');
