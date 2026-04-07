@@ -2649,8 +2649,8 @@ async function loadC() {
         : '<div style="width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#8B5CF6,#34D399);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:800;flex-shrink:0">' + fallback + '</div>';
       const actions = ownComment
         ? '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">'
-          + '<button onclick="editBillComment(\'' + escapeBillCommentHtml(c.id) + '\')" style="background:transparent;border:none;color:#A855F7;font-size:11px;font-weight:700;cursor:pointer;padding:0">Edit</button>'
-          + '<button onclick="deleteBillComment(\'' + escapeBillCommentHtml(c.id) + '\')" style="background:transparent;border:none;color:#FF6B6B;font-size:11px;font-weight:700;cursor:pointer;padding:0">Delete</button>'
+          + '<button type="button" data-edit-bill-comment="' + escapeBillCommentHtml(c.id) + '" style="background:transparent;border:none;color:#A855F7;font-size:11px;font-weight:700;cursor:pointer;padding:0">Edit</button>'
+          + '<button type="button" data-delete-bill-comment="' + escapeBillCommentHtml(c.id) + '" style="background:transparent;border:none;color:#FF6B6B;font-size:11px;font-weight:700;cursor:pointer;padding:0">Delete</button>'
           + '</div>'
         : '';
       return '<div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:14px 16px">'
@@ -2662,6 +2662,12 @@ async function loadC() {
         + (c.gif_url ? '<img src="'+escapeBillCommentHtml(c.gif_url)+'" style="max-width:100%;border-radius:8px;margin-top:8px;display:block">' : '')
         + '</div></div></div>';
     }).join('');
+    list.querySelectorAll('[data-edit-bill-comment]').forEach(btn => {
+      btn.addEventListener('click', () => editBillComment(btn.getAttribute('data-edit-bill-comment')));
+    });
+    list.querySelectorAll('[data-delete-bill-comment]').forEach(btn => {
+      btn.addEventListener('click', () => deleteBillComment(btn.getAttribute('data-delete-bill-comment')));
+    });
   } catch(e) {}
 }
 
