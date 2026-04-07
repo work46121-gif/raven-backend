@@ -7476,6 +7476,63 @@ app.post('/demo/scan-receipt', async (req, res) => {
     const modelsToTry = ['claude-opus-4-5', 'claude-sonnet-4-6'];
     let lastError = null;
     let raw = '';
+    const roundMoney = (value) => Math.round(((parseFloat(value) || 0) + Number.EPSILON) * 100) / 100;
+    const sumItems = (items) => roundMoney((items || []).reduce((sum, item) => sum + (parseFloat(item?.price) || 0), 0));
+    const expectedTotal = (parsed) => roundMoney(
+      (parseFloat(parsed?.subtotal) || 0) +
+      (parseFloat(parsed?.tax) || 0) +
+      (parseFloat(parsed?.tip) || 0) +
+      (parseFloat(parsed?.service_fee) || 0) +
+      (parseFloat(parsed?.misc) || 0) -
+      (parseFloat(parsed?.discount) || 0)
+    );
+    const subtotalFromTotal = (parsed) => roundMoney(
+      (parseFloat(parsed?.total) || 0) -
+      (parseFloat(parsed?.tax) || 0) -
+      (parseFloat(parsed?.tip) || 0) -
+      (parseFloat(parsed?.service_fee) || 0) -
+      (parseFloat(parsed?.misc) || 0) +
+      (parseFloat(parsed?.discount) || 0)
+    );
+    const normalizeParsedReceipt = (parsed) => {
+      const normalized = {
+        bill_name: typeof parsed?.bill_name === 'string' ? parsed.bill_name.trim() : '',
+        items: Array.isArray(parsed?.items)
+          ? parsed.items
+              .map(item => ({
+                name: typeof item?.name === 'string' ? item.name.trim() : '',
+                price: roundMoney(item?.price)
+              }))
+              .filter(item => item.name && item.price > 0)
+          : [],
+        subtotal: roundMoney(parsed?.subtotal),
+        tax: roundMoney(parsed?.tax),
+        tip: roundMoney(parsed?.tip),
+        service_fee: roundMoney(parsed?.service_fee || parsed?.serviceFee),
+        misc: roundMoney(parsed?.misc || parsed?.misc_fee || parsed?.fees),
+        discount: roundMoney(parsed?.discount),
+        total: roundMoney(parsed?.total),
+        warning: typeof parsed?.warning === 'string' ? parsed.warning.trim() : ''
+      };
+
+      const itemSubtotal = sumItems(normalized.items);
+      if (normalized.subtotal <= 0 && itemSubtotal > 0) normalized.subtotal = itemSubtotal;
+      if (normalized.total <= 0 && normalized.subtotal > 0) normalized.total = expectedTotal(normalized);
+      if (normalized.subtotal <= 0 && normalized.total > 0) normalized.subtotal = Math.max(0, subtotalFromTotal(normalized));
+
+      const residual = roundMoney(normalized.total - expectedTotal(normalized));
+      if (Math.abs(residual) >= 0.01 && Math.abs(residual) <= 10) {
+        if (residual > 0) normalized.misc = roundMoney(normalized.misc + residual);
+        else normalized.discount = roundMoney(normalized.discount + Math.abs(residual));
+      }
+
+      if (normalized.total <= 0 && normalized.subtotal > 0) normalized.total = expectedTotal(normalized);
+      return normalized;
+    };
+    const subtotalMismatch = (parsed) => {
+      if (!parsed?.items?.length || (parseFloat(parsed.subtotal) || 0) <= 0) return 0;
+      return roundMoney(Math.abs(sumItems(parsed.items) - (parseFloat(parsed.subtotal) || 0)));
+    };
 
     const receiptPrompt = `You are an expert receipt OCR system. Examine this receipt image with extreme care.
 
@@ -7494,6 +7551,18 @@ IMPORTANT: If the image is blurry or partially obscured, do your best — extrac
 
 Return EXACTLY this JSON structure (no other text):
 {"bill_name":"Exact Restaurant/Store Name from top of receipt","items":[{"name":"Item Name","price":0.00}],"subtotal":0.00,"tax":0.00,"tip":0.00,"total":0.00}`;
+    const enhancedReceiptPrompt = receiptPrompt + `
+
+ADDITIONAL RECONCILIATION RULES:
+- If the receipt shows "save", coupon, promo, or member discount lines directly under an item, fold that discount into the nearby item's final net price instead of returning a separate negative item line.
+- Weighted produce or meat should use the final extended price shown on the receipt.
+- Extract service fees separately as service_fee when shown.
+- Extract bottle deposits, beverage container fees, recycling fees, bag fees, and similar non-tax mandatory fees as misc.
+- Extract order-level discounts not already folded into items as discount.
+- The sum of items should match subtotal within $0.25 whenever the subtotal is visible. Re-check any shifted grocery lines before responding.
+
+If you include extra fields, use these exact names:
+service_fee, misc, discount`;
 
     for (const model of modelsToTry) {
       try {
@@ -7506,7 +7575,7 @@ Return EXACTLY this JSON structure (no other text):
             role: 'user',
             content: [
               { type: 'image', source: { type: 'base64', media_type: mt, data: image } },
-              { type: 'text', text: receiptPrompt }
+              { type: 'text', text: enhancedReceiptPrompt }
             ]
           }]
         };
@@ -7538,7 +7607,7 @@ Return EXACTLY this JSON structure (no other text):
               model, max_tokens: 8000,
               messages: [{ role: 'user', content: [
                 { type: 'image', source: { type: 'base64', media_type: mt, data: image } },
-                { type: 'text', text: receiptPrompt }
+                { type: 'text', text: enhancedReceiptPrompt }
               ]}]
             });
             const tb2 = message2.content.find(b => b.type === 'text');
@@ -7568,13 +7637,13 @@ Return EXACTLY this JSON structure (no other text):
       if (totalMatch) {
         const total = parseFloat(totalMatch[1].replace(',',''));
         console.log('Extracted total from text:', total);
-        return res.json({ success: true, bill_name: 'Receipt', items: [{ name: 'Total', price: total }], subtotal: total, tax: 0, tip: 0, total });
+        return res.json({ success: true, bill_name: 'Receipt', items: [], subtotal: total, tax: 0, tip: 0, service_fee: 0, misc: 0, discount: 0, total, warning: 'Only the total could be read from this receipt.' });
       }
       return res.json({ success: false, error: 'Could not parse receipt' });
     }
 
     let parsed;
-    try { parsed = JSON.parse(match[0]); }
+    try { parsed = normalizeParsedReceipt(JSON.parse(match[0])); }
     catch(e) {
       console.error('JSON parse failed:', e.message, match[0].slice(0, 300));
       return res.json({ success: false, error: 'Receipt data malformed' });
@@ -7582,13 +7651,68 @@ Return EXACTLY this JSON structure (no other text):
 
     if (!parsed.items || !Array.isArray(parsed.items)) parsed.items = [];
 
-    // If no items but have total, make one item
-    if (parsed.items.length === 0 && (parsed.total > 0 || parsed.subtotal > 0)) {
-      const amt = parsed.total || parsed.subtotal;
-      parsed.items = [{ name: parsed.bill_name || 'Receipt', price: amt }];
+    if (parsed.items.length === 0 && parsed.total > 0 && parsed.subtotal <= 0) {
+      parsed.subtotal = subtotalFromTotal(parsed);
     }
 
-    console.log('Scan success:', parsed.bill_name, parsed.items.length, 'items, total:', parsed.total);
+    if (subtotalMismatch(parsed) > 0.35) {
+      try {
+        console.log('Receipt mismatch detected, running reconciliation pass...');
+        const retryPrompt = enhancedReceiptPrompt + `
+
+RECONCILIATION PASS:
+- The first pass item sum was $${sumItems(parsed.items).toFixed(2)}.
+- The visible subtotal target is $${parseFloat(parsed.subtotal || 0).toFixed(2)}.
+- One or more grocery lines are likely shifted or missing.
+- Re-read the receipt from top to bottom and fix missing or misaligned item lines before responding.
+- If you still cannot make the item lines reconcile to the visible subtotal, return an empty items array and keep the totals accurate.`;
+        let retryRaw = '';
+        for (const model of modelsToTry) {
+          try {
+            const retryParams = {
+              model,
+              max_tokens: 8000,
+              messages: [{
+                role: 'user',
+                content: [
+                  { type: 'image', source: { type: 'base64', media_type: mt, data: image } },
+                  { type: 'text', text: retryPrompt }
+                ]
+              }]
+            };
+            if (model.includes('opus')) {
+              retryParams.thinking = { type: 'enabled', budget_tokens: 4000 };
+              retryParams.max_tokens = 12000;
+            }
+            const retryMessage = await getAnthropic().messages.create(retryParams);
+            const retryBlock = retryMessage.content.find(b => b.type === 'text');
+            retryRaw = retryBlock?.text || '';
+            if (retryRaw) break;
+          } catch (retryErr) {
+            console.warn('Reconciliation model failed:', model, retryErr.message);
+            if (retryErr.status === 401) break;
+          }
+        }
+
+        if (retryRaw) {
+          const retryCleaned = retryRaw.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
+          const retryMatch = retryCleaned.match(/\{[\s\S]*\}/);
+          if (retryMatch) {
+            const retryParsed = normalizeParsedReceipt(JSON.parse(retryMatch[0]));
+            if (subtotalMismatch(retryParsed) < subtotalMismatch(parsed)) parsed = retryParsed;
+          }
+        }
+      } catch (retryOuterErr) {
+        console.warn('Reconciliation pass failed:', retryOuterErr.message);
+      }
+    }
+
+    if (subtotalMismatch(parsed) > 0.35) {
+      parsed.warning = 'Line items did not reconcile to the receipt subtotal, so Raven filled the total only.';
+      parsed.items = [];
+    }
+
+    console.log('Scan success:', parsed.bill_name, parsed.items.length, 'items, subtotal:', parsed.subtotal, 'tax:', parsed.tax, 'service_fee:', parsed.service_fee || 0, 'misc:', parsed.misc || 0, 'discount:', parsed.discount || 0, 'total:', parsed.total);
     res.json({ success: true, ...parsed });
 
   } catch(err) {
