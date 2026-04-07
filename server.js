@@ -4292,12 +4292,13 @@ function renderTripComments(comments) {
     const authorName = escapeHtml(c.author_name || 'Anonymous');
     const initials = escapeHtml(String(c.author_name || '?').trim().charAt(0).toUpperCase() || '?');
     const timeStr = escapeHtml(formatTripCommentTime(c.created_at));
+    const profileTitle = 'View ' + authorName + '&rsquo;s profile';
     const body = c.body ? '<div style="font-size:14px;line-height:1.6;color:#E0DEF0;word-break:break-word">' + escapeHtml(c.body) + '</div>' : '';
     const gif = c.gif_url ? '<img src="' + escapeHtml(c.gif_url) + '" style="max-width:200px;border-radius:10px;display:block;margin-top:6px">' : '';
     return '<div style="display:flex;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)">'
-      + '<div data-person-avatar="' + authorName + '" data-open-profile="' + authorName + '" title="View ' + authorName + '\'s profile" style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#30D158);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden;cursor:pointer">' + initials + '</div>'
+      + '<div data-person-avatar="' + authorName + '" data-open-profile="' + authorName + '" title="' + profileTitle + '" style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#30D158);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden;cursor:pointer">' + initials + '</div>'
       + '<div style="flex:1;min-width:0">'
-      + '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px"><span data-open-profile="' + authorName + '" title="View ' + authorName + '\'s profile" style="font-size:13px;font-weight:700;cursor:pointer">' + authorName + '</span><span style="font-size:11px;color:#6E6B80">' + timeStr + '</span></div>'
+      + '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px"><span data-open-profile="' + authorName + '" title="' + profileTitle + '" style="font-size:13px;font-weight:700;cursor:pointer">' + authorName + '</span><span style="font-size:11px;color:#6E6B80">' + timeStr + '</span></div>'
       + body
       + gif
       + '</div></div>';
