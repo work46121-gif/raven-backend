@@ -2895,7 +2895,7 @@ app.get('/trip/:tripId', async (req, res) => {
   }
 
   const { data: receipts } = await supabase.from('trip_receipts').select('*').eq('trip_id', tripId).order('created_at', { ascending: false });
-  const comments = [];
+  const { data: comments } = await supabase.from('trip_comments').select('*').eq('trip_id', tripId).order('created_at', { ascending: true });
   const people = Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people || '[]');
 
   // Fetch payment profiles for all trip members
@@ -2968,6 +2968,11 @@ app.get('/trip/:tripId', async (req, res) => {
     const profile = memberPayProfiles[clean] || memberPayProfiles[clean.replace(/^@/, '')] || null;
     if (!profile) return clean.replace(/^@/, '');
     return profile.first_name || profile.display_name || profile.raven_id || clean.replace(/^@/, '');
+  };
+  const getMemberProfile = (rawName) => {
+    const clean = String(rawName || '').trim();
+    if (!clean) return null;
+    return memberPayProfiles[clean] || memberPayProfiles[clean.replace(/^@/, '')] || null;
   };
 
   try {
@@ -3161,18 +3166,28 @@ app.get('/trip/:tripId', async (req, res) => {
 
   const visiblePeople = people.slice(0, 5);
   const overflowPeople = people.slice(5);
-  const avatarRow = visiblePeople.map((p, i) =>
-    '<div data-person-avatar="' + esc(p) + '" data-open-profile="' + esc(p) + '" title="' + esc(p) + '" style="width:32px;height:32px;border-radius:50%;background:' + avatarColors[i%avatarColors.length] + ';border:2px solid #06060A;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0;margin-left:' + (i===0?'0':'-8px') + ';overflow:hidden;cursor:pointer">' + esc(p[0].toUpperCase()) + '</div>'
-  ).join('')
+  const avatarRow = visiblePeople.map((p, i) => {
+    const displayName = getMemberDisplayName(p);
+    const profile = getMemberProfile(p);
+    const avatarContent = profile?.avatar_url
+      ? '<img src="' + esc(profile.avatar_url) + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%">'
+      : esc(displayName[0].toUpperCase());
+    return '<div data-person-avatar="' + esc(p) + '" data-open-profile="' + esc(p) + '" title="' + esc(displayName) + '" style="width:32px;height:32px;border-radius:50%;background:' + avatarColors[i%avatarColors.length] + ';border:2px solid #06060A;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0;margin-left:' + (i===0?'0':'-8px') + ';overflow:hidden;cursor:pointer">' + avatarContent + '</div>';
+  }).join('')
   + (overflowPeople.length > 0
     ? '<div id="avatar-overflow-btn" onclick="toggleAvatarOverflow()" style="width:32px;height:32px;border-radius:50%;background:#22222E;border:2px solid #06060A;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#9896A8;flex-shrink:0;margin-left:-8px;cursor:pointer;position:relative;z-index:5">+' + overflowPeople.length + '</div>'
     + '<div id="avatar-overflow-list" style="display:none;position:absolute;top:44px;left:0;background:#13131A;border:1px solid rgba(255,255,255,0.12);border-radius:12px;padding:8px;z-index:100;min-width:140px;box-shadow:0 8px 32px rgba(0,0,0,0.5)">'
-    + overflowPeople.map((p, i) =>
-        '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px">'
-        + '<div style="width:24px;height:24px;border-radius:50%;background:' + avatarColors[(i+5)%avatarColors.length] + ';display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0">' + esc(p[0].toUpperCase()) + '</div>'
-        + '<span style="font-size:12px;color:#F0EEF8">' + esc(p) + '</span>'
-        + '</div>'
-      ).join('')
+    + overflowPeople.map((p, i) => {
+        const displayName = getMemberDisplayName(p);
+        const profile = getMemberProfile(p);
+        const avatarContent = profile?.avatar_url
+          ? '<img src="' + esc(profile.avatar_url) + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%">'
+          : esc(displayName[0].toUpperCase());
+        return '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px">'
+          + '<div data-person-avatar="' + esc(p) + '" style="width:24px;height:24px;border-radius:50%;background:' + avatarColors[(i+5)%avatarColors.length] + ';display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden">' + avatarContent + '</div>'
+          + '<span style="font-size:12px;color:#F0EEF8">' + esc(displayName) + '</span>'
+          + '</div>';
+      }).join('')
     + '</div>'
     : '');
 
@@ -3238,6 +3253,7 @@ app.get('/trip/:tripId', async (req, res) => {
 
   const owesRows = people.map((p, i) => {
     const displayName = getMemberDisplayName(p);
+    const profile = getMemberProfile(p);
     const rawOwed = totals[p] || 0;
     const settledCredit = Math.min(settledCredits[p.toLowerCase()] || 0, rawOwed); // cap at rawOwed — prevents 999999 sentinel over-settling
     let amtOwed = Math.round(Math.max(0, rawOwed - settledCredit) * 100) / 100;
@@ -3345,7 +3361,7 @@ app.get('/trip/:tripId', async (req, res) => {
     return `<div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)" id="row-${personId}" data-is-settled="${effectiveIsSettled?'1':'0'}" data-is-debtor="${effectiveAmtOwed>0.02?'1':'0'}">
       <div style="display:flex;align-items:center;justify-content:space-between;${(payerEntries.length>0&&!isSettled)?'margin-bottom:4px':''}">
         <div style="display:flex;align-items:center;gap:10px;cursor:pointer" data-open-profile="${esc(p)}" title="View ${esc(displayName)}'s profile">
-          <div data-person-avatar="${esc(p)}" style="width:34px;height:34px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;overflow:hidden">${esc(displayName[0].toUpperCase())}</div>
+          <div data-person-avatar="${esc(p)}" style="width:34px;height:34px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;overflow:hidden">${profile?.avatar_url ? `<img src="${esc(profile.avatar_url)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : esc(displayName[0].toUpperCase())}</div>
           <div>
             <div style="font-weight:600;font-size:14px;display:flex;align-items:center;gap:6px">${esc(displayName)} <span style="font-size:11px;color:#6E6B80;font-weight:400">›</span></div>
             <div class="person-status-display" style="font-size:11px;color:${effectiveIsSettled?'#30D158':effectiveAmtOwed>0?'#FF9A3C':effectiveIsCreditor?'#A855F7':'#30D158'}">
@@ -3537,13 +3553,15 @@ app.get('/trip/:tripId', async (req, res) => {
 
 
   const commentRows = (comments||[]).map(c => {
-    const initials = c.author_name ? esc(c.author_name[0].toUpperCase()) : '?';
+    const displayName = getMemberDisplayName(c.author_name || 'Anonymous');
+    const profile = getMemberProfile(c.author_name || '');
+    const initials = displayName ? esc(displayName[0].toUpperCase()) : '?';
     const timeStr = new Date(c.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'America/New_York'});
-    const authorName = esc(c.author_name || 'Anonymous');
+    const authorName = esc(displayName || c.author_name || 'Anonymous');
     return `<div style="display:flex;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)">
-      <div data-person-avatar="${authorName}" data-open-profile="${authorName}" title="View ${authorName}'s profile" style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#30D158);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden;cursor:pointer">${initials}</div>
+      <div data-person-avatar="${esc(c.author_name || '')}" data-open-profile="${esc(c.author_name || '')}" title="View ${authorName}'s profile" style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#30D158);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden;cursor:pointer">${profile?.avatar_url ? `<img src="${esc(profile.avatar_url)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : initials}</div>
       <div style="flex:1;min-width:0">
-        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px"><span data-open-profile="${authorName}" title="View ${authorName}'s profile" style="font-size:13px;font-weight:700;cursor:pointer">${authorName}</span><span style="font-size:11px;color:#6E6B80">${timeStr}</span></div>
+        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px"><span data-open-profile="${esc(c.author_name || '')}" title="View ${authorName}'s profile" style="font-size:13px;font-weight:700;cursor:pointer">${authorName}</span><span style="font-size:11px;color:#6E6B80">${timeStr}</span></div>
         ${c.body?`<div style="font-size:14px;line-height:1.6;color:#E0DEF0;word-break:break-word">${esc(c.body)}</div>`:''}
         ${c.gif_url?`<img src="${esc(c.gif_url)}" style="max-width:200px;border-radius:10px;display:block;margin-top:6px">`:''}
       </div>
@@ -4415,6 +4433,10 @@ async function loadTripComments(force) {
   if (tripCommentsLoaded && !force) return;
   const card = document.getElementById('comments-card');
   if (!card) return;
+  if (!force && !document.getElementById('comments-loading')) {
+    tripCommentsLoaded = true;
+    return;
+  }
   if (!force) {
     const loading = document.getElementById('comments-loading');
     if (loading) loading.style.display = 'block';
