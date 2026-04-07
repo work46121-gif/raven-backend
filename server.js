@@ -2815,7 +2815,7 @@ app.get('/trip/:tripId', async (req, res) => {
   }
 
   const { data: receipts } = await supabase.from('trip_receipts').select('*').eq('trip_id', tripId).order('created_at', { ascending: false });
-  const { data: comments } = await supabase.from('trip_comments').select('*').eq('trip_id', tripId).order('created_at', { ascending: true });
+  const comments = [];
   const people = Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people || '[]');
 
   // Fetch payment profiles for all trip members
@@ -2885,13 +2885,7 @@ app.get('/trip/:tripId', async (req, res) => {
     if (!clean) return 'Someone';
     const profile = memberPayProfiles[clean] || memberPayProfiles[clean.replace(/^@/, '')] || null;
     if (!profile) return clean.replace(/^@/, '');
-    const exactAliasMatch = [profile.first_name, profile.raven_id]
-      .map(v => String(v || '').trim().replace(/^@/, '').toLowerCase())
-      .filter(Boolean)
-      .includes(clean.replace(/^@/, '').toLowerCase());
-    return exactAliasMatch
-      ? (profile.first_name || profile.raven_id || clean.replace(/^@/, ''))
-      : (profile.raven_id || profile.first_name || clean.replace(/^@/, ''));
+    return profile.first_name || profile.display_name || profile.raven_id || clean.replace(/^@/, '');
   };
 
   try {
@@ -3737,11 +3731,9 @@ ${coverHTML}
 </div>
 
 <div class="sec" style="margin-top:24px">
-  <div class="sec-lbl">Comments (${(comments||[]).length})</div>
+  <div class="sec-lbl" id="comments-heading">Comments</div>
   <div class="card" id="comments-card">
-    ${(comments||[]).length===0
-      ? '<div style="padding:24px;text-align:center;color:#6E6B80;font-size:13px">' + commentsEmptyLabel + '</div>'
-      : commentRows}
+    <div id="comments-loading" style="padding:24px;text-align:center;color:#6E6B80;font-size:13px">Loading comments...</div>
   </div>
   <div style="margin-top:12px;background:#0C0C12;border:1px solid var(--border2);border-radius:14px;overflow:hidden">
     <!-- Name row with avatar -->
@@ -3897,6 +3889,7 @@ const INVITE_URL = D.inviteUrl;
 const TRIP_NAME  = D.tripName;
 const TRIP_DATE  = D.tripDate;
 const IS_ROOMMATE_HOUSE_PAGE = String(D.tripType || '').toLowerCase() === 'roommates';
+const COMMENTS_EMPTY_LABEL = ${JSON.stringify(commentsEmptyLabel)};
 const TRIP_DUE_DATE = D.dueDate || '';
 const TRIP_REMINDER_LAST_SENT_AT = D.reminderLastSentAt || '';
 const CREATOR_EMAIL = D.creatorEmail || '';
@@ -4041,6 +4034,7 @@ document.addEventListener('DOMContentLoaded', () => {
   try { buildSavedReceiptsGallery(); } catch(e) { console.error('Gallery error:', e); }
 
   // ── REALTIME — Supabase live sync so all members see changes instantly ──
+  setTimeout(() => { loadTripComments(); }, 120);
   const _tripId = ${JSON.stringify(tripId)};
   const _tripToken = ${JSON.stringify(trip.share_token || '')};
   let _realtimeDb = null;
@@ -4260,6 +4254,77 @@ async function sendTripReminder() {
 let splitType = 'even', tripItems = [], imgBase64 = null, newMembers = [];
 let tripScanCharges = { tax: 0, tip: 0, service_fee: 0 };
 let gifUrl = null, gifTimer = null, gifPanelOpen = false;
+let tripCommentsLoaded = false;
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function formatTripCommentTime(value) {
+  try {
+    return new Date(value).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'America/New_York'
+    });
+  } catch(e) {
+    return '';
+  }
+}
+
+function renderTripComments(comments) {
+  const heading = document.getElementById('comments-heading');
+  const card = document.getElementById('comments-card');
+  if (!card) return;
+  const rows = Array.isArray(comments) ? comments : [];
+  if (heading) heading.textContent = 'Comments (' + rows.length + ')';
+  if (!rows.length) {
+    card.innerHTML = '<div style="padding:24px;text-align:center;color:#6E6B80;font-size:13px">' + escapeHtml(COMMENTS_EMPTY_LABEL) + '</div>';
+    return;
+  }
+  card.innerHTML = rows.map(c => {
+    const authorName = escapeHtml(c.author_name || 'Anonymous');
+    const initials = escapeHtml(String(c.author_name || '?').trim().charAt(0).toUpperCase() || '?');
+    const timeStr = escapeHtml(formatTripCommentTime(c.created_at));
+    const body = c.body ? '<div style="font-size:14px;line-height:1.6;color:#E0DEF0;word-break:break-word">' + escapeHtml(c.body) + '</div>' : '';
+    const gif = c.gif_url ? '<img src="' + escapeHtml(c.gif_url) + '" style="max-width:200px;border-radius:10px;display:block;margin-top:6px">' : '';
+    return '<div style="display:flex;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)">'
+      + '<div data-person-avatar="' + authorName + '" data-open-profile="' + authorName + '" title="View ' + authorName + '\'s profile" style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#30D158);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden;cursor:pointer">' + initials + '</div>'
+      + '<div style="flex:1;min-width:0">'
+      + '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px"><span data-open-profile="' + authorName + '" title="View ' + authorName + '\'s profile" style="font-size:13px;font-weight:700;cursor:pointer">' + authorName + '</span><span style="font-size:11px;color:#6E6B80">' + timeStr + '</span></div>'
+      + body
+      + gif
+      + '</div></div>';
+  }).join('');
+}
+
+async function loadTripComments(force) {
+  if (tripCommentsLoaded && !force) return;
+  const card = document.getElementById('comments-card');
+  if (!card) return;
+  if (!force) {
+    const loading = document.getElementById('comments-loading');
+    if (loading) loading.style.display = 'block';
+  }
+  try {
+    const r = await fetch(BACKEND + '/trip/' + TRIP_ID + '/comments?token=' + encodeURIComponent(TRIP_TOKEN));
+    const d = await r.json();
+    renderTripComments(d.comments || []);
+    tripCommentsLoaded = true;
+    try {
+      const profile = JSON.parse(sessionStorage.getItem('raven_profile') || localStorage.getItem('raven_profile') || '{}');
+      applyNameAndAvatar(profile.first_name || '', profile.avatar_url || '');
+    } catch(e) {}
+  } catch(e) {
+    card.innerHTML = '<div style="padding:24px;text-align:center;color:#FF6B6B;font-size:13px">Could not load comments right now.</div>';
+  }
+}
 
 // ── TOAST ──
 function toast(msg, ok) {
@@ -6430,6 +6495,19 @@ initChatDb().then(async function() {
 
 
 // ── TRIP COMMENT ──────────────────────────────────────────────────────────────
+app.get('/trip/:tripId/comments', async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const token = String(req.query.token || '');
+    const { data: trip } = await supabase.from('trips').select('share_token, invite_token').eq('id', tripId).single();
+    if (!trip || (trip.share_token !== token && trip.invite_token !== token)) {
+      return res.json({ success: false, comments: [], error: 'Invalid token' });
+    }
+    const { data: comments } = await supabase.from('trip_comments').select('*').eq('trip_id', tripId).order('created_at', { ascending: true });
+    res.json({ success: true, comments: comments || [] });
+  } catch(err) { res.json({ success: false, comments: [], error: err.message }); }
+});
+
 app.post('/trip/:tripId/comment', async (req, res) => {
   try {
     const { tripId } = req.params;
