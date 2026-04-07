@@ -5502,6 +5502,45 @@ function toggleReceipt(id) {
 }
 
 // ── MEMBER PROFILE MODAL ──
+if (typeof getTripProfileDisplayName !== 'function') {
+  function normalizeTripAlias(value) {
+    return String(value || '').trim().replace(/^@/, '').toLowerCase();
+  }
+  function tripProfileAliases(profile, fallbackKey) {
+    return [...new Set(
+      [fallbackKey, profile?.first_name, profile?.display_name, profile?.raven_id, profile?.username, profile?.email]
+        .map(normalizeTripAlias)
+        .filter(Boolean)
+    )];
+  }
+  function resolveTripProfile(name) {
+    const normalized = normalizeTripAlias(name);
+    if (!normalized) return null;
+    const directKey = Object.keys(PAY_PROFILES).find(key => normalizeTripAlias(key) === normalized);
+    if (directKey) return PAY_PROFILES[directKey] || null;
+    for (const key of Object.keys(PAY_PROFILES)) {
+      const profile = PAY_PROFILES[key] || {};
+      if (tripProfileAliases(profile, key).includes(normalized)) return profile;
+    }
+    return null;
+  }
+  function getTripProfileDisplayName(name) {
+    const profile = resolveTripProfile(name);
+    return (profile?.first_name || profile?.display_name || String(name || '').trim().replace(/^@/, '') || 'Someone').trim();
+  }
+  function getTripProfileAvatar(name) {
+    const profile = resolveTripProfile(name);
+    const aliases = profile ? tripProfileAliases(profile, name) : [normalizeTripAlias(name)];
+    if (profile?.avatar_url) return profile.avatar_url;
+    if (typeof _memberAvatarCache !== 'undefined') {
+      for (const alias of aliases) {
+        if (_memberAvatarCache[alias]) return _memberAvatarCache[alias];
+      }
+    }
+    return '';
+  }
+}
+
 function openMemberProfile(name) {
   const allProfs = PAY_PROFILES;
   const normalizedName = String(name || '').trim().replace(/^@/, '').toLowerCase();
@@ -6356,6 +6395,22 @@ async function loadChatMsgs() {
   if (!chatDb) { await initChatDb(); }
   const container = document.getElementById('chat-msgs');
   container.innerHTML = '<div style="text-align:center;color:#6E6B80;font-size:12px;padding:30px 0">Loading...</div>';
+  const renderFallbackMessages = async function() {
+    try {
+      const resp = await fetch(BACKEND + '/trip/' + TRIP_ID + '/messages?token=' + encodeURIComponent(TRIP_TOKEN));
+      const payload = await resp.json();
+      const messages = payload.messages || [];
+      container.innerHTML = '';
+      if (!messages.length) {
+        container.innerHTML = '<div id="chat-empty" style="text-align:center;color:#6E6B80;font-size:12px;padding:30px 0">No messages yet. Say hi! 👋</div>';
+        return;
+      }
+      messages.forEach(function(msg) { appendMsg(msg, false); });
+      container.scrollTop = container.scrollHeight;
+    } catch(e) {
+      container.innerHTML = '<div style="text-align:center;color:#FF4444;font-size:12px;padding:20px 0">Could not load messages</div>';
+    }
+  };
   try {
     const { data } = await chatDb.from('trip_messages').select('*').eq('trip_id', TRIP_ID).order('created_at', { ascending: true }).limit(100);
     container.innerHTML = '';
@@ -6367,7 +6422,9 @@ async function loadChatMsgs() {
       // Mark last message as read
       markRead(data[data.length - 1].id);
     }
-  } catch(e) { container.innerHTML = '<div style="text-align:center;color:#FF4444;font-size:12px;padding:20px 0">Could not load messages</div>'; }
+  } catch(e) {
+    await renderFallbackMessages();
+  }
 
   if (chatChannel) { chatDb.removeChannel(chatChannel); }
   chatChannel = chatDb.channel('trip-chat-' + TRIP_ID)
@@ -6741,6 +6798,19 @@ app.get('/trip/:tripId/comments', async (req, res) => {
     }
     res.json({ success: true, comments: comments || [] });
   } catch(err) { res.json({ success: false, comments: [], error: err.message }); }
+});
+
+app.get('/trip/:tripId/messages', async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const token = String(req.query.token || '');
+    const { data: trip } = await supabase.from('trips').select('share_token, invite_token').eq('id', tripId).single();
+    if (!trip || (trip.share_token !== token && trip.invite_token !== token)) {
+      return res.json({ success: false, messages: [], error: 'Invalid token' });
+    }
+    const { data: messages } = await supabase.from('trip_messages').select('*').eq('trip_id', tripId).order('created_at', { ascending: true }).limit(100);
+    res.json({ success: true, messages: messages || [] });
+  } catch(err) { res.json({ success: false, messages: [], error: err.message }); }
 });
 
 app.post('/trip/:tripId/comment', async (req, res) => {
