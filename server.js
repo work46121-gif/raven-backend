@@ -675,6 +675,47 @@ function getTripProfileAvatar(name) {
   return '';
 }
 
+function normalizeTripAlias(value) {
+  return String(value || '').trim().replace(/^@/, '').toLowerCase();
+}
+
+function tripProfileAliases(profile, fallbackKey) {
+  return [...new Set(
+    [fallbackKey, profile?.first_name, profile?.display_name, profile?.raven_id, profile?.username, profile?.email]
+      .map(normalizeTripAlias)
+      .filter(Boolean)
+  )];
+}
+
+function resolveTripProfile(name) {
+  const normalized = normalizeTripAlias(name);
+  if (!normalized) return null;
+  const directKey = Object.keys(PAY_PROFILES).find(key => normalizeTripAlias(key) === normalized);
+  if (directKey) return PAY_PROFILES[directKey] || null;
+  for (const key of Object.keys(PAY_PROFILES)) {
+    const profile = PAY_PROFILES[key] || {};
+    if (tripProfileAliases(profile, key).includes(normalized)) return profile;
+  }
+  return null;
+}
+
+function getTripProfileDisplayName(name) {
+  const profile = resolveTripProfile(name);
+  return (profile?.first_name || profile?.display_name || String(name || '').trim().replace(/^@/, '') || 'Someone').trim();
+}
+
+function getTripProfileAvatar(name) {
+  const profile = resolveTripProfile(name);
+  const aliases = profile ? tripProfileAliases(profile, name) : [normalizeTripAlias(name)];
+  if (profile?.avatar_url) return profile.avatar_url;
+  if (typeof _memberAvatarCache !== 'undefined') {
+    for (const alias of aliases) {
+      if (_memberAvatarCache[alias]) return _memberAvatarCache[alias];
+    }
+  }
+  return '';
+}
+
 function buildRavenPaymentMessage(amount, contextName, methodLabel) {
   const cleanAmount = parseFloat(amount || 0).toFixed(2);
   const cleanContext = String(contextName || 'your split').trim();
@@ -4381,14 +4422,14 @@ async function loadTripComments(force) {
   try {
     const r = await fetch(BACKEND + '/trip/' + TRIP_ID + '/comments?token=' + encodeURIComponent(TRIP_TOKEN));
     const d = await r.json();
-    renderTripComments(d.comments || []);
+    renderTripComments((d && d.success === false) ? [] : (d.comments || []));
     tripCommentsLoaded = true;
     try {
       const profile = JSON.parse(sessionStorage.getItem('raven_profile') || localStorage.getItem('raven_profile') || '{}');
       applyNameAndAvatar(profile.first_name || '', profile.avatar_url || '');
     } catch(e) {}
   } catch(e) {
-    card.innerHTML = '<div style="padding:24px;text-align:center;color:#FF6B6B;font-size:13px">Could not load comments right now.</div>';
+    renderTripComments([]);
   }
 }
 
@@ -4467,6 +4508,15 @@ function applyAvatarToMatchingElements(name, avatarUrl) {
 
 async function applyAllMemberAvatars() {
   try {
+    Object.keys(PAY_PROFILES).forEach(key => {
+      const profile = PAY_PROFILES[key] || {};
+      const avatarUrl = profile.avatar_url || '';
+      if (!avatarUrl) return;
+      tripProfileAliases(profile, key).forEach(alias => setCachedMemberAvatar(alias, avatarUrl));
+      applyAvatarToMatchingElements(key, avatarUrl);
+      tripProfileAliases(profile, key).forEach(alias => applyAvatarToMatchingElements(alias, avatarUrl));
+    });
+
     const avatarNames = [...new Set(Array.from(document.querySelectorAll('[data-person-avatar]'))
       .map(el => (el.getAttribute('data-person-avatar') || '').trim())
       .filter(Boolean))];
