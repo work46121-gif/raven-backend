@@ -5717,10 +5717,11 @@ function tripPhoto(file) {
             if (!document.getElementById('r-name').value && d.bill_name) document.getElementById('r-name').value = d.bill_name;
             const tot = d.total || d.items.reduce((s,i)=>s+i.price,0);
             document.getElementById('r-total').value = tot.toFixed(2); updateEven();
-            tripScanCharges = { tax: parseFloat(d.tax) || 0, tip: parseFloat(d.tip) || 0, service_fee: 0 };
+            tripScanCharges = { tax: parseFloat(d.tax) || 0, tip: parseFloat(d.tip) || 0, service_fee: (parseFloat(d.service_fee) || 0) + (parseFloat(d.misc) || 0) };
             document.getElementById('r-tax').value = tripScanCharges.tax > 0 ? tripScanCharges.tax.toFixed(2) : '';
             document.getElementById('r-tip').value = tripScanCharges.tip > 0 ? tripScanCharges.tip.toFixed(2) : '';
-            document.getElementById('r-service').value = '';
+            document.getElementById('r-service').value = tripScanCharges.service_fee > 0 ? tripScanCharges.service_fee.toFixed(2) : '';
+            document.getElementById('r-item-discount').value = (parseFloat(d.discount) || 0) > 0 ? parseFloat(d.discount).toFixed(2) : '';
             if (d.tax > 0) { /* store tax for display — add to total field note */ }
             tripItems = d.items.map((item,idx)=>({id:Date.now()+idx,name:item.name,price:parseFloat(item.price)||0,assignees:[]}));
             setSplit('itemized'); renderItems();
@@ -5733,6 +5734,7 @@ function tripPhoto(file) {
           if (d.success && d.total > 0 && (!d.items || d.items.length === 0)) {
             if (!document.getElementById('r-name').value && d.bill_name) document.getElementById('r-name').value = d.bill_name;
             document.getElementById('r-total').value = parseFloat(d.total).toFixed(2); updateEven();
+            document.getElementById('r-discount').value = (parseFloat(d.discount) || 0) > 0 ? parseFloat(d.discount).toFixed(2) : '';
             setSplit('even');
             st.innerHTML = '<div style="padding:10px 14px;background:rgba(255,152,0,0.07);border:1px solid rgba(255,152,0,0.25);border-radius:8px"><div style="font-size:13px;color:#FFA726;font-weight:600;margin-bottom:4px">⚠️ Scanned total: $'+parseFloat(d.total).toFixed(2)+' — line items unclear</div><div style="font-size:12px;color:#9896A8">Total filled in. Add items manually or split evenly.</div></div>';
             return;
@@ -7471,9 +7473,8 @@ app.post('/demo/scan-receipt', async (req, res) => {
 
     console.log('Scan request: mediaType=' + mt + ' imageSize=' + Math.round(image.length * 0.75 / 1024) + 'KB');
 
-    // MAX POWER: claude-opus-4-5 with extended thinking for best accuracy
-    // Falls back to sonnet if opus unavailable
-    const modelsToTry = ['claude-opus-4-5', 'claude-sonnet-4-6'];
+    // Start with Sonnet for faster scans, then fall back to Opus if needed.
+    const modelsToTry = ['claude-sonnet-4-6', 'claude-opus-4-5'];
     let lastError = null;
     let raw = '';
     const roundMoney = (value) => Math.round(((parseFloat(value) || 0) + Number.EPSILON) * 100) / 100;
@@ -7582,7 +7583,7 @@ service_fee, misc, discount`;
 
         // Use extended thinking on opus for max accuracy
         if (model.includes('opus')) {
-          msgParams.thinking = { type: 'enabled', budget_tokens: 4000 };
+          msgParams.thinking = { type: 'enabled', budget_tokens: 1500 };
           msgParams.max_tokens = 12000;
         }
 
@@ -7681,7 +7682,7 @@ RECONCILIATION PASS:
               }]
             };
             if (model.includes('opus')) {
-              retryParams.thinking = { type: 'enabled', budget_tokens: 4000 };
+              retryParams.thinking = { type: 'enabled', budget_tokens: 1500 };
               retryParams.max_tokens = 12000;
             }
             const retryMessage = await getAnthropic().messages.create(retryParams);
