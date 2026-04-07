@@ -2819,13 +2819,26 @@ app.get('/trip/:tripId', async (req, res) => {
   const people = Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people || '[]');
 
   // Fetch payment profiles for all trip members
-  let memberPayProfiles = {}; // keyed by first name, full name, and raven_id when available
+  let memberPayProfiles = {}; // keyed by first name, full name, raven_id, and safe backfilled aliases
+  let tripLinkedProfiles = [];
+  const profileAliases = (profile) => {
+    const fullName = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ').trim();
+    return [profile?.first_name, fullName, profile?.raven_id, profile?.username]
+      .map(v => String(v || '').trim())
+      .filter(Boolean);
+  };
+  const memberAliasMatchesProfile = (rawName, profile) => {
+    const clean = String(rawName || '').trim().replace(/^@/, '').toLowerCase();
+    if (!clean) return false;
+    return profileAliases(profile).some(alias => String(alias || '').trim().replace(/^@/, '').toLowerCase() === clean);
+  };
   const saveMemberProfileAlias = (key, profile) => {
     if (!key) return;
     const cleanKey = String(key).trim();
     if (!cleanKey || memberPayProfiles[cleanKey]) return;
     memberPayProfiles[cleanKey] = {
       display_name: profile.first_name || profile.raven_id || cleanKey.replace(/^@/, ''),
+      first_name: profile.first_name || '',
       venmo: profile.venmo || '',
       cashapp: profile.cashapp || '',
       zelle: profile.zelle || '',
@@ -2842,23 +2855,28 @@ app.get('/trip/:tripId', async (req, res) => {
     if (trip.creator_email) memberEmails = [...new Set([...memberEmails, trip.creator_email])];
 
     if (memberEmails.length > 0) {
-      const { data: profilesByEmail } = await supabase.from('profiles').select('first_name,last_name,email,venmo,cashapp,zelle,applepay,raven_id,avatar_url,created_at').in('email', memberEmails);
+      const { data: profilesByEmail } = await supabase.from('profiles').select('first_name,last_name,email,venmo,cashapp,zelle,applepay,raven_id,username,avatar_url,created_at').in('email', memberEmails);
+      tripLinkedProfiles = profilesByEmail || [];
       (profilesByEmail || []).forEach(p => {
-        const fullName = [p.first_name, p.last_name].filter(Boolean).join(' ').trim();
-        saveMemberProfileAlias(p.first_name, p);
-        saveMemberProfileAlias(fullName, p);
-        saveMemberProfileAlias(p.raven_id, p);
+        profileAliases(p).forEach(alias => saveMemberProfileAlias(alias, p));
       });
     }
 
     // Strategy 2: try matching people array names against all profiles by first_name
     // (catches cases where member_emails isn't populated)
     if (people.length > 0) {
-      const { data: profilesByName } = await supabase.from('profiles').select('first_name,venmo,cashapp,zelle,applepay,raven_id,avatar_url,created_at').in('first_name', people);
+      const { data: profilesByName } = await supabase.from('profiles').select('first_name,last_name,venmo,cashapp,zelle,applepay,raven_id,username,avatar_url,created_at').in('first_name', people);
       (profilesByName || []).forEach(p => {
-        saveMemberProfileAlias(p.first_name, p);
-        saveMemberProfileAlias(p.raven_id, p);
+        profileAliases(p).forEach(alias => saveMemberProfileAlias(alias, p));
       });
+    }
+
+    // Backfill older trips safely: if exactly one stored trip label does not match any
+    // known profile alias and exactly one linked profile is still unrepresented, pair them.
+    const unresolvedPeople = people.filter(name => !memberPayProfiles[String(name || '').trim()] && !memberPayProfiles[String(name || '').trim().replace(/^@/, '')]);
+    const unresolvedProfiles = tripLinkedProfiles.filter(profile => !people.some(name => memberAliasMatchesProfile(name, profile)));
+    if (unresolvedPeople.length === 1 && unresolvedProfiles.length === 1) {
+      saveMemberProfileAlias(unresolvedPeople[0], unresolvedProfiles[0]);
     }
   } catch(e) { console.error('Error fetching payment profiles:', e); }
 
@@ -2866,7 +2884,14 @@ app.get('/trip/:tripId', async (req, res) => {
     const clean = String(rawName || '').trim();
     if (!clean) return 'Someone';
     const profile = memberPayProfiles[clean] || memberPayProfiles[clean.replace(/^@/, '')] || null;
-    return profile?.display_name || clean.replace(/^@/, '');
+    if (!profile) return clean.replace(/^@/, '');
+    const exactAliasMatch = [profile.first_name, profile.raven_id]
+      .map(v => String(v || '').trim().replace(/^@/, '').toLowerCase())
+      .filter(Boolean)
+      .includes(clean.replace(/^@/, '').toLowerCase());
+    return exactAliasMatch
+      ? (profile.first_name || profile.raven_id || clean.replace(/^@/, ''))
+      : (profile.raven_id || profile.first_name || clean.replace(/^@/, ''));
   };
 
   try {
@@ -3276,6 +3301,7 @@ app.get('/trip/:tripId', async (req, res) => {
     try { items = typeof r.items==='string' ? JSON.parse(r.items) : (r.items||[]); } catch(e) {}
 
     const payer = r.paid_by || '';
+    const payerDisplay = getMemberDisplayName(payer);
     const payerProfile = payer ? (memberPayProfiles[payer] || null) : null;
     // Entries excluding the payer (they don't owe themselves)
     const splitEntries = Object.entries(splits).filter(([p,a]) => parseFloat(a) > 0 && (!payer || p.toLowerCase() !== payer.toLowerCase()));
@@ -3290,7 +3316,7 @@ app.get('/trip/:tripId', async (req, res) => {
     const splitPillsHtml = splitEntries.map(([p,a]) =>
       `<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:rgba(255,255,255,0.05);border-radius:20px;font-size:12px;color:#9896A8">
         <span style="width:18px;height:18px;border-radius:50%;background:${avatarColorMap[people.indexOf(p) % avatarColorMap.length] || '#6E6B80'};display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0">${esc(p[0].toUpperCase())}</span>
-        ${esc(p)} <b style="color:#F0EEF8;font-family:monospace">$${parseFloat(a).toFixed(2)}</b>
+        ${esc(getMemberDisplayName(p))} <b style="color:#F0EEF8;font-family:monospace">$${parseFloat(a).toFixed(2)}</b>
       </span>`
     ).join('');
 
@@ -3323,7 +3349,7 @@ app.get('/trip/:tripId', async (req, res) => {
     // ── WHO OWES WHAT (payer excluded — they paid) ──
     const personBreakdownHtml = splitEntries.length > 0 ? `
       <div style="margin-bottom:16px">
-        <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:#6E6B80;font-weight:700;margin-bottom:10px">${payer ? `Owes ${esc(payer)}` : 'Who Owes What'}</div>
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:#6E6B80;font-weight:700;margin-bottom:10px">${payer ? `Owes ${esc(payerDisplay)}` : 'Who Owes What'}</div>
         <div style="display:flex;flex-direction:column;gap:8px">
           ${splitEntries.map(([person, amount]) => {
             const pct = total > 0 ? Math.round((parseFloat(amount)/total)*100) : 0;
@@ -3333,7 +3359,7 @@ app.get('/trip/:tripId', async (req, res) => {
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${payer?'10px':'8px'}">
                 <div style="display:flex;align-items:center;gap:8px">
                   <div data-person-avatar="${esc(person)}" style="width:28px;height:28px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;overflow:hidden;flex-shrink:0">${esc(person[0].toUpperCase())}</div>
-                  <span style="font-size:14px;font-weight:600">${esc(person)}</span>
+                  <span style="font-size:14px;font-weight:600">${esc(getMemberDisplayName(person))}</span>
                 </div>
                 <div style="text-align:right">
                   <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:#30D158;letter-spacing:0.03em;line-height:1">$${parseFloat(amount).toFixed(2)}</div>
@@ -3367,7 +3393,7 @@ app.get('/trip/:tripId', async (req, res) => {
       <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:rgba(124,58,237,0.07);border:1px solid rgba(124,58,237,0.2);border-radius:10px;margin-bottom:12px">
         <div data-person-avatar="${esc(payer)}" style="width:32px;height:32px;border-radius:50%;background:${avatarColorMap[people.indexOf(payer)%avatarColorMap.length]||'#7C3AED'};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden">${esc(payer[0].toUpperCase())}</div>
         <div style="flex:1">
-          <div style="font-size:12px;color:#A855F7;font-weight:700">💳 Paid by ${esc(payer)}</div>
+          <div style="font-size:12px;color:#A855F7;font-weight:700">💳 Paid by ${esc(payerDisplay)}</div>
           <div style="font-size:11px;color:#6E6B80">Others need to pay them back</div>
         </div>
         <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:#A855F7">$${total.toFixed(2)}</div>
@@ -3389,7 +3415,7 @@ app.get('/trip/:tripId', async (req, res) => {
             <span style="font-family:'Bebas Neue',sans-serif;font-size:24px;color:#30D158;letter-spacing:0.03em">$${total.toFixed(2)}</span>
           </div>
           <div style="display:flex;justify-content:space-between;font-size:11px;color:#6E6B80">
-            <span>${splitterCount} ${splitterCount===1?'person':'people'} splitting${payer?` · paid by ${esc(payer)}`:''}</span>
+            <span>${splitterCount} ${splitterCount===1?'person':'people'} splitting${payer?` · paid by ${esc(payerDisplay)}`:''}</span>
             <span>${dateStr}</span>
           </div>
         </div>
