@@ -1136,6 +1136,31 @@ app.get('/bill/:billId', async (req, res) => {
 
   const participantItems = {};
   participants.forEach(p => { participantItems[billParticipantKey(p.name)] = []; });
+  const participantNames = [...new Set((participants || []).map(p => String(p.name || '').trim()).filter(Boolean))];
+  const participantFirstNames = [...new Set(participantNames.map(name => name.split(' ')[0]).filter(Boolean))];
+  const participantHandles = [...new Set(participantNames.map(name => name.replace(/^@/, '').trim().toLowerCase()).filter(Boolean))];
+  const participantProfilesByKey = {};
+  const saveBillParticipantProfile = (profile) => {
+    if (!profile) return;
+    [profile.first_name, profile.raven_id, profile.username, profile.email]
+      .map(v => String(v || '').trim())
+      .filter(Boolean)
+      .forEach(alias => {
+        const key = billParticipantKey(alias);
+        if (!key || participantProfilesByKey[key]) return;
+        participantProfilesByKey[key] = profile;
+      });
+  };
+  try {
+    if (participantFirstNames.length > 0) {
+      const { data: byFirstName } = await supabase.from('profiles').select('first_name,last_name,email,raven_id,username,avatar_url').in('first_name', participantFirstNames);
+      (byFirstName || []).forEach(saveBillParticipantProfile);
+    }
+    if (participantHandles.length > 0) {
+      const { data: byHandle } = await supabase.from('profiles').select('first_name,last_name,email,raven_id,username,avatar_url').in('raven_id', participantHandles);
+      (byHandle || []).forEach(saveBillParticipantProfile);
+    }
+  } catch(e) {}
   if (items.length > 0 && selections.length > 0) {
     items.forEach(item => {
       const claimers = selections.filter(s => String(s.item_id) === String(item.id)).map(s => s.participant_name);
@@ -2252,6 +2277,12 @@ function renderState(d) {
         const isBillPayer = paidByLower && p.name.toLowerCase() === paidByLower;
         const isMe = myName && p.name.toLowerCase() === (myName||'').toLowerCase();
         const amt = parseFloat(p.amount || 0);
+        const participantProfile = participantProfilesByKey[billParticipantKey(p.name)] || null;
+        const avatarHtml = participantProfile?.avatar_url
+          ? '<img src="' + participantProfile.avatar_url.replace(/"/g, '&quot;') + '" style="width:34px;height:34px;border-radius:50%;object-fit:cover;display:block">'
+          : (participantProfile
+              ? '<div style="width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#30D158);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#fff;flex-shrink:0">' + (participantProfile.first_name || p.name || '?')[0].toUpperCase() + '</div>'
+              : '<div style="width:34px;height:34px;border-radius:50%;background:#13131A;border:1px solid rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:#6E6B80;flex-shrink:0">?</div>');
 
         // Compute amount CLIENT-SIDE from current selections (always fresh, no DB lag)
         const myItems = [];
@@ -2298,10 +2329,12 @@ function renderState(d) {
 
         return '<div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05);' + rowBorder + '">'
           + '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">'
+          + '<div style="flex:1;min-width:0;display:flex;align-items:flex-start;gap:10px">'
+          + avatarHtml
           + '<div style="flex:1;min-width:0">'
           + '<div style="font-size:15px;font-weight:' + (isMe?'800':'600') + ';color:' + (isMe?'#30D158':'#F0EEF8') + '">' + p.name + (isMe ? ' <span style="font-size:11px;font-weight:500;color:#30D158;opacity:0.7">(you)</span>' : '') + '</div>'
           + '<div style="font-size:12px;color:' + statusColor + ';margin-top:2px">' + statusText + '</div>'
-          + breakdown + '</div>' + action + '</div></div>';
+          + breakdown + '</div></div>' + action + '</div></div>';
       }).join('');
       owes.innerHTML = owesRowsHtml;
     }
