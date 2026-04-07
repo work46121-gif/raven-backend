@@ -1752,6 +1752,7 @@ ${bill.receipt_image ? `
     <div id="comment-auth-note" style="padding:10px 16px;font-size:12px;color:#6E6B80;border-bottom:1px solid rgba(255,255,255,0.07)">Comments post from your signed-in RAVEN account.</div>
     <button id="bill-comment-gif-toggle-btn" type="button" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#6E6B80;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🎭 Add GIF</button>
     <button id="bill-comment-post" onclick="postC()" style="width:100%;padding:13px;background:rgba(48,209,88,0.1);border:none;color:#30D158;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">💬 Post Comment</button>
+    <button id="bill-comment-cancel-edit" type="button" onclick="cancelBillCommentEdit()" style="display:none;width:100%;padding:12px 16px;background:transparent;border:none;border-top:1px solid rgba(255,255,255,0.07);color:#9896A8;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Cancel Edit</button>
   </div>
 </div>
 
@@ -1825,6 +1826,7 @@ let lastState = null;
 let _optimisticPaid = {};
 let billCommentGifUrl = null, billCommentGifTimer = null, billCommentGifPanelOpen = false;
 let billCommentsCache = [];
+let editingBillCommentId = null;
 function escapeBillCommentHtml(value) {
   return String(value || '')
     .replace(/&/g, '&amp;')
@@ -1835,6 +1837,18 @@ function escapeBillCommentHtml(value) {
 }
 function billCommentOwnerKey(value) {
   return String(value || '').trim().replace(/^@/, '').toLowerCase();
+}
+function setBillCommentComposerMode() {
+  const bodyEl = document.getElementById('cbody');
+  const postBtn = document.getElementById('bill-comment-post');
+  const cancelBtn = document.getElementById('bill-comment-cancel-edit');
+  const noteEl = document.getElementById('comment-auth-note');
+  if (bodyEl) bodyEl.placeholder = editingBillCommentId ? 'Edit your comment...' : 'Add a comment...';
+  if (postBtn) postBtn.textContent = editingBillCommentId ? '💾 Save Edit' : '💬 Post Comment';
+  if (cancelBtn) cancelBtn.style.display = editingBillCommentId ? 'block' : 'none';
+  if (noteEl) noteEl.innerHTML = editingBillCommentId
+    ? 'Editing your comment. Save changes below or cancel.'
+    : 'Comments post from your signed-in RAVEN account.';
 }
 function getRavenCommentProfile() {
   try {
@@ -1873,6 +1887,7 @@ function initBillCommentComposer() {
     if (btnEl) btnEl.style.display = 'block';
     if (gifBtn) { gifBtn.disabled = false; gifBtn.style.opacity = '1'; gifBtn.style.display = 'block'; }
     if (btnEl) { btnEl.disabled = false; btnEl.style.opacity = '1'; btnEl.textContent = '💬 Post Comment'; }
+    setBillCommentComposerMode();
   } else {
     if (bodyEl) { bodyEl.disabled = true; bodyEl.placeholder = ''; bodyEl.style.opacity = '0.6'; }
     if (noteEl) noteEl.innerHTML = 'Create a <a href="https://ravensplit.com/dashboard.html" style="color:#30D158;text-decoration:none;font-weight:700">RAVEN account</a> to comment.';
@@ -2676,19 +2691,31 @@ async function editBillComment(commentId) {
   if (!currentAuthor) { toast('Join RAVEN to edit comments'); return; }
   const comment = billCommentsCache.find(c => String(c.id) === String(commentId));
   if (!comment) { toast('Comment not found'); return; }
-  const nextBody = window.prompt('Edit your comment', comment.body || '');
-  if (nextBody === null) return;
-  if (!nextBody.trim() && !comment.gif_url) { toast('Comment cannot be empty'); return; }
-  try {
-    const r = await fetch(BACKEND_URL + '/bill/' + BID + '/comments/' + encodeURIComponent(commentId), {
-      method: 'PATCH',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ name: currentAuthor, body: nextBody.trim() })
-    });
-    const d = await r.json();
-    if (d.success) { toast('✅ Comment updated'); loadC(); }
-    else toast('Error: ' + (d.error || 'try again'));
-  } catch(e) { toast('Network error'); }
+  editingBillCommentId = String(commentId);
+  const bodyEl = document.getElementById('cbody');
+  if (bodyEl) {
+    bodyEl.value = comment.body || '';
+    bodyEl.focus();
+    bodyEl.setSelectionRange(bodyEl.value.length, bodyEl.value.length);
+  }
+  if (comment.gif_url) {
+    billCommentGifUrl = comment.gif_url;
+    const previewImg = document.getElementById('bill-comment-gif-preview-img');
+    const previewWrap = document.getElementById('bill-comment-gif-preview-wrap');
+    if (previewImg) previewImg.src = billCommentGifUrl;
+    if (previewWrap) previewWrap.style.display = 'block';
+  } else {
+    clearBillCommentGif();
+  }
+  setBillCommentComposerMode();
+}
+
+function cancelBillCommentEdit() {
+  editingBillCommentId = null;
+  const bodyEl = document.getElementById('cbody');
+  if (bodyEl) bodyEl.value = '';
+  clearBillCommentGif();
+  setBillCommentComposerMode();
 }
 
 async function deleteBillComment(commentId) {
@@ -2696,13 +2723,17 @@ async function deleteBillComment(commentId) {
   if (!currentAuthor) { toast('Join RAVEN to delete comments'); return; }
   if (!window.confirm('Delete this comment?')) return;
   try {
-    const r = await fetch(BACKEND_URL + '/bill/' + BID + '/comments/' + encodeURIComponent(commentId), {
-      method: 'DELETE',
+    const r = await fetch(BACKEND_URL + '/bill/' + BID + '/comments/' + encodeURIComponent(commentId) + '/delete', {
+      method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ name: currentAuthor })
     });
     const d = await r.json();
-    if (d.success) { toast('🗑️ Comment deleted'); loadC(); }
+    if (d.success) {
+      if (editingBillCommentId && String(editingBillCommentId) === String(commentId)) cancelBillCommentEdit();
+      toast('🗑️ Comment deleted');
+      loadC();
+    }
     else toast('Error: ' + (d.error || 'try again'));
   } catch(e) { toast('Network error'); }
 }
@@ -2715,15 +2746,29 @@ async function postC() {
   const btn = document.getElementById('bill-comment-post');
   if (btn) { btn.textContent = 'Posting...'; btn.disabled = true; }
   try {
-    const r = await fetch(BACKEND_URL + '/bill/' + BID + '/comments', {
+    const isEditing = !!editingBillCommentId;
+    const endpoint = isEditing
+      ? (BACKEND_URL + '/bill/' + BID + '/comments/' + encodeURIComponent(editingBillCommentId) + '/edit')
+      : (BACKEND_URL + '/bill/' + BID + '/comments');
+    const r = await fetch(endpoint, {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ name, body, gif_url: billCommentGifUrl || null })
     });
     const d = await r.json();
-    if (d.success) { document.getElementById('cbody').value = ''; clearBillCommentGif(); toast('✅ Posted!'); loadC(); }
+    if (d.success) {
+      document.getElementById('cbody').value = '';
+      clearBillCommentGif();
+      editingBillCommentId = null;
+      setBillCommentComposerMode();
+      toast(isEditing ? '✅ Comment updated' : '✅ Posted!');
+      loadC();
+    }
     else toast('Error: ' + (d.error || 'try again'));
   } catch(e) { toast('Network error'); }
-  finally { if (btn) { btn.textContent = '💬 Post Comment'; btn.disabled = false; } }
+  finally {
+    if (btn) { btn.disabled = false; }
+    setBillCommentComposerMode();
+  }
 }
 
 // ── TOAST ──
@@ -7942,10 +7987,10 @@ app.post('/bill/:billId/comments', async (req, res) => {
 } catch(err) { res.json({ success: false, error: err.message }); }
 });
 
-app.patch('/bill/:billId/comments/:commentId', async (req, res) => {
+app.post('/bill/:billId/comments/:commentId/edit', async (req, res) => {
   try {
     const { billId, commentId } = req.params;
-    const { name, body } = req.body || {};
+    const { name, body, gif_url } = req.body || {};
     const authorName = String(name || '').trim();
     const nextBody = String(body || '').trim();
     const { data: billMeta } = await supabase.from('bills').select('status').eq('id', billId).single();
@@ -7955,14 +8000,15 @@ app.patch('/bill/:billId/comments/:commentId', async (req, res) => {
     const currentKey = String(comment.name || '').trim().replace(/^@/, '').toLowerCase();
     const requestKey = authorName.replace(/^@/, '').toLowerCase();
     if (!requestKey || currentKey !== requestKey) return res.json({ success: false, error: 'You can only edit your own comment' });
-    if (!nextBody && !comment.gif_url) return res.json({ success: false, error: 'Comment cannot be empty' });
-    const { error } = await supabase.from('bill_comments').update({ body: nextBody }).eq('id', commentId).eq('bill_id', billId);
+    const nextGif = gif_url === undefined ? comment.gif_url : (gif_url || null);
+    if (!nextBody && !nextGif) return res.json({ success: false, error: 'Comment cannot be empty' });
+    const { error } = await supabase.from('bill_comments').update({ body: nextBody, gif_url: nextGif }).eq('id', commentId).eq('bill_id', billId);
     if (error) return res.json({ success: false, error: error.message });
     res.json({ success: true });
   } catch(err) { res.json({ success: false, error: err.message }); }
 });
 
-app.delete('/bill/:billId/comments/:commentId', async (req, res) => {
+app.post('/bill/:billId/comments/:commentId/delete', async (req, res) => {
   try {
     const { billId, commentId } = req.params;
     const { name } = req.body || {};
