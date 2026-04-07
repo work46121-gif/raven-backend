@@ -716,6 +716,47 @@ function getTripProfileAvatar(name) {
   return '';
 }
 
+function normalizeTripAlias(value) {
+  return String(value || '').trim().replace(/^@/, '').toLowerCase();
+}
+
+function tripProfileAliases(profile, fallbackKey) {
+  return [...new Set(
+    [fallbackKey, profile?.first_name, profile?.display_name, profile?.raven_id, profile?.username, profile?.email]
+      .map(normalizeTripAlias)
+      .filter(Boolean)
+  )];
+}
+
+function resolveTripProfile(name) {
+  const normalized = normalizeTripAlias(name);
+  if (!normalized) return null;
+  const directKey = Object.keys(PAY_PROFILES).find(key => normalizeTripAlias(key) === normalized);
+  if (directKey) return PAY_PROFILES[directKey] || null;
+  for (const key of Object.keys(PAY_PROFILES)) {
+    const profile = PAY_PROFILES[key] || {};
+    if (tripProfileAliases(profile, key).includes(normalized)) return profile;
+  }
+  return null;
+}
+
+function getTripProfileDisplayName(name) {
+  const profile = resolveTripProfile(name);
+  return (profile?.first_name || profile?.display_name || String(name || '').trim().replace(/^@/, '') || 'Someone').trim();
+}
+
+function getTripProfileAvatar(name) {
+  const profile = resolveTripProfile(name);
+  const aliases = profile ? tripProfileAliases(profile, name) : [normalizeTripAlias(name)];
+  if (profile?.avatar_url) return profile.avatar_url;
+  if (typeof _memberAvatarCache !== 'undefined') {
+    for (const alias of aliases) {
+      if (_memberAvatarCache[alias]) return _memberAvatarCache[alias];
+    }
+  }
+  return '';
+}
+
 function buildRavenPaymentMessage(amount, contextName, methodLabel) {
   const cleanAmount = parseFloat(amount || 0).toFixed(2);
   const cleanContext = String(contextName || 'your split').trim();
@@ -2895,7 +2936,17 @@ app.get('/trip/:tripId', async (req, res) => {
   }
 
   const { data: receipts } = await supabase.from('trip_receipts').select('*').eq('trip_id', tripId).order('created_at', { ascending: false });
-  const { data: comments } = await supabase.from('trip_comments').select('*').eq('trip_id', tripId).order('created_at', { ascending: true });
+  let { data: comments } = await supabase.from('trip_comments').select('*').eq('trip_id', tripId).order('created_at', { ascending: true });
+  if (!comments || comments.length === 0) {
+    const { data: tripMessages } = await supabase.from('trip_messages').select('*').eq('trip_id', tripId).order('created_at', { ascending: true });
+    comments = (tripMessages || []).map(m => ({
+      author_name: m.sender_name || 'Anonymous',
+      body: m.message || '',
+      gif_url: m.gif_url || null,
+      photo_url: m.photo_url || null,
+      created_at: m.created_at
+    }));
+  }
   const people = Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people || '[]');
 
   // Fetch payment profiles for all trip members
@@ -3564,6 +3615,7 @@ app.get('/trip/:tripId', async (req, res) => {
         <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px"><span data-open-profile="${esc(c.author_name || '')}" title="View ${authorName}'s profile" style="font-size:13px;font-weight:700;cursor:pointer">${authorName}</span><span style="font-size:11px;color:#6E6B80">${timeStr}</span></div>
         ${c.body?`<div style="font-size:14px;line-height:1.6;color:#E0DEF0;word-break:break-word">${esc(c.body)}</div>`:''}
         ${c.gif_url?`<img src="${esc(c.gif_url)}" style="max-width:200px;border-radius:10px;display:block;margin-top:6px">`:''}
+        ${c.photo_url?`<img src="${esc(c.photo_url)}" style="max-width:220px;border-radius:10px;display:block;margin-top:6px">`:''}
       </div>
     </div>`;
   }).join('');
@@ -4416,6 +4468,7 @@ function renderTripComments(comments) {
     const profileTitle = 'View ' + authorName + '&rsquo;s profile';
     const body = c.body ? '<div style="font-size:14px;line-height:1.6;color:#E0DEF0;word-break:break-word">' + escapeHtml(c.body) + '</div>' : '';
     const gif = c.gif_url ? '<img src="' + escapeHtml(c.gif_url) + '" style="max-width:200px;border-radius:10px;display:block;margin-top:6px">' : '';
+    const photo = c.photo_url ? '<img src="' + escapeHtml(c.photo_url) + '" style="max-width:220px;border-radius:10px;display:block;margin-top:6px">' : '';
     const avatarHtml = avatarUrl
       ? '<img src="' + escapeHtml(avatarUrl) + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%">'
       : initials;
@@ -4425,6 +4478,7 @@ function renderTripComments(comments) {
       + '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px"><span data-open-profile="' + escapeHtml(rawAuthor) + '" title="' + profileTitle + '" style="font-size:13px;font-weight:700;cursor:pointer">' + authorName + '</span><span style="font-size:11px;color:#6E6B80">' + timeStr + '</span></div>'
       + body
       + gif
+      + photo
       + '</div></div>';
   }).join('');
 }
@@ -6674,7 +6728,17 @@ app.get('/trip/:tripId/comments', async (req, res) => {
     if (!trip || (trip.share_token !== token && trip.invite_token !== token)) {
       return res.json({ success: false, comments: [], error: 'Invalid token' });
     }
-    const { data: comments } = await supabase.from('trip_comments').select('*').eq('trip_id', tripId).order('created_at', { ascending: true });
+    let { data: comments } = await supabase.from('trip_comments').select('*').eq('trip_id', tripId).order('created_at', { ascending: true });
+    if (!comments || comments.length === 0) {
+      const { data: tripMessages } = await supabase.from('trip_messages').select('*').eq('trip_id', tripId).order('created_at', { ascending: true });
+      comments = (tripMessages || []).map(m => ({
+        author_name: m.sender_name || 'Anonymous',
+        body: m.message || '',
+        gif_url: m.gif_url || null,
+        photo_url: m.photo_url || null,
+        created_at: m.created_at
+      }));
+    }
     res.json({ success: true, comments: comments || [] });
   } catch(err) { res.json({ success: false, comments: [], error: err.message }); }
 });
