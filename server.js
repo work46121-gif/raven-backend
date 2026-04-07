@@ -1772,6 +1772,13 @@ const BILL_URL = ${JSON.stringify(billUrl)};
 const BILL_NAME = ${JSON.stringify(bill.name || 'this bill')};
 const BACKEND_URL = ${JSON.stringify(baseUrl)};
 const INITIAL_PARTICIPANT_NAMES = ${JSON.stringify((participants || []).map(p => p.name).filter(Boolean))};
+const BILL_PARTICIPANT_PROFILES_BY_KEY = ${JSON.stringify(participantProfilesByKey || {})};
+function normalizeBillParticipantNameClient(name) {
+  return String(name || '').trim().replace(/\s+/g, ' ');
+}
+function billParticipantKeyClient(name) {
+  return normalizeBillParticipantNameClient(name).toLowerCase();
+}
 function buildRavenPaymentMessage(amount, contextName, methodLabel) {
   const safeAmount = parseFloat(amount || 0).toFixed(2);
   const safeContext = contextName || 'this bill';
@@ -2277,7 +2284,7 @@ function renderState(d) {
         const isBillPayer = paidByLower && p.name.toLowerCase() === paidByLower;
         const isMe = myName && p.name.toLowerCase() === (myName||'').toLowerCase();
         const amt = parseFloat(p.amount || 0);
-        const participantProfile = participantProfilesByKey[billParticipantKey(p.name)] || null;
+        const participantProfile = BILL_PARTICIPANT_PROFILES_BY_KEY[billParticipantKeyClient(p.name)] || null;
         const avatarHtml = participantProfile?.avatar_url
           ? '<img src="' + participantProfile.avatar_url.replace(/"/g, '&quot;') + '" style="width:34px;height:34px;border-radius:50%;object-fit:cover;display:block">'
           : (participantProfile
