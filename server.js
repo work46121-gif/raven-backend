@@ -1147,7 +1147,7 @@ app.get('/bill/:billId', async (req, res) => {
       payerProfile = chooseBestPaymentProfile(r.data, paidByName);
     }
   }
-  const billPayerProfile = payerProfile || (!paidByName ? creatorProfile : null) || creatorProfile;
+  const billPayerProfile = payerProfile || (paidByName ? { first_name: paidByName } : creatorProfile);
   if (billPayerProfile && paidByName) billPayerProfile.first_name = paidByName;
 
   const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
@@ -1469,7 +1469,7 @@ app.get('/bill/:billId', async (req, res) => {
       if(n===0){
         // No configured methods — build method buttons using DOM (no inline onclick strings)
         const noMethodDiv = document.createElement('div');
-        noMethodDiv.innerHTML = '<div style="font-size:12px;color:#6E6B80;margin-bottom:10px;text-align:center">' + payeeName + " hasn't set up payment methods.<br>How did you pay?</div>";
+        noMethodDiv.innerHTML = '<div style="font-size:12px;color:#6E6B80;margin-bottom:10px;text-align:center">Ask ' + payeeName + ' how they would like to be paid.<br>How did you pay?</div>';
         ['Venmo','Cash App','Zelle','Apple Pay','Bank Transfer','Cash'].forEach(function(m) {
           const b = document.createElement('button');
           b.textContent = m;
@@ -2633,7 +2633,7 @@ function showPay(btn) {
     if (appleHref) row('#222','Pay','Apple Pay','Opens iMessage · send Apple Pay manually',appleHref,null,'Apple Pay');
     else row('#222','Pay','Apple Pay',ap+' · copy, then send Apple Pay manually',null,ap,'Apple Pay');
   }
-  if (n === 0) mc.innerHTML = '<p style="color:#6E6B80;text-align:center;padding:16px 0;font-size:13px">No payment methods set up yet.</p>';
+  if (n === 0) mc.innerHTML = '<p style="color:#6E6B80;text-align:center;padding:16px 0;font-size:13px">Ask ' + payeeName + ' how they would like to be paid.</p>';
   document.getElementById('pmark').onclick = () => markPaid(pid, name, 'Other');
   document.getElementById('pmod').style.display = 'block';
 }
