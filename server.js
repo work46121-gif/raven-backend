@@ -1124,13 +1124,30 @@ app.get('/bill/:billId', async (req, res) => {
   let payerProfile = null;
   const paidByName = bill.paid_by || null;
   if (paidByName) {
-    const r = await supabase.from('profiles')
-      .select('first_name,phone,email,venmo,cashapp,zelle,applepay,updated_at')
-      .ilike('first_name', paidByName)
-      .limit(8);
-    payerProfile = chooseBestPaymentProfile(r.data, paidByName);
+    try {
+      const payerParticipantRes = await supabase.from('participants')
+        .select('name,phone')
+        .eq('bill_id', billId)
+        .ilike('name', paidByName)
+        .maybeSingle();
+      const payerPhone = payerParticipantRes.data?.phone || '';
+      if (payerPhone && !String(payerPhone).startsWith('unknown_') && !String(payerPhone).startsWith('guest:')) {
+        const directProfileRes = await supabase.from('profiles')
+          .select('first_name,phone,email,venmo,cashapp,zelle,applepay,updated_at')
+          .or('email.eq.' + payerPhone + ',phone.eq.' + payerPhone)
+          .maybeSingle();
+        if (directProfileRes.data) payerProfile = directProfileRes.data;
+      }
+    } catch (e) {}
+    if (!payerProfile) {
+      const r = await supabase.from('profiles')
+        .select('first_name,phone,email,venmo,cashapp,zelle,applepay,updated_at')
+        .ilike('first_name', paidByName)
+        .limit(8);
+      payerProfile = chooseBestPaymentProfile(r.data, paidByName);
+    }
   }
-  const billPayerProfile = payerProfile || creatorProfile;
+  const billPayerProfile = payerProfile || (!paidByName ? creatorProfile : null) || creatorProfile;
   if (billPayerProfile && paidByName) billPayerProfile.first_name = paidByName;
 
   const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
