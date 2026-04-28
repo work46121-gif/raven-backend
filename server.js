@@ -7038,10 +7038,17 @@ async function sendChat() {
   clearChatGif();
   clearChatPhoto();
 
+  let resolvedSenderName = firstName;
+  try {
+    const { data: liveProfile } = await chatDb.from('profiles').select('first_name,raven_id,avatar_url').eq('id', session.user.id).maybeSingle();
+    if (liveProfile?.first_name) resolvedSenderName = liveProfile.first_name;
+    if (liveProfile?.avatar_url && !avatarUrl) window._ravenAvatarUrl = liveProfile.avatar_url;
+  } catch(e) {}
+
   await chatDb.from('trip_messages').insert({
     trip_id: TRIP_ID,
     user_id: session.user.id,
-    sender_name: firstName,
+    sender_name: resolvedSenderName,
     avatar_url: avatarUrl || null,
     message: message || '',
     gif_url: gifUrl || null,
@@ -7188,9 +7195,22 @@ app.post('/trip/:tripId/comment', async (req, res) => {
     const { data: trip } = await supabase.from('trips').select('share_token').eq('id', tripId).single();
     if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
     if (!body?.trim() && !gif_url) return res.json({ success: false, error: 'Empty comment' });
+    let resolvedAuthor = author_name || 'Anonymous';
+    if (author_name) {
+      try {
+        const clean = String(author_name).trim().replace(/^@/, '');
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('first_name, last_name, email, raven_id')
+          .or('first_name.ilike.' + clean + ',raven_id.eq.' + clean.toLowerCase() + ',email.ilike.' + clean)
+          .limit(1)
+          .maybeSingle();
+        if (profile?.first_name) resolvedAuthor = profile.first_name;
+      } catch(e) {}
+    }
     await supabase.from('trip_comments').insert({
       trip_id: tripId,
-      author_name: author_name || 'Anonymous',
+      author_name: resolvedAuthor,
       body: body?.trim() || '',
       gif_url: gif_url || null,
       created_at: new Date().toISOString()
