@@ -6247,12 +6247,17 @@ function searchGifs(q) {
 document.getElementById('post-comment-btn').addEventListener('click', async function() {
   const author = document.getElementById('comment-author').value.trim();
   const body   = document.getElementById('comment-body').value.trim();
+  let authorUserId = '';
+  try {
+    const localProfile = JSON.parse(localStorage.getItem('raven_profile') || '{}');
+    authorUserId = String(localProfile.user_id || localProfile.id || '').trim();
+  } catch(e) {}
   if (!author) { toast('Enter your name',false); return; }
   if (!body && !gifUrl) { toast('Add a message or GIF',false); return; }
   try { sessionStorage.setItem('raven_trip_name', author); } catch(e) {}
   this.textContent='Posting...'; this.disabled=true;
   try {
-    const r = await fetch(BACKEND+'/trip/'+TRIP_ID+'/comment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,author_name:author,body,gif_url:gifUrl||null})});
+    const r = await fetch(BACKEND+'/trip/'+TRIP_ID+'/comment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,author_name:author,user_id:authorUserId||null,body,gif_url:gifUrl||null})});
     const d = await r.json();
     if (d.success) { document.getElementById('comment-body').value=''; clearGif(); toast('✅ Posted!'); setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 900); }
     else toast(d.error||'Error',false);
@@ -7161,6 +7166,18 @@ app.get('/trip/:tripId/comments', async (req, res) => {
       return res.json({ success: false, comments: [], error: 'Invalid token' });
     }
     let { data: comments } = await supabase.from('trip_comments').select('*').eq('trip_id', tripId).order('created_at', { ascending: true });
+    if (comments && comments.length > 0) {
+      const userIds = [...new Set(comments.map(c => String(c.user_id || '').trim()).filter(Boolean))];
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase.from('profiles').select('id,first_name').in('id', userIds);
+        const profileMap = {};
+        (profiles || []).forEach(p => { profileMap[String(p.id)] = p; });
+        comments = comments.map(c => {
+          const profile = profileMap[String(c.user_id || '')];
+          return profile?.first_name ? { ...c, author_name: profile.first_name } : c;
+        });
+      }
+    }
     if (!comments || comments.length === 0) {
       const { data: tripMessages } = await supabase.from('trip_messages').select('*').eq('trip_id', tripId).order('created_at', { ascending: true });
       comments = (tripMessages || []).map(m => ({
@@ -7191,12 +7208,17 @@ app.get('/trip/:tripId/messages', async (req, res) => {
 app.post('/trip/:tripId/comment', async (req, res) => {
   try {
     const { tripId } = req.params;
-    const { token, author_name, body, gif_url } = req.body;
+    const { token, author_name, body, gif_url, user_id } = req.body;
     const { data: trip } = await supabase.from('trips').select('share_token').eq('id', tripId).single();
     if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
     if (!body?.trim() && !gif_url) return res.json({ success: false, error: 'Empty comment' });
     let resolvedAuthor = author_name || 'Anonymous';
-    if (author_name) {
+    if (user_id) {
+      try {
+        const { data: profile } = await supabase.from('profiles').select('first_name').eq('id', user_id).maybeSingle();
+        if (profile?.first_name) resolvedAuthor = profile.first_name;
+      } catch(e) {}
+    } else if (author_name) {
       try {
         const clean = String(author_name).trim().replace(/^@/, '');
         const { data: profile } = await supabase
@@ -7210,6 +7232,7 @@ app.post('/trip/:tripId/comment', async (req, res) => {
     }
     await supabase.from('trip_comments').insert({
       trip_id: tripId,
+      user_id: user_id || null,
       author_name: resolvedAuthor,
       body: body?.trim() || '',
       gif_url: gif_url || null,
@@ -8708,5 +8731,8 @@ app.listen(PORT, async () => {
   } catch(e) {}
   try {
     await supabase.rpc('exec_sql', { sql: "ALTER TABLE trips ADD COLUMN IF NOT EXISTS reminder_last_sent_at TIMESTAMPTZ" });
+  } catch(e) {}
+  try {
+    await supabase.rpc('exec_sql', { sql: "ALTER TABLE trip_comments ADD COLUMN IF NOT EXISTS user_id TEXT" });
   } catch(e) {}
 });
