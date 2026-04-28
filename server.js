@@ -642,7 +642,7 @@ function normalizeTripAlias(value) {
 
 function tripProfileAliases(profile, fallbackKey) {
   return [...new Set(
-    [fallbackKey, profile?.first_name, profile?.display_name, profile?.raven_id, profile?.username, profile?.email]
+    [fallbackKey, profile?.id, profile?.first_name, profile?.display_name, profile?.raven_id, profile?.username, profile?.email]
       .map(normalizeTripAlias)
       .filter(Boolean)
   )];
@@ -3271,14 +3271,22 @@ app.get('/trip/:tripId', async (req, res) => {
   const getMemberDisplayName = (rawName) => {
     const clean = String(rawName || '').trim();
     if (!clean) return 'Someone';
-    const profile = memberPayProfiles[clean] || memberPayProfiles[clean.replace(/^@/, '')] || null;
+    const normalized = clean.replace(/^@/, '').toLowerCase();
+    const profile = memberPayProfiles[clean]
+      || memberPayProfiles[clean.replace(/^@/, '')]
+      || Object.values(memberPayProfiles).find(p => [p?.id, p?.first_name, p?.display_name, p?.raven_id, p?.username, p?.email].some(v => String(v || '').trim().replace(/^@/, '').toLowerCase() === normalized))
+      || null;
     if (!profile) return clean.replace(/^@/, '');
     return profile.first_name || profile.display_name || profile.raven_id || clean.replace(/^@/, '');
   };
   const getMemberProfile = (rawName) => {
     const clean = String(rawName || '').trim();
     if (!clean) return null;
-    return memberPayProfiles[clean] || memberPayProfiles[clean.replace(/^@/, '')] || null;
+    const normalized = clean.replace(/^@/, '').toLowerCase();
+    return memberPayProfiles[clean]
+      || memberPayProfiles[clean.replace(/^@/, '')]
+      || Object.values(memberPayProfiles).find(p => [p?.id, p?.first_name, p?.display_name, p?.raven_id, p?.username, p?.email].some(v => String(v || '').trim().replace(/^@/, '').toLowerCase() === normalized))
+      || null;
   };
 
   try {
@@ -3860,15 +3868,16 @@ app.get('/trip/:tripId', async (req, res) => {
 
 
   const commentRows = (comments||[]).map(c => {
-    const displayName = getMemberDisplayName(c.author_name || 'Anonymous');
-    const profile = getMemberProfile(c.author_name || '');
+    const profileTarget = c.user_id || c.raven_id || c.author_name || 'Anonymous';
+    const displayName = getMemberDisplayName(profileTarget);
+    const profile = getMemberProfile(profileTarget);
     const initials = displayName ? esc(displayName[0].toUpperCase()) : '?';
     const timeStr = new Date(c.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'America/New_York'});
     const authorName = esc(displayName || c.author_name || 'Anonymous');
     return `<div style="display:flex;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)">
-      <div data-person-avatar="${esc(c.author_name || '')}" data-open-profile="${esc(c.author_name || '')}" title="View ${authorName}'s profile" style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#30D158);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden;cursor:pointer">${profile?.avatar_url ? `<img src="${esc(profile.avatar_url)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : initials}</div>
+      <div data-person-avatar="${esc(profileTarget)}" data-open-profile="${esc(profileTarget)}" title="View ${authorName}'s profile" style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#30D158);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden;cursor:pointer">${(profile?.avatar_url || c.avatar_url) ? `<img src="${esc(profile?.avatar_url || c.avatar_url)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : initials}</div>
       <div style="flex:1;min-width:0">
-        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px"><span data-open-profile="${esc(c.author_name || '')}" title="View ${authorName}'s profile" style="font-size:13px;font-weight:700;cursor:pointer">${authorName}</span><span style="font-size:11px;color:#6E6B80">${timeStr}</span></div>
+        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px"><span data-open-profile="${esc(profileTarget)}" title="View ${authorName}'s profile" style="font-size:13px;font-weight:700;cursor:pointer">${authorName}</span><span style="font-size:11px;color:#6E6B80">${timeStr}</span></div>
         ${c.body?`<div style="font-size:14px;line-height:1.6;color:#E0DEF0;word-break:break-word">${esc(c.body)}</div>`:''}
         ${c.gif_url?`<img src="${esc(c.gif_url)}" style="max-width:200px;border-radius:10px;display:block;margin-top:6px">`:''}
         ${c.photo_url?`<img src="${esc(c.photo_url)}" style="max-width:220px;border-radius:10px;display:block;margin-top:6px">`:''}
@@ -4716,9 +4725,10 @@ function renderTripComments(comments) {
     return;
   }
   card.innerHTML = rows.map(c => {
+    const profileTarget = c.user_id || c.raven_id || c.author_name || 'Anonymous';
     const rawAuthor = c.author_name || 'Anonymous';
-    const displayAuthor = getTripProfileDisplayName(rawAuthor);
-    const avatarUrl = getTripProfileAvatar(rawAuthor);
+    const displayAuthor = getTripProfileDisplayName(profileTarget);
+    const avatarUrl = getTripProfileAvatar(profileTarget) || c.avatar_url || '';
     const authorName = escapeHtml(displayAuthor);
     const initials = escapeHtml(String(displayAuthor || '?').trim().charAt(0).toUpperCase() || '?');
     const timeStr = escapeHtml(formatTripCommentTime(c.created_at));
@@ -4730,9 +4740,9 @@ function renderTripComments(comments) {
       ? '<img src="' + escapeHtml(avatarUrl) + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%">'
       : initials;
     return '<div style="display:flex;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)">'
-      + '<div data-person-avatar="' + escapeHtml(rawAuthor) + '" data-open-profile="' + escapeHtml(rawAuthor) + '" title="' + profileTitle + '" style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#30D158);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden;cursor:pointer">' + avatarHtml + '</div>'
+      + '<div data-person-avatar="' + escapeHtml(profileTarget) + '" data-open-profile="' + escapeHtml(profileTarget) + '" title="' + profileTitle + '" style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#30D158);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden;cursor:pointer">' + avatarHtml + '</div>'
       + '<div style="flex:1;min-width:0">'
-      + '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px"><span data-open-profile="' + escapeHtml(rawAuthor) + '" title="' + profileTitle + '" style="font-size:13px;font-weight:700;cursor:pointer">' + authorName + '</span><span style="font-size:11px;color:#6E6B80">' + timeStr + '</span></div>'
+      + '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px"><span data-open-profile="' + escapeHtml(profileTarget) + '" title="' + profileTitle + '" style="font-size:13px;font-weight:700;cursor:pointer">' + authorName + '</span><span style="font-size:11px;color:#6E6B80">' + timeStr + '</span></div>'
       + body
       + gif
       + photo
@@ -5765,7 +5775,7 @@ if (typeof getTripProfileDisplayName !== 'function') {
   }
   function tripProfileAliases(profile, fallbackKey) {
     return [...new Set(
-      [fallbackKey, profile?.first_name, profile?.display_name, profile?.raven_id, profile?.username, profile?.email]
+      [fallbackKey, profile?.id, profile?.first_name, profile?.display_name, profile?.raven_id, profile?.username, profile?.email]
         .map(normalizeTripAlias)
         .filter(Boolean)
     )];
@@ -5916,7 +5926,7 @@ function openMemberProfile(name) {
     const key = String(k || '').trim().replace(/^@/, '').toLowerCase();
     if (key === normalizedName) return true;
     const profile = allProfs[k] || {};
-    return [profile.first_name, profile.display_name, profile.raven_id, profile.username, profile.email]
+    return [profile.id, profile.first_name, profile.display_name, profile.raven_id, profile.username, profile.email]
       .some(v => String(v || '').trim().replace(/^@/, '').toLowerCase() === normalizedName);
   });
   const prof = profKey ? allProfs[profKey] : null;
@@ -5941,7 +5951,7 @@ function openMemberProfile(name) {
   const nameEl=document.getElementById("mp-name"); if(nameEl) nameEl.textContent=displayName;
   const ridEl=document.getElementById("mp-raven-id"); if(ridEl) ridEl.textContent=prof?.raven_id?"@"+prof.raven_id:"";
   const sinceEl=document.getElementById("mp-member-since"); if(sinceEl) { if(prof?.created_at){const d=new Date(prof.created_at);sinceEl.textContent="🪶 RAVEN member since "+d.toLocaleDateString("en-US",{month:"long",year:"numeric"});}else{sinceEl.textContent="🪶 RAVEN member";}}
-  const chipsEl=document.getElementById("mp-payment-chips"); if(chipsEl){const chips=[];if(prof?.venmo)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#0084FF;border-radius:8px;font-size:12px;font-weight:700;color:#fff">V Venmo</span>');if(prof?.cashapp)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#00D632;border-radius:8px;font-size:12px;font-weight:700;color:#000">$ Cash App</span>');if(prof?.zelle)chips.push('<span style="padding:5px 11px;background:#6D1ED4;border-radius:8px;font-size:12px;font-weight:700;color:#fff">Z Zelle</span>');if(prof?.applepay)chips.push('<span style="padding:5px 11px;background:#1a1a1a;border:1px solid #555;border-radius:8px;font-size:12px;font-weight:700;color:#fff">✦ Apple Pay</span>');chipsEl.innerHTML=chips.length?chips.join(""):'<span style="font-size:12px;color:#6E6B80">No payment methods set up</span>';}
+  const chipsEl=document.getElementById("mp-payment-chips"); if(chipsEl){const chips=[];if(prof?.venmo)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#0084FF;border-radius:8px;font-size:12px;font-weight:700;color:#fff"><span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;background:rgba(255,255,255,0.18);font-size:10px;line-height:1;font-weight:800">V</span> Venmo</span>');if(prof?.cashapp)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#00D632;border-radius:8px;font-size:12px;font-weight:700;color:#000"><span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;background:rgba(0,0,0,0.14);font-size:10px;line-height:1;font-weight:800">$</span> Cash App</span>');if(prof?.zelle)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#6D1ED4;border-radius:8px;font-size:12px;font-weight:700;color:#fff"><span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;background:rgba(255,255,255,0.18);font-size:10px;line-height:1;font-weight:800">Z</span> Zelle</span>');if(prof?.applepay)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#1a1a1a;border:1px solid #555;border-radius:8px;font-size:12px;font-weight:700;color:#fff"><span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;background:rgba(255,255,255,0.12);font-size:10px;line-height:1;font-weight:800">Pay</span> Apple Pay</span>');chipsEl.innerHTML=chips.length?chips.join(""):'<span style="font-size:12px;color:#6E6B80">No payment methods set up</span>';}
   const actEl=document.getElementById("mp-actions"); if(actEl){actEl.innerHTML="";if(prof?.raven_id&&!isOwnProfile){const addBtn=document.createElement("button");addBtn.style.cssText="width:100%;padding:13px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.3);border-radius:12px;font-family:inherit;font-size:14px;font-weight:700;color:#A855F7;cursor:pointer";addBtn.textContent="👥 Add Friend on RAVEN";addBtn.onclick=()=>{window.open("https://ravensplit.com/dashboard.html","_blank");toast("Search for @"+prof.raven_id+" in Friends");closeMemberProfile();};actEl.appendChild(addBtn);(async()=>{try{if(await tripProfileIsFriend(prof)){addBtn.textContent='💬 Message on RAVEN';addBtn.onclick=()=>{const dmUrl='https://ravensplit.com/dashboard.html?dm_friend='+encodeURIComponent(String(prof?.id||''))+'&dm_name='+encodeURIComponent(displayName)+'&dm_raven_id='+encodeURIComponent(String(prof?.raven_id||''));window.open(dmUrl,'_blank');closeMemberProfile();};}}catch(e){}})();}const closeBtn=document.createElement("button");closeBtn.style.cssText="width:100%;padding:13px;background:transparent;border:1px solid rgba(255,255,255,0.1);border-radius:12px;font-family:inherit;font-size:14px;color:#6E6B80;cursor:pointer";closeBtn.textContent="Close";closeBtn.onclick=closeMemberProfile;actEl.appendChild(closeBtn);}
   if(modal) modal.classList.add("open");
 }
@@ -6694,6 +6704,28 @@ let chatReadChannel = null;
 let chatGifUrl = null;
 let chatGifTimer = null;
 let chatGifPanelOpen = false;
+const tripMessageProfileCache = {};
+
+async function enrichTripMessagesWithProfiles(messages) {
+  const rows = Array.isArray(messages) ? messages.slice() : [];
+  const userIds = [...new Set(rows.map(msg => String(msg.user_id || '').trim()).filter(Boolean))];
+  const missingIds = userIds.filter(id => !tripMessageProfileCache[id]);
+  if (missingIds.length > 0 && chatDb) {
+    try {
+      const { data: profiles } = await chatDb.from('profiles').select('id,first_name,avatar_url,raven_id').in('id', missingIds);
+      (profiles || []).forEach(profile => { tripMessageProfileCache[String(profile.id)] = profile; });
+    } catch(e) {}
+  }
+  return rows.map(msg => {
+    const profile = tripMessageProfileCache[String(msg.user_id || '')];
+    if (!profile) return msg;
+    return {
+      ...msg,
+      sender_name: profile.first_name || msg.sender_name,
+      avatar_url: profile.avatar_url || msg.avatar_url || ''
+    };
+  });
+}
 
 async function initChatDb() {
   return new Promise(function(resolve) {
@@ -6772,7 +6804,7 @@ async function loadChatMsgs() {
     try {
       const resp = await fetch(BACKEND + '/trip/' + TRIP_ID + '/messages?token=' + encodeURIComponent(TRIP_TOKEN));
       const payload = await resp.json();
-      const messages = payload.messages || [];
+      const messages = await enrichTripMessagesWithProfiles(payload.messages || []);
       container.innerHTML = '';
       if (!messages.length) {
         container.innerHTML = '<div id="chat-empty" style="text-align:center;color:#6E6B80;font-size:12px;padding:30px 0">No messages yet. Say hi! 👋</div>';
@@ -6790,10 +6822,11 @@ async function loadChatMsgs() {
     if (!data || data.length === 0) {
       container.innerHTML = '<div id="chat-empty" style="text-align:center;color:#6E6B80;font-size:12px;padding:30px 0">No messages yet. Say hi! 👋</div>';
     } else {
-      data.forEach(function(msg) { appendMsg(msg, false); });
+      const enriched = await enrichTripMessagesWithProfiles(data);
+      enriched.forEach(function(msg) { appendMsg(msg, false); });
       container.scrollTop = container.scrollHeight;
       // Mark last message as read
-      markRead(data[data.length - 1].id);
+      markRead((enriched[enriched.length - 1] || data[data.length - 1]).id);
     }
   } catch(e) {
     await renderFallbackMessages();
@@ -6801,15 +6834,16 @@ async function loadChatMsgs() {
 
   if (chatChannel) { chatDb.removeChannel(chatChannel); }
   chatChannel = chatDb.channel('trip-chat-' + TRIP_ID)
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'trip_messages', filter: 'trip_id=eq.' + TRIP_ID }, function(payload) {
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'trip_messages', filter: 'trip_id=eq.' + TRIP_ID }, async function(payload) {
+      const enriched = await enrichTripMessagesWithProfiles([payload.new]);
+      const nextMsg = enriched[0] || payload.new;
       const modal = document.getElementById('chat-modal');
       const chatOpen = modal && modal.style.display === 'flex';
       if (chatOpen) {
-        appendMsg(payload.new, true);
-        markRead(payload.new.id);
+        appendMsg(nextMsg, true);
+        markRead(nextMsg.id);
       } else {
-        // Chat is closed — show unread dot if message is from someone else
-        if (payload.new.user_id !== (window._ravenUserId || '__none__')) {
+        if (nextMsg.user_id !== (window._ravenUserId || '__none__')) {
           showUnreadBadge();
         }
       }
@@ -7169,24 +7203,14 @@ app.get('/trip/:tripId/comments', async (req, res) => {
     if (comments && comments.length > 0) {
       const userIds = [...new Set(comments.map(c => String(c.user_id || '').trim()).filter(Boolean))];
       if (userIds.length > 0) {
-        const { data: profiles } = await supabase.from('profiles').select('id,first_name').in('id', userIds);
+        const { data: profiles } = await supabase.from('profiles').select('id,first_name,avatar_url,raven_id').in('id', userIds);
         const profileMap = {};
         (profiles || []).forEach(p => { profileMap[String(p.id)] = p; });
         comments = comments.map(c => {
           const profile = profileMap[String(c.user_id || '')];
-          return profile?.first_name ? { ...c, author_name: profile.first_name } : c;
+          return profile?.first_name ? { ...c, author_name: profile.first_name, avatar_url: profile.avatar_url || c.avatar_url || '', raven_id: profile.raven_id || c.raven_id || '' } : c;
         });
       }
-    }
-    if (!comments || comments.length === 0) {
-      const { data: tripMessages } = await supabase.from('trip_messages').select('*').eq('trip_id', tripId).order('created_at', { ascending: true });
-      comments = (tripMessages || []).map(m => ({
-        author_name: m.sender_name || 'Anonymous',
-        body: m.message || '',
-        gif_url: m.gif_url || null,
-        photo_url: m.photo_url || null,
-        created_at: m.created_at
-      }));
     }
     res.json({ success: true, comments: comments || [] });
   } catch(err) { res.json({ success: false, comments: [], error: err.message }); }
@@ -7200,7 +7224,22 @@ app.get('/trip/:tripId/messages', async (req, res) => {
     if (!trip || (trip.share_token !== token && trip.invite_token !== token)) {
       return res.json({ success: false, messages: [], error: 'Invalid token' });
     }
-    const { data: messages } = await supabase.from('trip_messages').select('*').eq('trip_id', tripId).order('created_at', { ascending: true }).limit(100);
+    let { data: messages } = await supabase.from('trip_messages').select('*').eq('trip_id', tripId).order('created_at', { ascending: true }).limit(100);
+    const userIds = [...new Set((messages || []).map(m => String(m.user_id || '').trim()).filter(Boolean))];
+    if (userIds.length > 0) {
+      const { data: profiles } = await supabase.from('profiles').select('id,first_name,avatar_url,raven_id').in('id', userIds);
+      const profileMap = {};
+      (profiles || []).forEach(p => { profileMap[String(p.id)] = p; });
+      messages = (messages || []).map(m => {
+        const profile = profileMap[String(m.user_id || '')];
+        return profile ? {
+          ...m,
+          sender_name: profile.first_name || m.sender_name,
+          avatar_url: profile.avatar_url || m.avatar_url || '',
+          raven_id: profile.raven_id || m.raven_id || ''
+        } : m;
+      });
+    }
     res.json({ success: true, messages: messages || [] });
   } catch(err) { res.json({ success: false, messages: [], error: err.message }); }
 });
