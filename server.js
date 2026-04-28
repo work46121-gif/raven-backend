@@ -2983,6 +2983,62 @@ function aggregateSettledCredits(raw, validReceiptIds) {
   return credits;
 }
 
+function roundMoney(value) {
+  return Math.round((parseFloat(value) || 0) * 100) / 100;
+}
+
+function computeSimpleSettlementPlan(people, detailedOwesByPerson) {
+  const personList = Array.isArray(people) ? people : [];
+  const incomingByPerson = {};
+  const payoutsByPerson = {};
+  personList.forEach(name => {
+    incomingByPerson[name] = 0;
+    payoutsByPerson[name] = {};
+  });
+
+  Object.entries(detailedOwesByPerson || {}).forEach(([, payers]) => {
+    Object.entries(payers || {}).forEach(([payer, amount]) => {
+      const amt = roundMoney(amount);
+      if (amt <= 0.02) return;
+      incomingByPerson[payer] = roundMoney((incomingByPerson[payer] || 0) + amt);
+    });
+  });
+
+  const debtors = personList.map(name => ({
+    name,
+    amount: roundMoney(Object.values(detailedOwesByPerson[name] || {}).reduce((sum, amt) => sum + (parseFloat(amt) || 0), 0))
+  })).filter(entry => entry.amount > 0.02);
+
+  const creditors = personList.map(name => ({
+    name,
+    amount: roundMoney(incomingByPerson[name] || 0)
+  })).filter(entry => entry.amount > 0.02);
+
+  while (debtors.length > 0 && creditors.length > 0) {
+    debtors.sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name));
+    creditors.sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name));
+    const debtor = debtors[0];
+    const creditor = creditors[0];
+    const transfer = roundMoney(Math.min(debtor.amount, creditor.amount));
+    if (transfer <= 0.02) break;
+    payoutsByPerson[debtor.name][creditor.name] = roundMoney((payoutsByPerson[debtor.name][creditor.name] || 0) + transfer);
+    debtor.amount = roundMoney(debtor.amount - transfer);
+    creditor.amount = roundMoney(creditor.amount - transfer);
+    if (debtor.amount <= 0.02) debtors.shift();
+    if (creditor.amount <= 0.02) creditors.shift();
+  }
+
+  const receivableByPerson = {};
+  personList.forEach(name => { receivableByPerson[name] = 0; });
+  Object.values(payoutsByPerson).forEach(payers => {
+    Object.entries(payers || {}).forEach(([payer, amount]) => {
+      receivableByPerson[payer] = roundMoney((receivableByPerson[payer] || 0) + (parseFloat(amount) || 0));
+    });
+  });
+
+  return { payoutsByPerson, receivableByPerson };
+}
+
 async function computeOutstanding(tripId) {
   try {
     const { data: receipts } = await supabase.from('trip_receipts').select('id,splits,paid_by,total').eq('trip_id', tripId);
@@ -3016,7 +3072,7 @@ async function computeOutstanding(tripId) {
 
 app.post('/trip/create', async (req, res) => {
   try {
-    const { name, people, trip_date, cover_image, creator_email } = req.body;
+    const { name, people, trip_date, cover_image, creator_email, simple_split } = req.body;
     if (!name || !creator_email) return res.status(400).json({ error: 'name and creator_email required' });
 
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -3034,6 +3090,7 @@ app.post('/trip/create', async (req, res) => {
       total: 0,
       receipt_count: 0,
       status: 'active',
+      simple_split: !!simple_split,
       created_at: new Date().toISOString()
     };
     if (trip_date) insertData.trip_date = trip_date;
@@ -3487,6 +3544,61 @@ app.get('/trip/:tripId', async (req, res) => {
     countdownHTML = `<div style="background:#13131A;border:1px dashed rgba(255,255,255,0.08);border-radius:14px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="font-size:13px;color:#6E6B80">${countdownEmptyLabel}</div><div style="font-size:11px;color:#6E6B80;font-style:italic">${countdownEmptyHint}</div></div>`;
   }
 
+  const tripUsesSimpleSplit = !!trip.simple_split;
+  const detailedOwesByPerson = {};
+  people.forEach(p => {
+    const rawOwed = totals[p] || 0;
+    const settledCredit = Math.min(settledCredits[p.toLowerCase()] || 0, rawOwed);
+    const owesBreakdown = [];
+    (receipts || []).forEach(r => {
+      if (!r.paid_by || r.paid_by.toLowerCase() === p.toLowerCase()) return;
+      try {
+        const sp = typeof r.splits === 'string' ? JSON.parse(r.splits) : (r.splits || {});
+        const myShare = Object.entries(sp).find(([k]) => k.toLowerCase() === p.toLowerCase());
+        if (myShare && parseFloat(myShare[1]) > 0) {
+          owesBreakdown.push({ payer: r.paid_by, amount: roundMoney(myShare[1]) });
+        }
+      } catch(e) {}
+    });
+    const owesPerPayerRaw = {};
+    owesBreakdown.forEach(o => {
+      owesPerPayerRaw[o.payer] = roundMoney((owesPerPayerRaw[o.payer] || 0) + o.amount);
+    });
+    const owesPerPayer = {};
+    const isFullySettled = rawOwed > 0.02 && Math.max(0, rawOwed - settledCredit) <= 0.02;
+    if (!isFullySettled) {
+      const pLower = p.toLowerCase();
+      const perPayerCredit = {};
+      (receipts || []).forEach(r => {
+        if (!r.paid_by) return;
+        const rKey = (pLower + '::receipt::' + r.id).toLowerCase();
+        if (settledPeopleRaw[rKey]) {
+          perPayerCredit[r.paid_by] = roundMoney((perPayerCredit[r.paid_by] || 0) + (parseFloat(settledPeopleRaw[rKey]) || 0));
+        }
+      });
+      if (Object.keys(perPayerCredit).length > 0) {
+        Object.entries(owesPerPayerRaw).forEach(([payer, amt]) => {
+          const creditEntry = Object.entries(perPayerCredit).find(([k]) => k.toLowerCase() === payer.toLowerCase());
+          const credit = creditEntry ? creditEntry[1] : 0;
+          const net = Math.max(0, roundMoney(amt - credit));
+          if (net > 0.005) owesPerPayer[payer] = net;
+        });
+      } else if (settledCredit > 0) {
+        let remainingCredit = settledCredit;
+        Object.entries(owesPerPayerRaw).sort((a, b) => b[1] - a[1]).forEach(([payer, amt]) => {
+          const deduct = Math.min(remainingCredit, amt);
+          const net = Math.max(0, roundMoney(amt - deduct));
+          remainingCredit = roundMoney(remainingCredit - deduct);
+          if (net > 0.005) owesPerPayer[payer] = net;
+        });
+      } else {
+        Object.assign(owesPerPayer, owesPerPayerRaw);
+      }
+    }
+    detailedOwesByPerson[p] = owesPerPayer;
+  });
+  const simpleSettlementPlan = tripUsesSimpleSplit ? computeSimpleSettlementPlan(people, detailedOwesByPerson) : null;
+
   const owesRows = people.map((p, i) => {
     const displayName = getMemberDisplayName(p);
     const profile = getMemberProfile(p);
@@ -3495,69 +3607,15 @@ app.get('/trip/:tripId', async (req, res) => {
     let amtOwed = Math.round(Math.max(0, rawOwed - settledCredit) * 100) / 100;
     const isSettled = rawOwed > 0.02 && amtOwed <= 0.02; // fully settled (allow up to 2¢ rounding drift)
     const isPartiallySettled = settledCredit > 0 && amtOwed > 0.02;
-    const amtReceivable = owedTo[p] || 0;
+    const amtReceivable = tripUsesSimpleSplit
+      ? roundMoney(simpleSettlementPlan?.receivableByPerson?.[p] || 0)
+      : (owedTo[p] || 0);
     const isCreditor = amtReceivable > 0 && amtOwed === 0;
     const isBoth = amtOwed > 0 && amtReceivable > 0;
 
-    // Find which payers this person owes money to
-    const owesBreakdown = [];
-    (receipts||[]).forEach(r => {
-      if (!r.paid_by || r.paid_by.toLowerCase() === p.toLowerCase()) return;
-      try {
-        const sp = typeof r.splits==='string' ? JSON.parse(r.splits) : (r.splits||{});
-        const myShare = Object.entries(sp).find(([k]) => k.toLowerCase() === p.toLowerCase());
-        if (myShare && parseFloat(myShare[1]) > 0) {
-          owesBreakdown.push({ payer: r.paid_by, amount: Math.round((parseFloat(myShare[1])||0) * 100) / 100, receipt: r.name||'Receipt' });
-        }
-      } catch(e) {}
-    });
-
-    // Collapse to per-payer totals
-    const owesPerPayerRaw = {};
-    owesBreakdown.forEach(o => { owesPerPayerRaw[o.payer] = Math.round(((owesPerPayerRaw[o.payer]||0) + o.amount) * 100) / 100; });
-
-    // Apply credits per-payer using receipt-level keys from settledPeopleRaw
-    // Each key like "mel::receipt::22" tells us exactly which receipt (and thus which payer) was settled
-    // This ensures "Pay daddy $46.52" stays daddy even after settling Arsalan's Jeep
-    const owesPerPayer = {};
-    if (!isSettled) {
-      const pLower = p.toLowerCase();
-      // Build per-payer credit from receipt-level keys
-      const perPayerCredit = {};
-      (receipts||[]).forEach(r => {
-        if (!r.paid_by) return;
-        const rKey = (pLower + '::receipt::' + r.id).toLowerCase();
-        if (settledPeopleRaw[rKey]) {
-          const payerKey = r.paid_by;
-          perPayerCredit[payerKey] = (perPayerCredit[payerKey]||0) + (parseFloat(settledPeopleRaw[rKey])||0);
-        }
-      });
-      // If we have receipt-level keys, use them for precise per-payer credit
-      const hasReceiptKeys = Object.keys(perPayerCredit).length > 0;
-      if (hasReceiptKeys) {
-        Object.entries(owesPerPayerRaw).forEach(([payer, amt]) => {
-          // Find the payer key case-insensitively
-          const creditEntry = Object.entries(perPayerCredit).find(([k]) => k.toLowerCase() === payer.toLowerCase());
-          const credit = creditEntry ? creditEntry[1] : 0;
-          const net = Math.max(0, Math.round((amt - credit) * 100) / 100);
-          if (net > 0.005) owesPerPayer[payer] = net;
-        });
-      } else {
-        // No receipt-level keys: check person-level credit and distribute
-        // to largest payer first (fallback for old data)
-        let remainingCredit = settledCredit;
-        if (remainingCredit > 0) {
-          Object.entries(owesPerPayerRaw).sort((a,b)=>b[1]-a[1]).forEach(([payer, amt]) => {
-            const deduct = Math.min(remainingCredit, amt);
-            const net = Math.max(0, amt - deduct);
-            remainingCredit -= deduct;
-            if (net > 0.005) owesPerPayer[payer] = net;
-          });
-        } else {
-          Object.assign(owesPerPayer, owesPerPayerRaw);
-        }
-      }
-    }
+    const owesPerPayer = tripUsesSimpleSplit
+      ? (simpleSettlementPlan?.payoutsByPerson?.[p] || {})
+      : (detailedOwesByPerson[p] || {});
     const payerEntries = Object.entries(owesPerPayer);
     const effectiveAmtOwed = Math.round(payerEntries.reduce((sum, [, amt]) => sum + (parseFloat(amt) || 0), 0) * 100) / 100;
     const effectiveIsSettled = rawOwed > 0.02 && effectiveAmtOwed <= 0.02;
@@ -3832,6 +3890,7 @@ app.get('/trip/:tripId', async (req, res) => {
     dueDate: trip.due_date || '',
     endDate: trip.end_date || '',
     reminderLastSentAt: trip.reminder_last_sent_at || '',
+    simpleSplit: !!trip.simple_split,
     creatorEmail: trip.creator_email || '',
     coAdmins: (() => { try { return Array.isArray(trip.co_admins) ? trip.co_admins : JSON.parse(trip.co_admins || '[]'); } catch(e) { return []; } })(),
     // settledPeople kept for backward compat but rendering is fully server-side
@@ -3952,7 +4011,7 @@ ${coverHTML}
 </div>
 
 <div class="sec" style="margin-top:20px">
-  <div class="sec-lbl">${owesHeading}</div>
+  <div class="sec-lbl">${owesHeading}${tripUsesSimpleSplit ? ` <span style="display:inline-flex;align-items:center;gap:5px;margin-left:8px;padding:4px 8px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:999px;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#30D158;vertical-align:middle">Simple Split</span>` : ''}</div>
   <div class="card">
     ${owesRows}
     <div id="outstanding-footer" data-total-spend="${totalSpend.toFixed(2)}" style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:${grandTotal>0?'rgba(255,107,53,0.04)':'rgba(48,209,88,0.04)'};border-top:1px solid ${grandTotal>0?'rgba(255,107,53,0.15)':'rgba(48,209,88,0.12)'}">
@@ -8596,6 +8655,9 @@ app.listen(PORT, async () => {
   try {
     await supabase.rpc('exec_sql', { sql: "ALTER TABLE trips ADD COLUMN IF NOT EXISTS settled_people JSONB DEFAULT '[]'" });
   } catch(e) { /* rpc may not exist — that's ok, manual SQL needed */ }
+  try {
+    await supabase.rpc('exec_sql', { sql: "ALTER TABLE trips ADD COLUMN IF NOT EXISTS simple_split BOOLEAN DEFAULT false" });
+  } catch(e) {}
   try {
     await supabase.rpc('exec_sql', { sql: "ALTER TABLE trip_receipts ADD COLUMN IF NOT EXISTS discount NUMERIC DEFAULT 0" });
   } catch(e) {}
