@@ -2990,28 +2990,36 @@ function roundMoney(value) {
 function computeSimpleSettlementPlan(people, detailedOwesByPerson) {
   const personList = Array.isArray(people) ? people : [];
   const incomingByPerson = {};
+  const outgoingByPerson = {};
   const payoutsByPerson = {};
   personList.forEach(name => {
     incomingByPerson[name] = 0;
+    outgoingByPerson[name] = 0;
     payoutsByPerson[name] = {};
   });
 
-  Object.entries(detailedOwesByPerson || {}).forEach(([, payers]) => {
+  Object.entries(detailedOwesByPerson || {}).forEach(([debtor, payers]) => {
     Object.entries(payers || {}).forEach(([payer, amount]) => {
       const amt = roundMoney(amount);
       if (amt <= 0.02) return;
+      outgoingByPerson[debtor] = roundMoney((outgoingByPerson[debtor] || 0) + amt);
       incomingByPerson[payer] = roundMoney((incomingByPerson[payer] || 0) + amt);
     });
   });
 
+  const netByPerson = {};
+  personList.forEach(name => {
+    netByPerson[name] = roundMoney((incomingByPerson[name] || 0) - (outgoingByPerson[name] || 0));
+  });
+
   const debtors = personList.map(name => ({
     name,
-    amount: roundMoney(Object.values(detailedOwesByPerson[name] || {}).reduce((sum, amt) => sum + (parseFloat(amt) || 0), 0))
+    amount: roundMoney(Math.max(0, -netByPerson[name]))
   })).filter(entry => entry.amount > 0.02);
 
   const creditors = personList.map(name => ({
     name,
-    amount: roundMoney(incomingByPerson[name] || 0)
+    amount: roundMoney(Math.max(0, netByPerson[name]))
   })).filter(entry => entry.amount > 0.02);
 
   while (debtors.length > 0 && creditors.length > 0) {
@@ -3019,6 +3027,11 @@ function computeSimpleSettlementPlan(people, detailedOwesByPerson) {
     creditors.sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name));
     const debtor = debtors[0];
     const creditor = creditors[0];
+    if (debtor.name === creditor.name) {
+      if (debtor.amount >= creditor.amount) creditors.shift();
+      else debtors.shift();
+      continue;
+    }
     const transfer = roundMoney(Math.min(debtor.amount, creditor.amount));
     if (transfer <= 0.02) break;
     payoutsByPerson[debtor.name][creditor.name] = roundMoney((payoutsByPerson[debtor.name][creditor.name] || 0) + transfer);
@@ -4011,7 +4024,7 @@ ${coverHTML}
 </div>
 
 <div class="sec" style="margin-top:20px">
-  <div class="sec-lbl">${owesHeading}${tripUsesSimpleSplit ? ` <span style="display:inline-flex;align-items:center;gap:5px;margin-left:8px;padding:4px 8px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:999px;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#30D158;vertical-align:middle">Simple Split</span>` : ''}</div>
+  <div class="sec-lbl">${owesHeading}${tripUsesSimpleSplit ? ` <span style="display:inline-flex;align-items:center;gap:5px;margin-left:8px;padding:4px 8px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:999px;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#30D158;vertical-align:middle">RAVEN Sweep</span>` : ''}</div>
   <div class="card">
     ${owesRows}
     <div id="outstanding-footer" data-total-spend="${totalSpend.toFixed(2)}" style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:${grandTotal>0?'rgba(255,107,53,0.04)':'rgba(48,209,88,0.04)'};border-top:1px solid ${grandTotal>0?'rgba(255,107,53,0.15)':'rgba(48,209,88,0.12)'}">
