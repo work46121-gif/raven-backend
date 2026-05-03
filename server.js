@@ -3121,11 +3121,9 @@ app.post('/trip/create', async (req, res) => {
 
 app.get('/trip/:tripId', async (req, res) => {
   const { tripId } = req.params;
-  const token = req.query.t; // _nc is just a cache-buster, never affects auth
+  const token = req.query.t;
   const isAppMode = req.query.app === '1';
-  const dashboardBackUrl = isAppMode
-    ? 'https://ravensplit.com/dashboard.html?app=1'
-    : 'https://ravensplit.com/dashboard.html';
+  const dashboardBackUrl = isAppMode ? 'https://ravensplit.com/dashboard.html?app=1' : 'https://ravensplit.com/dashboard.html'; // _nc is just a cache-buster, never affects auth
   // Always serve fresh — never let Railway/proxy cache trip pages
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.setHeader('Pragma', 'no-cache');
@@ -4776,16 +4774,6 @@ async function loadTripComments(force) {
   }
 }
 
-// ── RELOAD HELPER — preserves ?app=1 and all URL params across reloads ──
-function reloadPage(ms) {
-  setTimeout(function() {
-    var _u = new URL(window.location.href);
-    _u.searchParams.set('_nc', Date.now());
-    window.location.href = _u.toString();
-  }, ms || 0);
-}
-
-
 // ── TOAST ──
 function toast(msg, ok) {
   const t = document.getElementById('toast');
@@ -4795,6 +4783,15 @@ function toast(msg, ok) {
   t.style.transform = 'translateX(-50%) translateY(0)';
   clearTimeout(t._t);
   t._t = setTimeout(() => { t.style.opacity='0'; t.style.transform='translateX(-50%) translateY(80px)'; }, 3000);
+}
+function reloadPage(ms) {
+  setTimeout(function() {
+    try {
+      const _u = new URL(window.location.href);
+      _u.searchParams.set('_nc', Date.now());
+      window.location.href = _u.toString();
+    } catch(e) { window.location.reload(); }
+  }, ms || 800);
 }
 
 // ── AUTO-FILL NAME + AVATAR ──
@@ -5569,7 +5566,12 @@ function markTripPersonPaid(personName, personId, btn) {
       .then(d => {
         if (d.success) {
           toast(personName + ' unsettled ↩', true);
-          reloadPage(1500);
+          setTimeout(() => {
+            // Reload preserving the t= token — just add a nocache param
+            const url = new URL(window.location.href);
+            url.searchParams.set('_nc', Date.now());
+            window.location.href = url.toString();
+          }, 1500);
         } else {
           btn.disabled = false;
           btn.textContent = '✅ Settled';
