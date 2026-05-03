@@ -4486,11 +4486,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.querySelector('[data-confirming="1"],[data-confirming="unsettle"],[disabled]')) return;
     _reloadPending = true;
     toast('🔄 Live update...', true);
-    setTimeout(() => {
-      const _u = new URL(window.location.href);
-      _u.searchParams.set('_nc', Date.now());
-      window.location.href = _u.toString();
-    }, 800);
+    reloadPage(800);
   }
 
   async function initRealtime() {
@@ -4787,6 +4783,15 @@ function toast(msg, ok) {
   t.style.transform = 'translateX(-50%) translateY(0)';
   clearTimeout(t._t);
   t._t = setTimeout(() => { t.style.opacity='0'; t.style.transform='translateX(-50%) translateY(80px)'; }, 3000);
+}
+
+// ── RELOAD HELPER — preserves ?app=1 and other params across all reloads ──
+function reloadPage(delayMs) {
+  setTimeout(() => {
+    const _u = new URL(window.location.href);
+    _u.searchParams.set('_nc', Date.now());
+    window.location.href = _u.toString();
+  }, delayMs || 0);
 }
 
 // ── AUTO-FILL NAME + AVATAR ──
@@ -5376,7 +5381,7 @@ function markReceiptItemPaid(personName, receiptId, amount, btn) {
         btn.disabled = false;
         btn.dataset.settled = '';
         toast(personName + ' unsettled ↩', true);
-        setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 1500);
+        reloadPage(1500);
       } else {
         btn.disabled = false;
         btn.textContent = '✅ Settled · tap to undo';
@@ -5446,7 +5451,7 @@ function markReceiptItemPaid(personName, receiptId, amount, btn) {
         }
       }
       // Realtime will handle the full page refresh; small delay as backup
-      setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 2000);
+      reloadPage(2000);
     } else {
       btn.disabled = false;
       btn.textContent = '✓ Settle this receipt';
@@ -5561,12 +5566,7 @@ function markTripPersonPaid(personName, personId, btn) {
       .then(d => {
         if (d.success) {
           toast(personName + ' unsettled ↩', true);
-          setTimeout(() => {
-            // Reload preserving the t= token — just add a nocache param
-            const url = new URL(window.location.href);
-            url.searchParams.set('_nc', Date.now());
-            window.location.href = url.toString();
-          }, 1500);
+          reloadPage(1500);
         } else {
           btn.disabled = false;
           btn.textContent = '✅ Settled';
@@ -5659,7 +5659,7 @@ function adminDeleteReceipt(btn) {
         const wrap = document.getElementById(receiptId + '-wrap');
         if (wrap) wrap.remove();
         toast('🗑 ' + receiptName + ' deleted', true);
-        setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 600);
+        reloadPage(600);
       } else {
         btn.disabled = false;
         btn.textContent = '🗑';
@@ -5732,7 +5732,7 @@ function adminDeleteReceipt(btn) {
     const dist = e.changedTouches[0].clientY - startY;
     if (dist >= THRESHOLD) {
       if (indicator) { indicator.style.height = '60px'; const t = document.getElementById('ptr-text'); if (t) t.textContent = 'Refreshing…'; }
-      setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 150);
+      reloadPage(150);
     } else {
       if (indicator) indicator.style.height = '0';
     }
@@ -6079,7 +6079,7 @@ async function saveEditReceipt() {
       body: JSON.stringify({ token: TRIP_TOKEN, name, paid_by: paidBy || null, total, splits })
     });
     const d = await r.json();
-    if (d.success) { closeEditReceipt(); toast('✅ Receipt updated!'); setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 900); }
+    if (d.success) { closeEditReceipt(); toast('✅ Receipt updated!'); reloadPage(900); }
     else { toast(d.error || 'Error saving', false); btn.textContent = 'Save Changes'; btn.disabled = false; }
   } catch(e) { toast('Network error', false); btn.textContent = 'Save Changes'; btn.disabled = false; }
 }
@@ -6129,7 +6129,7 @@ document.getElementById('close-receipt-btn').addEventListener('click', () => { d
         if (existing) existing.src = resized;
         toast('Saving cover...');
         fetch(BACKEND+'/trip/'+TRIP_ID+'/cover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,image:resized.split(',')[1]})})
-          .then(r=>r.json()).then(d=>{ if(d.success){toast('🖼 Cover saved!');setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 1200);}else toast(d.error||'Error',false); })
+          .then(r=>r.json()).then(d=>{ if(d.success){toast('🖼 Cover saved!');reloadPage(1200);}else toast(d.error||'Error',false); })
           .catch(()=>toast('Network error',false));
       };
       img.src = e.target.result;
@@ -6149,7 +6149,7 @@ document.getElementById('save-settings-btn').addEventListener('click', async fun
     const endDate = document.getElementById('settings-end-date')?.value || null;
     const r = await fetch(BACKEND+'/trip/'+TRIP_ID+'/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,name,trip_date:date||null,due_date:dueDate||null,end_date:endDate||null})});
     const d = await r.json();
-    if (d.success) { toast('✅ Trip updated!'); setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 1200); }
+    if (d.success) { toast('✅ Trip updated!'); reloadPage(1200); }
     else toast(d.error||'Error',false);
   } catch(e) { toast('Network error',false); }
   this.textContent='💾 Save Changes'; this.disabled=false;
@@ -6202,7 +6202,7 @@ document.getElementById('save-members-btn').addEventListener('click', async func
   try {
     const r = await fetch(BACKEND+'/trip/'+TRIP_ID+'/add-members',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,members:newMembers})});
     const d = await r.json();
-    if (d.success) { toast('✅ Members added!'); setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 1200); }
+    if (d.success) { toast('✅ Members added!'); reloadPage(1200); }
     else { toast(d.error||'Error',false); this.textContent='✓ Save'; this.disabled=false; }
   } catch(e) { toast('Network error',false); this.textContent='✓ Save'; this.disabled=false; }
 });
@@ -6271,7 +6271,7 @@ document.getElementById('post-comment-btn').addEventListener('click', async func
   try {
     const r = await fetch(BACKEND+'/trip/'+TRIP_ID+'/comment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,author_name:author,user_id:authorUserId||null,body,gif_url:gifUrl||null})});
     const d = await r.json();
-    if (d.success) { document.getElementById('comment-body').value=''; clearGif(); toast('✅ Posted!'); setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 900); }
+    if (d.success) { document.getElementById('comment-body').value=''; clearGif(); toast('✅ Posted!'); reloadPage(900); }
     else toast(d.error||'Error',false);
   } catch(e) { toast('Network error',false); }
   this.textContent='💬 Post'; this.disabled=false;
@@ -6541,7 +6541,7 @@ function addPhotoToReceipt(receiptId) {
             body: JSON.stringify({ token: TRIP_TOKEN, photo_url: photoUrl })
           });
           const d = await r.json();
-          if (d.success) { toast('📎 Photo added!'); setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 900); }
+          if (d.success) { toast('📎 Photo added!'); reloadPage(900); }
           else toast('Error: ' + (d.error || 'Could not save photo'), false);
         } catch(e) { toast('Network error', false); }
       };
@@ -6564,7 +6564,7 @@ async function toggleCoAdmin(btn, name) {
     const d = await r.json();
     if (d.success) {
       toast(isAdmin ? name+' removed as co-admin' : name+' is now a co-admin ⚙️');
-      setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 900);
+      reloadPage(900);
     } else { toast(d.error || 'Error', false); btn.disabled = false; }
   } catch(e) { toast('Network error', false); btn.disabled = false; }
 }
@@ -6581,7 +6581,7 @@ async function removeMember(btn, name) {
     const d = await r.json();
     if (d.success) {
       toast(name + ' removed from trip');
-      setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 900);
+      reloadPage(900);
     } else { toast(d.error || 'Error', false); btn.disabled = false; }
   } catch(e) { toast('Network error', false); btn.disabled = false; }
 }
@@ -6692,7 +6692,7 @@ async function saveReceipt() {
       tripItems=[]; imgBase64=null; splitType='even';
       window._currentPendingId = null;
       setSplit('even'); renderItems(); updateItemizedSummary();
-      setTimeout(() => { const _u = new URL(window.location.href); _u.searchParams.set('_nc', Date.now()); window.location.href = _u.toString(); }, 1200);
+      reloadPage(1200);
     } else{btn.textContent='Save Receipt';btn.disabled=false;toast(d.error||'Error',false);}
   }catch(e){btn.textContent='Save Receipt';btn.disabled=false;toast('Network error',false);}
 }
