@@ -4966,7 +4966,16 @@ async function applyAllMemberAvatars() {
 
 // ── AUTO-OPEN receipt form ──
 if (new URLSearchParams(window.location.search).get('action') === 'receipt') {
-  setTimeout(() => { document.getElementById('receipt-form-wrap').style.display='block'; document.getElementById('open-receipt-btn').style.display='none'; }, 300);
+  setTimeout(() => {
+    const wrap = document.getElementById('receipt-form-wrap');
+    const btn = document.getElementById('open-receipt-btn');
+    if (wrap) wrap.style.display='block';
+    if (btn) btn.style.display='none';
+    setTimeout(() => {
+      if (wrap) wrap.scrollIntoView({ behavior:'smooth', block:'start' });
+      try { updateEven(); } catch(e) {}
+    }, 80);
+  }, 300);
 }
 
 // ── RECEIPT PHOTO VIEWER with pinch-to-zoom ──
