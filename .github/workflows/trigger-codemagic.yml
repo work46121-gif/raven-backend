@@ -1,0 +1,26 @@
+name: Trigger Codemagic iOS Build
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  trigger-codemagic:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start Codemagic raven-ios build
+        env:
+          CODEMAGIC_API_TOKEN: ${{ secrets.CODEMAGIC_API_TOKEN }}
+          CODEMAGIC_APP_ID: ${{ secrets.CODEMAGIC_APP_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CODEMAGIC_API_TOKEN:-}" ] || [ -z "${CODEMAGIC_APP_ID:-}" ]; then
+            echo "Missing CODEMAGIC_API_TOKEN or CODEMAGIC_APP_ID repository secret."
+            exit 1
+          fi
+          curl --fail-with-body \
+            -H "Content-Type: application/json" \
+            -H "x-auth-token: ${CODEMAGIC_API_TOKEN}" \
+            --data '{"appId":"'"${CODEMAGIC_APP_ID}"'","workflowId":"raven-ios","branch":"main","labels":["backend-change"]}' \
+            -X POST https://api.codemagic.io/builds
