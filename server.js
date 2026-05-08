@@ -3123,7 +3123,7 @@ app.get('/trip/:tripId', async (req, res) => {
   const { tripId } = req.params;
   const token = req.query.t;
   const isAppMode = req.query.app === '1';
-  const dashboardBackUrl = isAppMode ? 'https://ravensplit.com/dashboard.html?app=1' : 'https://ravensplit.com/dashboard.html'; // _nc is just a cache-buster, never affects auth
+  const dashboardBackUrl = isAppMode ? 'https://ravensplit.com/app.html?app=1' : 'https://ravensplit.com/dashboard.html'; // _nc is just a cache-buster, never affects auth
   // Always serve fresh — never let Railway/proxy cache trip pages
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.setHeader('Pragma', 'no-cache');
@@ -5568,9 +5568,7 @@ function markTripPersonPaid(personName, personId, btn) {
           toast(personName + ' unsettled ↩', true);
           setTimeout(() => {
             // Reload preserving the t= token — just add a nocache param
-            const url = new URL(window.location.href);
-            url.searchParams.set('_nc', Date.now());
-            window.location.href = url.toString();
+            reloadPage(0);
           }, 1500);
         } else {
           btn.disabled = false;
