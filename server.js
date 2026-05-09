@@ -3123,13 +3123,13 @@ app.get('/trip/:tripId', async (req, res) => {
   const { tripId } = req.params;
   const token = req.query.t;
   const isAppMode = req.query.app === '1';
-  const dashboardBackUrl = isAppMode ? 'https://ravensplit.com/dashboard.html?app=1' : 'https://ravensplit.com/dashboard.html'; // _nc is just a cache-buster, never affects auth
-  // Always serve fresh â€” never let Railway/proxy cache trip pages
+  const dashboardBackUrl = isAppMode ? 'https://ravensplit.com/app.html?app=1' : 'https://ravensplit.com/dashboard.html'; // _nc is just a cache-buster, never affects auth
+  // Always serve fresh  never let Railway/proxy cache trip pages
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.setHeader('Pragma', 'no-cache');
 
   const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
-  if (!trip) return res.status(404).send('<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center}</style></head><body><div><div style="font-size:52px">ðŸª¶</div><h2>Trip Not Found</h2></div></body></html>');
+  if (!trip) return res.status(404).send('<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center}</style></head><body><div><div style="font-size:52px"></div><h2>Trip Not Found</h2></div></body></html>');
 
   let inviteToken = trip.invite_token;
   if (!inviteToken) {
@@ -3142,10 +3142,10 @@ app.get('/trip/:tripId', async (req, res) => {
   const validShare  = token === trip.share_token;
 
   if (!validShare && !validInvite) {
-    return res.status(403).send('<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center}</style></head><body><div><div style="font-size:52px">ðŸ”’</div><h2>Private Trip</h2><p style="color:#6E6B80">Ask the trip creator to share the correct link.</p></div></body></html>');
+    return res.status(403).send('<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center}</style></head><body><div><div style="font-size:52px"></div><h2>Private Trip</h2><p style="color:#6E6B80">Ask the trip creator to share the correct link.</p></div></body></html>');
   }
 
-  // Invite-only link â†’ show join page
+  // Invite-only link  show join page
   if (validInvite && !validShare) {
     const invBaseUrl = process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : `https://raven-backend-production-fb1f.up.railway.app`;
     const ogImage = trip.cover_image
@@ -3153,7 +3153,7 @@ app.get('/trip/:tripId', async (req, res) => {
       : 'https://ravensplit.com/raven-hero.png';
     const coverImgHTML = trip.cover_image
       ? `<div style="width:100%;height:160px;border-radius:20px;overflow:hidden;margin-bottom:24px;border:1px solid rgba(255,255,255,0.1)"><img src="${ogImage}" style="width:100%;height:100%;object-fit:cover"></div>`
-      : '<div style="font-size:52px;margin-bottom:16px">âœˆï¸</div>';
+      : '<div style="font-size:52px;margin-bottom:16px"></div>';
     const peopleArr = Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people || '[]');
     const invEsc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     return res.send(`<!DOCTYPE html>
@@ -3161,17 +3161,17 @@ app.get('/trip/:tripId', async (req, res) => {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Join ${invEsc(trip.name)} â€” RAVEN</title>
-<meta property="og:title" content="âœˆï¸ You're invited to join ${invEsc(trip.name)}">
-<meta property="og:description" content="${peopleArr.length} people on this trip Â· Tap to join on RAVEN">
+<title>Join ${invEsc(trip.name)}  RAVEN</title>
+<meta property="og:title" content=" You're invited to join ${invEsc(trip.name)}">
+<meta property="og:description" content="${peopleArr.length} people on this trip  Tap to join on RAVEN">
 <meta property="og:image" content="${ogImage}">
 <meta property="og:image:width" content="800">
 <meta property="og:image:height" content="400">
 <meta property="og:url" content="${invBaseUrl}/trip/${tripId}?t=${trip.invite_token}&invite=1">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="âœˆï¸ Join ${invEsc(trip.name)} on RAVEN">
-<meta name="twitter:description" content="${peopleArr.length} people Â· Tap to join">
+<meta name="twitter:title" content=" Join ${invEsc(trip.name)} on RAVEN">
+<meta name="twitter:description" content="${peopleArr.length} people  Tap to join">
 <meta name="twitter:image" content="${ogImage}">
 <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center}</style>
 </head>
@@ -3182,10 +3182,10 @@ app.get('/trip/:tripId', async (req, res) => {
   <div style="font-size:14px;color:#6E6B80;margin-bottom:8px">${peopleArr.length} people already on this trip</div>
   <div style="font-size:14px;color:#6E6B80;margin-bottom:32px">You've been invited to join this trip hub on RAVEN</div>
   <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:24px">
-    <a href="https://ravensplit.com/dashboard.html?join_trip=${tripId}&join_token=${trip.invite_token}" style="display:block;width:100%;padding:15px;background:#30D158;color:#000;border-radius:12px;font-size:15px;font-weight:800;text-decoration:none;margin-bottom:10px">ðŸª¶ Create Account &amp; Join Trip</a>
+    <a href="https://ravensplit.com/dashboard.html?join_trip=${tripId}&join_token=${trip.invite_token}" style="display:block;width:100%;padding:15px;background:#30D158;color:#000;border-radius:12px;font-size:15px;font-weight:800;text-decoration:none;margin-bottom:10px"> Create Account &amp; Join Trip</a>
     <a href="https://ravensplit.com/dashboard.html?join_trip=${tripId}&join_token=${trip.invite_token}&signin=1" style="display:block;width:100%;padding:13px;background:transparent;border:1px solid rgba(255,255,255,0.12);color:#9896A8;border-radius:12px;font-size:14px;font-weight:600;text-decoration:none">Already have an account? Sign In</a>
   </div>
-  <div style="margin-top:20px;font-size:11px;color:#6E6B80">Powered by <b style="color:#C084FC">RAVEN</b> â€” Scan. Share. Settle.</div>
+  <div style="margin-top:20px;font-size:11px;color:#6E6B80">Powered by <b style="color:#C084FC">RAVEN</b>  Scan. Share. Settle.</div>
 </div>
 </body>
 </html>`);
@@ -3334,7 +3334,7 @@ app.get('/trip/:tripId', async (req, res) => {
         if (key === undefined) return;
         const amtNum = Math.round((parseFloat(amt) || 0) * 100) / 100;
         assignedTotals[key] = Math.round((assignedTotals[key] + amtNum) * 100) / 100;
-        // If this person IS the payer, they don't owe themselves â€” skip
+        // If this person IS the payer, they don't owe themselves  skip
         if (payer && key.toLowerCase() === payer.toLowerCase()) return;
         totals[key] = Math.round((totals[key] + amtNum) * 100) / 100;
         // Track who they owe it to
@@ -3346,8 +3346,8 @@ app.get('/trip/:tripId', async (req, res) => {
     } catch(e) {}
   });
   // Build per-person breakdown: who owes whom and how much
-  // settled_credits: { "Name": amountSettled } â€” stores how much each person has paid off
-  // Can be stored as old list format OR new object format â€” handle both gracefully
+  // settled_credits: { "Name": amountSettled }  stores how much each person has paid off
+  // Can be stored as old list format OR new object format  handle both gracefully
   const validReceiptIds = new Set((receipts || []).map(r => String(r.id)));
   const settledPeopleRaw = (() => {
     const parsed = parseSettledPeopleRecord(trip.settled_people);
@@ -3361,9 +3361,9 @@ app.get('/trip/:tripId', async (req, res) => {
   const grandTotal = Math.round(Object.entries(totals).reduce((s, [person, raw]) => {
     const credit = Math.min(settledCredits[person.toLowerCase()] || 0, raw); // cap at rawOwed
     const net = Math.round(Math.max(0, raw - credit) * 100) / 100;
-    return s + (net <= 0.02 ? 0 : net); // ignore sub-2Â¢ rounding drift
+    return s + (net <= 0.02 ? 0 : net); // ignore sub-2 rounding drift
   }, 0) * 100) / 100;
-  // Keep trips.total in sync â€” fire-and-forget so dashboard card always shows correct outstanding
+  // Keep trips.total in sync  fire-and-forget so dashboard card always shows correct outstanding
   supabase.from('trips').update({ total: grandTotal }).eq('id', tripId).then(() => {}).catch(() => {});
   // Total spend = sum of all receipt totals (what was actually spent)
   const totalSpend = (receipts||[]).reduce((s, r) => s + parseFloat(r.total||0), 0);
@@ -3385,7 +3385,7 @@ app.get('/trip/:tripId', async (req, res) => {
   }).length;
   const totalPeopleCount = people.length;
 
-  // Backfill settled_count/debtor_count on the trip row â€” keeps dashboard in sync
+  // Backfill settled_count/debtor_count on the trip row  keeps dashboard in sync
   supabase.from('trips').update({ settled_count: settledCount, debtor_count: debtorCount }).eq('id', tripId).then(() => {}).catch(() => {});
 
   const baseUrl   = process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : `https://raven-backend-production-fb1f.up.railway.app`;
@@ -3398,62 +3398,62 @@ app.get('/trip/:tripId', async (req, res) => {
 
   function esc(str) { return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   const isRoommateHouse = String(trip.type || '').toLowerCase() === 'roommates';
-  const experienceIcon = isRoommateHouse ? 'ðŸ ' : 'âœˆï¸';
+  const experienceIcon = '';
   const pageTitleSuffix = isRoommateHouse ? 'House Ledger on RAVEN' : 'Trip Hub on RAVEN';
   const coverEmptyLabel = isRoommateHouse ? 'Add a cover photo for this house' : 'Add a cover photo for this trip';
   const memberCountLabel = isRoommateHouse ? 'housemates' : 'people';
   const receiptCountLabel = isRoommateHouse ? 'expense' : 'receipt';
-  const inviteButtonLabel = isRoommateHouse ? 'ðŸ¡ Invite Housemate' : 'ðŸ“¨ Invite';
-  const chatButtonLabel = isRoommateHouse ? 'ðŸ  House Chat' : 'ðŸ’¬ Chat';
+  const inviteButtonLabel = isRoommateHouse ? 'Invite Housemate' : 'Invite';
+  const chatButtonLabel = isRoommateHouse ? 'House Chat' : 'Chat';
   const reminderHeading = isRoommateHouse ? 'House Nudges' : 'Payment Reminders';
   const reminderMessage = isRoommateHouse ? 'Send one reminder today to everyone who still owes the house.' : 'Send one reminder today to everyone who still owes for this trip.';
   const owesHeading = isRoommateHouse ? 'House Balance' : 'Who Owes What';
   const settledLabel = isRoommateHouse ? 'housemates settled' : 'people settled';
   const totalSpendLabel = isRoommateHouse ? 'total house spend' : 'total spent';
   const outstandingLabel = isRoommateHouse ? 'House Balance' : 'Outstanding';
-  const addReceiptButtonLabel = isRoommateHouse ? 'ðŸ  Log House Expense' : 'ðŸ“¸ Add a Receipt';
-  const shareButtonLabel = isRoommateHouse ? 'ðŸ”— Share House' : 'ðŸ”— Share';
-  const settingsButtonLabel = isRoommateHouse ? 'ðŸ  House Settings' : 'âš™ï¸ Settings';
+  const addReceiptButtonLabel = isRoommateHouse ? 'Log House Expense' : 'Add a Receipt';
+  const shareButtonLabel = isRoommateHouse ? 'Share House' : 'Share';
+  const settingsButtonLabel = isRoommateHouse ? 'House Settings' : 'Settings';
   const newReceiptHeading = isRoommateHouse ? 'New House Expense' : 'New Receipt';
   const newReceiptNameLabel = isRoommateHouse ? 'Expense Name' : 'Receipt Name';
   const newReceiptNamePlaceholder = isRoommateHouse ? 'e.g. April electric bill' : 'e.g. Dinner at Casa Marina';
   const whoPaidLabel = isRoommateHouse ? "Who covered it? (they'll collect from the house)" : "Who paid? (they'll collect from others)";
   const photoScanLabel = isRoommateHouse ? 'Photo - RAVEN scans bills, rent slips, and receipts automatically' : 'Photo - RAVEN scans automatically';
-  const photoUploadLabel = isRoommateHouse ? 'ðŸ  Tap to upload bill or receipt photo' : 'ðŸ“¸ Tap to upload receipt photo';
+  const photoUploadLabel = isRoommateHouse ? 'Tap to upload bill or receipt photo' : 'Tap to upload receipt photo';
   const sectionReceiptsLabel = isRoommateHouse ? 'House Expenses' : 'All Receipts';
   const emptyReceiptsTitle = isRoommateHouse ? 'No house expenses yet' : 'No receipts yet';
   const emptyReceiptsBody = isRoommateHouse ? 'Start the ledger with rent, utilities, groceries, or supplies.' : 'Be the first to add one!';
-  const commentsEmptyLabel = isRoommateHouse ? 'No house notes yet - leave the first update.' : 'No comments yet - say something! ðŸ‘‹';
+  const commentsEmptyLabel = isRoommateHouse ? 'No house notes yet - leave the first update.' : 'No comments yet - say something!';
   const commentPlaceholder = isRoommateHouse ? 'Leave a house note...' : 'Add a comment...';
-  const postCommentLabel = isRoommateHouse ? 'ðŸ  Post Note' : 'ðŸ’¬ Post';
-  const editReceiptTitle = isRoommateHouse ? 'âœï¸ Edit House Expense' : 'âœï¸ Edit Receipt';
+  const postCommentLabel = isRoommateHouse ? 'Post Note' : 'Post';
+  const editReceiptTitle = isRoommateHouse ? 'Edit House Expense' : 'Edit Receipt';
   const editReceiptNameLabel = isRoommateHouse ? 'Expense Name' : 'Receipt Name';
   const editPeopleLabel = isRoommateHouse ? "Who's part of this expense?" : "Who's on this receipt?";
   const settingsTitle = isRoommateHouse ? 'House Settings' : 'Trip Settings';
   const settingsNameLabel = isRoommateHouse ? 'House Name' : 'Trip Name';
   const settingsNamePlaceholder = isRoommateHouse ? 'House name' : 'Trip name';
   const settingsDateLabel = isRoommateHouse ? 'House Start Date' : 'Trip Start Date';
-  const settingsEndDateLabel = isRoommateHouse ? 'House Cycle End Date' : 'ðŸ Trip End Date';
+  const settingsEndDateLabel = isRoommateHouse ? 'House Cycle End Date' : 'Trip End Date';
   const settingsEndDateHint = isRoommateHouse ? '(marks this house cycle as wrapped)' : '(marks trip as completed)';
-  const settingsDueDateLabel = isRoommateHouse ? 'Monthly Due Date' : 'ðŸ’° Bill Due Date';
+  const settingsDueDateLabel = isRoommateHouse ? 'Monthly Due Date' : 'Bill Due Date';
   const settingsDueDateHint = isRoommateHouse ? '(RAVEN uses this to nudge roommates)' : '(RAVEN sends reminders after this)';
   const addMembersTitle = isRoommateHouse ? 'Add Housemates' : 'Add Members';
   const addMembersHelp = isRoommateHouse ? 'Enter a name or <span style="color:#A855F7;font-weight:700">@ravenid</span> - using a Raven ID links their account so the house auto-appears in their roommates tab.' : 'Enter a name or <span style="color:#A855F7;font-weight:700">@ravenid</span> - using a Raven ID links their account so the trip auto-appears in their hub.';
   const currentMembersLabel = isRoommateHouse ? 'Current Housemates' : 'Current Members';
-  const saveMembersLabel = isRoommateHouse ? 'âœ“ Save Housemates' : 'âœ“ Save New Members';
+  const saveMembersLabel = isRoommateHouse ? 'Save Housemates' : 'Save New Members';
   const inviteTitle = isRoommateHouse ? 'Invite to House' : 'Invite to Trip';
-  const shareLinkHeading = isRoommateHouse ? 'ðŸ  House Link' : 'ðŸ“‹ Trip Link';
+  const shareLinkHeading = isRoommateHouse ? 'House Link' : 'Trip Link';
   const shareLinkHelp = isRoommateHouse ? 'For housemates already added to this home' : 'For people already added to the trip';
-  const shareLinkCopy = isRoommateHouse ? 'ðŸ“‹ Copy House Link' : 'ðŸ“‹ Copy';
-  const shareLinkShare = isRoommateHouse ? 'ðŸ“¤ Share House' : 'ðŸ“¤ Share';
-  const inviteLinkHeading = isRoommateHouse ? 'ðŸ¡ House Invite Link' : 'ðŸ“¨ Invite Link';
+  const shareLinkCopy = isRoommateHouse ? 'Copy House Link' : 'Copy';
+  const shareLinkShare = isRoommateHouse ? 'Share House' : 'Share';
+  const inviteLinkHeading = isRoommateHouse ? 'House Invite Link' : 'Invite Link';
   const inviteLinkHelp = isRoommateHouse ? 'Requires creating a RAVEN account to join the house ledger' : 'Requires creating a RAVEN account';
-  const inviteCopyLabel = isRoommateHouse ? 'ðŸ“‹ Copy House Invite' : 'ðŸ“‹ Copy Invite';
-  const inviteShareLabel = isRoommateHouse ? 'ðŸ“¤ Share House Invite' : 'ðŸ“¤ Share';
-  const countdownEmptyLabel = isRoommateHouse ? 'ðŸ  No house billing cycle set' : 'ðŸ“… No trip date set';
+  const inviteCopyLabel = isRoommateHouse ? 'Copy House Invite' : 'Copy Invite';
+  const inviteShareLabel = isRoommateHouse ? 'Share House Invite' : 'Share';
+  const countdownEmptyLabel = isRoommateHouse ? 'No house billing cycle set' : 'No trip date set';
   const countdownEmptyHint = isRoommateHouse ? 'Set dates in house settings' : 'Set date in settings';
 
-  let topTripStatusBadge = `<div style="display:inline-flex;align-items:center;gap:6px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);padding:4px 12px;border-radius:12px;font-size:10px;font-weight:700;color:#30D158;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:12px"><span style="width:5px;height:5px;border-radius:50%;background:#30D158;animation:blink 2s infinite"></span>${isRoommateHouse ? 'House Mode Â· Live' : 'Trip Hub Â· Live'}</div>`;
+  let topTripStatusBadge = `<div style="display:inline-flex;align-items:center;gap:6px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);padding:4px 12px;border-radius:12px;font-size:10px;font-weight:700;color:#30D158;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:12px"><span style="width:5px;height:5px;border-radius:50%;background:#30D158;animation:blink 2s infinite"></span>${isRoommateHouse ? 'House Mode - Live' : 'Trip Hub - Live'}</div>`;
   if (trip.trip_date) {
     try {
       const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
@@ -3477,8 +3477,8 @@ app.get('/trip/:tripId', async (req, res) => {
   }
 
   const coverHTML = trip.cover_image
-    ? `<div style="max-width:800px;margin:0 auto;padding:16px 20px 0"><div style="position:relative;width:100%;height:190px;border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,0.07)"><img src="${baseUrl}/trip/${tripId}/cover-image" id="cover-img" style="width:100%;height:100%;object-fit:cover"><button id="cover-change-btn" style="position:absolute;bottom:10px;right:10px;padding:7px 14px;background:rgba(0,0,0,0.7);border:1px solid rgba(255,255,255,0.2);border-radius:8px;color:#fff;font-family:'Epilogue',sans-serif;font-size:12px;font-weight:600;cursor:pointer">ðŸ“· Change</button><input id="cover-upload" type="file" accept="image/*" style="display:none"></div></div>`
-    : `<div style="max-width:800px;margin:16px auto 0;padding:0 20px"><div id="cover-empty" style="width:100%;height:100px;border:2px dashed rgba(124,58,237,0.3);border-radius:16px;display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;background:rgba(124,58,237,0.03)"><span style="font-size:20px">ðŸ–¼</span><span style="font-size:13px;color:#6E6B80;font-weight:500">${coverEmptyLabel}</span></div><input id="cover-upload" type="file" accept="image/*" style="display:none"></div>`;
+    ? `<div style="max-width:800px;margin:0 auto;padding:16px 20px 0"><div style="position:relative;width:100%;height:190px;border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,0.07)"><img src="${baseUrl}/trip/${tripId}/cover-image" id="cover-img" style="width:100%;height:100%;object-fit:cover"><button id="cover-change-btn" style="position:absolute;bottom:10px;right:10px;padding:7px 14px;background:rgba(0,0,0,0.7);border:1px solid rgba(255,255,255,0.2);border-radius:8px;color:#fff;font-family:'Epilogue',sans-serif;font-size:12px;font-weight:600;cursor:pointer">Change</button><input id="cover-upload" type="file" accept="image/*" style="display:none"></div></div>`
+    : `<div style="max-width:800px;margin:16px auto 0;padding:0 20px"><div id="cover-empty" style="width:100%;height:100px;border:2px dashed rgba(124,58,237,0.3);border-radius:16px;display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;background:rgba(124,58,237,0.03)"><span style="font-size:13px;color:#6E6B80;font-weight:500">${coverEmptyLabel}</span></div><input id="cover-upload" type="file" accept="image/*" style="display:none"></div>`;
 
   const visiblePeople = people.slice(0, 5);
   const overflowPeople = people.slice(5);
@@ -3509,13 +3509,13 @@ app.get('/trip/:tripId', async (req, res) => {
 
   let countdownHTML = '';
   if (trip.trip_date) {
-    // Pure date arithmetic â€” no timezone Date objects to avoid UTC/ET drift on Railway servers
+    // Pure date arithmetic  no timezone Date objects to avoid UTC/ET drift on Railway servers
     const now = new Date();
     // Get today's date in Eastern Time as YYYY-MM-DD string
     const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }); // en-CA gives YYYY-MM-DD
     const [ty, tm, td] = todayStr.split('-').map(Number);
     const [ry, rm, rd] = trip.trip_date.split('-').map(Number);
-    // Compare as plain numbers â€” no timezone conversion needed
+    // Compare as plain numbers  no timezone conversion needed
     const todayNum = ty * 10000 + tm * 100 + td;
     const tripNum  = ry * 10000 + rm * 100 + rd;
     // Days between: use UTC dates with same time to avoid DST issues
@@ -3525,20 +3525,20 @@ app.get('/trip/:tripId', async (req, res) => {
     const tripDateLabel = new Date(tripUTC).toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric', timeZone:'UTC' });
     if (days > 0) {
       const dueDateRow = trip.due_date
-        ? `<div style="margin-top:6px;display:inline-flex;align-items:center;gap:6px;padding:5px 12px;background:rgba(255,107,53,0.07);border:1px solid rgba(255,107,53,0.2);border-radius:8px"><span style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#FF6B35">ðŸ’° Bill Due</span><span style="font-size:11px;color:#9896A8">${new Date(trip.due_date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span><span id="edit-due-date-btn" style="font-size:10px;color:#FF6B35;cursor:pointer;margin-left:4px;opacity:0.7">edit</span></div><div style="margin-top:6px;font-size:11px;color:#9896A8">Friendly reminder: all bills are due by this date.</div>`
+        ? `<div style="margin-top:6px;display:inline-flex;align-items:center;gap:6px;padding:5px 12px;background:rgba(255,107,53,0.07);border:1px solid rgba(255,107,53,0.2);border-radius:8px"><span style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#FF6B35">Bill Due</span><span style="font-size:11px;color:#9896A8">${new Date(trip.due_date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span><span id="edit-due-date-btn" style="font-size:10px;color:#FF6B35;cursor:pointer;margin-left:4px;opacity:0.7">edit</span></div><div style="margin-top:6px;font-size:11px;color:#9896A8">Friendly reminder: all bills are due by this date.</div>`
         : `<div style="margin-top:6px;display:inline-flex;align-items:center;gap:6px;padding:5px 12px;background:rgba(255,255,255,0.03);border:1px dashed rgba(255,255,255,0.1);border-radius:8px;cursor:pointer" id="add-due-date-btn"><span style="font-size:10px;color:#6E6B80">+ Set bill due date</span></div>`;
       const endDateRow = trip.end_date
-        ? `<div style="margin-top:4px;display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:rgba(110,107,128,0.08);border:1px solid rgba(110,107,128,0.2);border-radius:8px"><span style="font-size:10px;color:#6E6B80">ðŸ Trip ends</span><span style="font-size:10px;color:#9896A8">${new Date(trip.end_date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span></div>`
+        ? `<div style="margin-top:4px;display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:rgba(110,107,128,0.08);border:1px solid rgba(110,107,128,0.2);border-radius:8px"><span style="font-size:10px;color:#6E6B80">Trip ends</span><span style="font-size:10px;color:#9896A8">${new Date(trip.end_date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span></div>`
         : `<div style="margin-top:4px;display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:rgba(255,255,255,0.02);border:1px dashed rgba(255,255,255,0.07);border-radius:8px;cursor:pointer" id="add-end-date-btn"><span style="font-size:10px;color:#6E6B80">+ Set trip end date</span></div>`;
-      countdownHTML = `<div style="background:linear-gradient(135deg,rgba(124,58,237,0.12),rgba(48,209,88,0.08));border:1px solid rgba(124,58,237,0.22);border-radius:16px;padding:20px;text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#C084FC;font-weight:700;margin-bottom:8px">${isRoommateHouse ? 'ðŸ  Next House Cycle' : 'âœˆï¸ Countdown to Trip'}</div><div style="font-size:72px;font-weight:900;line-height:1;color:#F0EEF8;margin-bottom:4px">${days}</div><div style="font-size:13px;color:#9896A8">day${days!==1?'s':''} to go Â· ${tripDateLabel}</div>${endDateRow}${dueDateRow}</div>`;
+      countdownHTML = `<div style="background:linear-gradient(135deg,rgba(124,58,237,0.12),rgba(48,209,88,0.08));border:1px solid rgba(124,58,237,0.22);border-radius:16px;padding:20px;text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#C084FC;font-weight:700;margin-bottom:8px">${isRoommateHouse ? 'Next House Cycle' : 'Countdown to Trip'}</div><div style="font-size:72px;font-weight:900;line-height:1;color:#F0EEF8;margin-bottom:4px">${days}</div><div style="font-size:13px;color:#9896A8">day${days!==1?'s':''} to go - ${tripDateLabel}</div>${endDateRow}${dueDateRow}</div>`;
     } else if (days === 0) {
       const dueDateRow = trip.due_date
         ? `<div style="margin-top:8px;font-size:11px;color:#9896A8">Friendly reminder: all bills are due by ${new Date(trip.due_date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}.</div>`
         : '';
-      countdownHTML = `<div style="background:linear-gradient(135deg,rgba(48,209,88,0.12),rgba(124,58,237,0.08));border:1px solid rgba(48,209,88,0.3);border-radius:16px;padding:20px;text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#30D158;font-weight:700;margin-bottom:8px">${isRoommateHouse ? 'ðŸ  House Cycle is Live' : 'âœˆï¸ Trip is Active'}</div><div style="font-size:48px;font-weight:900;line-height:1;color:#30D158;margin-bottom:4px">${isRoommateHouse ? 'ðŸ¡' : 'ðŸ›«'}</div><div style="font-size:13px;color:#9896A8">${isRoommateHouse ? 'Cycle starts today' : 'Started today'} Â· ${tripDateLabel}</div>${dueDateRow}</div>`;
+      countdownHTML = `<div style="background:linear-gradient(135deg,rgba(48,209,88,0.12),rgba(124,58,237,0.08));border:1px solid rgba(48,209,88,0.3);border-radius:16px;padding:20px;text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#30D158;font-weight:700;margin-bottom:8px">${isRoommateHouse ? 'House Cycle is Live' : 'Trip is Active'}</div><div style="font-size:13px;color:#9896A8">${isRoommateHouse ? 'Cycle starts today' : 'Started today'} - ${tripDateLabel}</div>${dueDateRow}</div>`;
     } else {
       const ago = Math.abs(days);
-      // Check if end_date has passed â€” if so, show "Trip Completed"
+      // Check if end_date has passed  if so, show "Trip Completed"
       let isCompleted = false;
       let isActive = false;
       let completedAgo = ago;
@@ -3558,10 +3558,10 @@ app.get('/trip/:tripId', async (req, res) => {
         ? `<div style="font-size:11px;color:#9896A8;margin-top:6px">Friendly reminder: all bills are due by ${new Date(trip.due_date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}.</div>`
         : '';
       countdownHTML = isCompleted
-        ? `<div style="background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.3);border-radius:16px;padding:16px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:700;margin-bottom:4px">${isRoommateHouse ? 'âœ… House Cycle Closed' : 'âœ… Trip Completed'}</div><div style="font-size:12px;color:#6E6B80">Started ${tripDateLabel}${trip.end_date ? ' Â· ended ' + new Date(trip.end_date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}) : ''}</div><div style="font-size:11px;color:#6E6B80;margin-top:4px">${completedAgo} day${completedAgo!==1?'s':''} since the ${isRoommateHouse ? 'house cycle wrapped' : 'trip wrapped up'}</div>${dueDateMsg}</div>`
+        ? `<div style="background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.3);border-radius:16px;padding:16px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:700;margin-bottom:4px">${isRoommateHouse ? 'House Cycle Closed' : 'Trip Completed'}</div><div style="font-size:12px;color:#6E6B80">Started ${tripDateLabel}${trip.end_date ? ' - ended ' + new Date(trip.end_date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}) : ''}</div><div style="font-size:11px;color:#6E6B80;margin-top:4px">${completedAgo} day${completedAgo!==1?'s':''} since the ${isRoommateHouse ? 'house cycle wrapped' : 'trip wrapped up'}</div>${dueDateMsg}</div>`
         : isActive
-          ? `<div style="background:linear-gradient(135deg,rgba(48,209,88,0.1),rgba(255,193,7,0.06));border:1px solid rgba(48,209,88,0.24);border-radius:16px;padding:18px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:700;margin-bottom:4px">${isRoommateHouse ? 'ðŸŸ¢ House Cycle is Active' : 'ðŸŸ¢ Trip is Active'}</div><div style="font-size:12px;color:#6E6B80">From ${tripDateLabel}${trip.end_date ? ' through ' + new Date(trip.end_date+'T12:00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}) : ''}</div>${dueDateMsg}</div>`
-          : `<div style="background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.18);border-radius:16px;padding:16px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:600">âœ… ${isRoommateHouse ? 'House cycle was' : 'Trip was'} ${ago>0?ago+' day'+(ago!==1?'s':'')+' ago':'today'} Â· ${tripDateLabel}</div>${dueDateMsg}</div>`;
+          ? `<div style="background:linear-gradient(135deg,rgba(48,209,88,0.1),rgba(255,193,7,0.06));border:1px solid rgba(48,209,88,0.24);border-radius:16px;padding:18px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:700;margin-bottom:4px">${isRoommateHouse ? 'House Cycle is Active' : 'Trip is Active'}</div><div style="font-size:12px;color:#6E6B80">From ${tripDateLabel}${trip.end_date ? ' through ' + new Date(trip.end_date+'T12:00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}) : ''}</div>${dueDateMsg}</div>`
+          : `<div style="background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.18);border-radius:16px;padding:16px;text-align:center"><div style="font-size:13px;color:#30D158;font-weight:600">${isRoommateHouse ? 'House cycle was' : 'Trip was'} ${ago>0?ago+' day'+(ago!==1?'s':'')+' ago':'today'} - ${tripDateLabel}</div>${dueDateMsg}</div>`;
     }
   } else {
     countdownHTML = `<div style="background:#13131A;border:1px dashed rgba(255,255,255,0.08);border-radius:14px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="font-size:13px;color:#6E6B80">${countdownEmptyLabel}</div><div style="font-size:11px;color:#6E6B80;font-style:italic">${countdownEmptyHint}</div></div>`;
@@ -3626,9 +3626,9 @@ app.get('/trip/:tripId', async (req, res) => {
     const displayName = getMemberDisplayName(p);
     const profile = getMemberProfile(p);
     const rawOwed = totals[p] || 0;
-    const settledCredit = Math.min(settledCredits[p.toLowerCase()] || 0, rawOwed); // cap at rawOwed â€” prevents 999999 sentinel over-settling
+    const settledCredit = Math.min(settledCredits[p.toLowerCase()] || 0, rawOwed); // cap at rawOwed  prevents 999999 sentinel over-settling
     let amtOwed = Math.round(Math.max(0, rawOwed - settledCredit) * 100) / 100;
-    const isSettled = rawOwed > 0.02 && amtOwed <= 0.02; // fully settled (allow up to 2Â¢ rounding drift)
+    const isSettled = rawOwed > 0.02 && amtOwed <= 0.02; // fully settled (allow up to 2 rounding drift)
     const isPartiallySettled = settledCredit > 0 && amtOwed > 0.02;
     const amtReceivable = tripUsesSimpleSplit
       ? roundMoney(simpleSettlementPlan?.receivableByPerson?.[p] || 0)
@@ -3649,7 +3649,7 @@ app.get('/trip/:tripId', async (req, res) => {
     const spendMetaParts = [];
     if (assignedTotal > 0.005) spendMetaParts.push('assigned $' + assignedTotal.toFixed(2));
     if (frontedTotal > 0.005) spendMetaParts.push('fronted $' + frontedTotal.toFixed(2));
-    const spendMeta = spendMetaParts.join(' Â· ');
+    const spendMeta = spendMetaParts.join('  ');
 
     const personId = 'person-' + p.replace(/[^a-z0-9]/gi,'_');
 
@@ -3670,7 +3670,7 @@ app.get('/trip/:tripId', async (req, res) => {
     // "Mark as Paid" button for the whole person (settles all their debt at once)
     const markPaidBtnHtml = payerEntries.length > 0
       ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.06)">
-          <button class="mark-settled-btn" data-person="${personId}" data-name="${esc(p)}" id="markpaid-${personId}" data-settle-amount="${effectiveAmtOwed.toFixed(2)}" style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:9px;color:#30D158;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer">âœ“ Settle balance Â· $${effectiveAmtOwed.toFixed(2)}</button>
+          <button class="mark-settled-btn" data-person="${personId}" data-name="${esc(p)}" id="markpaid-${personId}" data-settle-amount="${effectiveAmtOwed.toFixed(2)}" style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:9px;color:#30D158;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer">Settle balance - $${effectiveAmtOwed.toFixed(2)}</button>
         </div>`
       : '';
 
@@ -3680,21 +3680,21 @@ app.get('/trip/:tripId', async (req, res) => {
         <div style="display:flex;align-items:center;gap:10px;cursor:pointer" data-open-profile="${esc(p)}" title="View ${esc(displayName)}'s profile">
           <div data-person-avatar="${esc(p)}" style="width:34px;height:34px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;overflow:hidden">${profile?.avatar_url ? `<img src="${esc(profile.avatar_url)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : esc(displayName[0].toUpperCase())}</div>
           <div>
-            <div style="font-weight:600;font-size:14px;display:flex;align-items:center;gap:6px">${esc(displayName)} <span style="font-size:11px;color:#6E6B80;font-weight:400">â€º</span></div>
+            <div style="font-weight:600;font-size:14px;display:flex;align-items:center;gap:6px">${esc(displayName)} <span style="font-size:11px;color:#6E6B80;font-weight:400">&gt;</span></div>
             <div class="person-status-display" style="font-size:11px;color:${effectiveIsSettled?'#30D158':effectiveAmtOwed>0?'#FF9A3C':effectiveIsCreditor?'#A855F7':'#30D158'}">
-              ${effectiveIsSettled ? 'âœ… all settled' : effectiveAmtOwed>0 ? (effectiveIsPartiallySettled ? 'still owes $' + effectiveAmtOwed.toFixed(2) : 'owes $' + effectiveAmtOwed.toFixed(2)) : effectiveIsCreditor ? 'collecting $' + amtReceivable.toFixed(2) : 'all settled âœ“'}
+              ${effectiveIsSettled ? 'all settled' : effectiveAmtOwed>0 ? (effectiveIsPartiallySettled ? 'still owes $' + effectiveAmtOwed.toFixed(2) : 'owes $' + effectiveAmtOwed.toFixed(2)) : effectiveIsCreditor ? 'collecting $' + amtReceivable.toFixed(2) : 'all settled'}
             </div>
           </div>
         </div>
         <div style="text-align:right">
           <div class="person-balance-display" data-original-owed="${rawOwed.toFixed(2)}" data-raw-owed="${effectiveAmtOwed.toFixed(2)}" style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${effectiveIsSettled?'#30D158':effectiveAmtOwed>0?'#FF9A3C':effectiveIsCreditor?'#A855F7':'#9896A8'}">
-            ${effectiveIsSettled ? '$0 âœ…' : effectiveAmtOwed>0 ? '-$'+effectiveAmtOwed.toFixed(2) : effectiveIsCreditor ? '+$'+amtReceivable.toFixed(2) : '$0.00'}
+            ${effectiveIsSettled ? '$0.00' : effectiveAmtOwed>0 ? '-$'+effectiveAmtOwed.toFixed(2) : effectiveIsCreditor ? '+$'+amtReceivable.toFixed(2) : '$0.00'}
           </div>
           ${spendMeta ? `<div style="margin-top:3px;font-size:10px;color:#6E6B80">${spendMeta}</div>` : ''}
         </div>
       </div>
       ${effectiveIsSettled
-        ? `<div style="margin-top:6px;display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(48,209,88,0.07);border:1px solid rgba(48,209,88,0.2);border-radius:8px"><span style="font-size:13px;color:#30D158;font-weight:600">âœ… Fully Settled</span></div>`
+        ? `<div style="margin-top:6px;display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(48,209,88,0.07);border:1px solid rgba(48,209,88,0.2);border-radius:8px"><span style="font-size:13px;color:#30D158;font-weight:600">Fully Settled</span></div>`
         : payerEntries.length>0
           ? `<div class="client-pay-block">${payBtnsHtml}${markPaidBtnHtml}</div>`
           : ''}
@@ -3721,7 +3721,7 @@ app.get('/trip/:tripId', async (req, res) => {
     const dateStr = new Date(r.created_at).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'America/New_York'});
     const receiptId = 'receipt-' + rIdx;
 
-    // Split pills (collapsed view) â€” only non-payers
+    // Split pills (collapsed view)  only non-payers
     const splitPillsHtml = splitEntries.map(([p,a]) =>
       `<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:rgba(255,255,255,0.05);border-radius:20px;font-size:12px;color:#9896A8">
         <span style="width:18px;height:18px;border-radius:50%;background:${avatarColorMap[people.indexOf(p) % avatarColorMap.length] || '#6E6B80'};display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0">${esc(p[0].toUpperCase())}</span>
@@ -3729,7 +3729,7 @@ app.get('/trip/:tripId', async (req, res) => {
       </span>`
     ).join('');
 
-    // Pay button slot â€” rendered client-side using PAY_PROFILES (includes localStorage enrichment)
+    // Pay button slot  rendered client-side using PAY_PROFILES (includes localStorage enrichment)
     function payButtonsHtml(forPerson, amountOwed) {
       return `<div class="pay-slot" data-payer="${esc(forPerson)}" data-amount="${parseFloat(amountOwed).toFixed(2)}">
         <div class="pay-btns" style="display:flex;flex-wrap:wrap;gap:8px">
@@ -3738,7 +3738,7 @@ app.get('/trip/:tripId', async (req, res) => {
       </div>`;
     }
 
-    // â”€â”€ ITEMS breakdown â”€â”€
+    //  ITEMS breakdown 
     let itemsHtml = '';
     if (items.length > 0) {
       itemsHtml = `<div style="margin-bottom:16px">
@@ -3755,7 +3755,7 @@ app.get('/trip/:tripId', async (req, res) => {
       </div>`;
     }
 
-    // â”€â”€ WHO OWES WHAT (payer excluded â€” they paid) â”€â”€
+    //  WHO OWES WHAT (payer excluded  they paid) 
     const personBreakdownHtml = splitEntries.length > 0 ? `
       <div style="margin-bottom:16px">
         <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:#6E6B80;font-weight:700;margin-bottom:10px">${payer ? `Owes ${esc(payerDisplay)}` : 'Who Owes What'}</div>
@@ -3787,22 +3787,22 @@ app.get('/trip/:tripId', async (req, res) => {
                 if (!payer) return '';
                 // FIRST: check if this specific receipt is already settled
                 if (_rcptSettled || _fullSettled) {
-                  return '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px"><button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" data-settled="1" style="padding:7px 14px;background:rgba(48,209,88,0.15);border:1px solid rgba(48,209,88,0.4);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">âœ… Settled Â· tap to undo</button></div>';
+                  return '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px"><button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" data-settled="1" style="padding:7px 14px;background:rgba(48,209,88,0.15);border:1px solid rgba(48,209,88,0.4);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">Settled - tap to undo</button></div>';
                 }
                 // THEN: show "Mark as Paid" if person still owes on this receipt
-                return '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px;flex-wrap:wrap">' + payButtonsHtml(payer, amount) + '<button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" style="padding:7px 14px;background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.2);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">âœ“ Settle this receipt</button></div>';
+                return '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px;flex-wrap:wrap">' + payButtonsHtml(payer, amount) + '<button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" style="padding:7px 14px;background:rgba(48,209,88,0.06);border:1px solid rgba(48,209,88,0.2);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">Settle this receipt</button></div>';
               })()}
             </div>`;
           }).join('')}
         </div>
       </div>` : '';
 
-    // â”€â”€ TOTALS + PAYER BADGE â”€â”€
+    //  TOTALS + PAYER BADGE 
     const payerBadgeHtml = payer ? `
       <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:rgba(124,58,237,0.07);border:1px solid rgba(124,58,237,0.2);border-radius:10px;margin-bottom:12px">
         <div data-person-avatar="${esc(payer)}" style="width:32px;height:32px;border-radius:50%;background:${avatarColorMap[people.indexOf(payer)%avatarColorMap.length]||'#7C3AED'};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden">${esc(payer[0].toUpperCase())}</div>
         <div style="flex:1">
-          <div style="font-size:12px;color:#A855F7;font-weight:700">ðŸ’³ Paid by ${esc(payerDisplay)}</div>
+          <div style="font-size:12px;color:#A855F7;font-weight:700">Paid by ${esc(payerDisplay)}</div>
           <div style="font-size:11px;color:#6E6B80">Others need to pay them back</div>
         </div>
         <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:#A855F7">$${total.toFixed(2)}</div>
@@ -3824,7 +3824,7 @@ app.get('/trip/:tripId', async (req, res) => {
             <span style="font-family:'Bebas Neue',sans-serif;font-size:24px;color:#30D158;letter-spacing:0.03em">$${total.toFixed(2)}</span>
           </div>
           <div style="display:flex;justify-content:space-between;font-size:11px;color:#6E6B80">
-            <span>${splitterCount} ${splitterCount===1?'person':'people'} splitting${payer?` Â· paid by ${esc(payerDisplay)}`:''}</span>
+            <span>${splitterCount} ${splitterCount===1?'person':'people'} splitting${payer?`  paid by ${esc(payerDisplay)}`:''}</span>
             <span>${dateStr}</span>
           </div>
         </div>
@@ -3832,9 +3832,9 @@ app.get('/trip/:tripId', async (req, res) => {
 
     const thumbHtml = r.photo_url
       ? '<img src="' + esc(r.photo_url) + '" style="width:44px;height:44px;border-radius:10px;object-fit:cover;flex-shrink:0;border:1px solid rgba(255,255,255,0.1)">'
-      : '<div style="width:44px;height:44px;border-radius:10px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.2);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">ðŸ§¾</div>';
+      : '<div style="width:44px;height:44px;border-radius:10px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.2);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0"></div>';
     const receiptAddedByHtml = r.added_by
-      ? `<div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);font-size:11px;color:#6E6B80">ðŸ‘¤ ${esc(r.added_by)} added this receipt</div>`
+      ? `<div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);font-size:11px;color:#6E6B80"> ${esc(r.added_by)} added this receipt</div>`
       : '';
 
     return `
@@ -3844,16 +3844,16 @@ app.get('/trip/:tripId', async (req, res) => {
           ${thumbHtml}
           <div style="flex:1;min-width:0">
             <div style="font-weight:700;font-size:15px;color:#F0EEF8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.name||'Receipt')}</div>
-            <div style="font-size:11px;color:#6E6B80;margin-top:2px">${dateStr} Â· ${splitterCount} ${splitterCount===1?'person':'people'}</div>            ${payer ? '<div style="display:inline-flex;align-items:center;gap:4px;margin-top:3px;padding:2px 8px;background:rgba(168,85,247,0.12);border:1px solid rgba(168,85,247,0.25);border-radius:6px"><span style="font-size:10px;color:#A855F7;font-weight:700">ðŸ’³ Paid by ' + esc(payer) + '</span></div>' : ''}
+            <div style="font-size:11px;color:#6E6B80;margin-top:2px">${dateStr}  ${splitterCount} ${splitterCount===1?'person':'people'}</div>            ${payer ? '<div style="display:inline-flex;align-items:center;gap:4px;margin-top:3px;padding:2px 8px;background:rgba(168,85,247,0.12);border:1px solid rgba(168,85,247,0.25);border-radius:6px"><span style="font-size:10px;color:#A855F7;font-weight:700"> Paid by ' + esc(payer) + '</span></div>' : ''}
             ${splitEntries.length > 0 ? '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">' + splitPillsHtml + '</div>' : ''}
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;padding-top:2px">
           <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:#30D158;letter-spacing:0.03em;line-height:1">$${total.toFixed(2)}</div>
-          <button onclick="event.stopPropagation();openEditReceipt('${esc(r.id)}')" style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.06);border:none;color:#9896A8;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px" title="Edit">âœŽ</button>
-          ${!r.photo_url ? `<button onclick="event.stopPropagation();addPhotoToReceipt('${esc(r.id)}')" style="width:26px;height:26px;border-radius:50%;background:rgba(48,209,88,0.08);border:none;color:#30D158;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px" title="Add photo">ðŸ“Ž</button>` : ''}
-          <button class="admin-delete-receipt-btn" data-receipt-id="${r.id}" data-receipt-name="${esc(r.name||'Receipt')}" onclick="event.stopPropagation();adminDeleteReceipt(this)" style="width:26px;height:26px;border-radius:50%;background:rgba(255,68,68,0.08);border:none;color:#FF6B6B;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px" title="Delete">ðŸ—‘</button>
-          <div id="${receiptId}-chevron" style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center;font-size:11px;color:#6E6B80;transition:transform 0.2s">â–¾</div>
+          <button onclick="event.stopPropagation();openEditReceipt('${esc(r.id)}')" style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.06);border:none;color:#9896A8;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px" title="Edit"></button>
+          ${!r.photo_url ? `<button onclick="event.stopPropagation();addPhotoToReceipt('${esc(r.id)}')" style="width:26px;height:26px;border-radius:50%;background:rgba(48,209,88,0.08);border:none;color:#30D158;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px" title="Add photo"></button>` : ''}
+          <button class="admin-delete-receipt-btn" data-receipt-id="${r.id}" data-receipt-name="${esc(r.name||'Receipt')}" onclick="event.stopPropagation();adminDeleteReceipt(this)" style="width:26px;height:26px;border-radius:50%;background:rgba(255,68,68,0.08);border:none;color:#FF6B6B;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px" title="Delete"></button>
+          <div id="${receiptId}-chevron" style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center;font-size:11px;color:#6E6B80;transition:transform 0.2s"></div>
         </div>
       </div>
       <div id="${receiptId}" style="display:none;padding:0 16px 20px;margin-top:-4px">
@@ -3895,13 +3895,13 @@ app.get('/trip/:tripId', async (req, res) => {
   const existingMemberRows = people.map((p, i) => {
     const displayName = getMemberDisplayName(p);
     const isCoAdmin = coAdminsList.map(n=>n.toLowerCase()).includes(p.toLowerCase());
-    const adminBadge = isCoAdmin ? `<span style="font-size:10px;background:rgba(124,58,237,0.15);color:#A855F7;border:1px solid rgba(124,58,237,0.25);border-radius:6px;padding:2px 7px;font-weight:700;margin-left:6px">âš™ï¸ co-admin</span>` : '';
+    const adminBadge = isCoAdmin ? `<span style="font-size:10px;background:rgba(124,58,237,0.15);color:#A855F7;border:1px solid rgba(124,58,237,0.25);border-radius:6px;padding:2px 7px;font-weight:700;margin-left:6px"> co-admin</span>` : '';
     const adminBtn = `<button onclick="event.stopPropagation();toggleCoAdmin(this,'${esc(p)}')" data-name="${esc(p)}" data-is-admin="${isCoAdmin?'1':'0'}" class="admin-only-btn" style="display:none;padding:5px 10px;font-size:11px;font-weight:700;border-radius:7px;border:1px solid ${isCoAdmin?'rgba(124,58,237,0.4)':'rgba(255,255,255,0.12)'};background:${isCoAdmin?'rgba(124,58,237,0.12)':'rgba(255,255,255,0.05)'};color:${isCoAdmin?'#A855F7':'#9896A8'};cursor:pointer;font-family:inherit">${isCoAdmin?'- Admin':'+ Admin'}</button>`;
     const removeBtn = `<button onclick="event.stopPropagation();removeMember(this,'${esc(p)}')" class="admin-only-btn" style="display:none;padding:5px 10px;font-size:11px;font-weight:700;border-radius:7px;border:1px solid rgba(255,68,68,0.3);background:rgba(255,68,68,0.08);color:#FF6B6B;cursor:pointer;font-family:inherit;margin-left:4px">Remove</button>`;
     return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#13131A;border:1px solid rgba(255,255,255,0.07);border-radius:10px"><div style="display:flex;align-items:center;gap:9px;flex:1;min-width:0"><div style="width:28px;height:28px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">${esc(displayName[0].toUpperCase())}</div><span style="font-size:13px;font-weight:600">${esc(displayName)}</span>${adminBadge}</div><div style="display:flex;align-items:center;gap:4px;flex-shrink:0">${adminBtn}${removeBtn}</div></div>`;
   }).join('');
 
-  // All user-controlled data goes into a single JSON blob read by JS â€” NEVER interpolated into JS template literals
+  // All user-controlled data goes into a single JSON blob read by JS  NEVER interpolated into JS template literals
   const pageData = JSON.stringify({
     tripId,
     tripType: trip.type || '',
@@ -3942,17 +3942,17 @@ app.get('/trip/:tripId', async (req, res) => {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>${experienceIcon} ${esc(trip.name)} â€” RAVEN</title>
-<meta property="og:title" content="${experienceIcon} ${esc(trip.name)} â€” ${pageTitleSuffix}">
-<meta property="og:description" content="${people.length} ${memberCountLabel} Â· ${(receipts||[]).length} ${receiptCountLabel}${(receipts||[]).length!==1?'s':''} Â· $${totalSpend.toFixed(2)} total">
+<title>${experienceIcon} ${esc(trip.name)}  RAVEN</title>
+<meta property="og:title" content="${experienceIcon} ${esc(trip.name)}  ${pageTitleSuffix}">
+<meta property="og:description" content="${people.length} ${memberCountLabel}  ${(receipts||[]).length} ${receiptCountLabel}${(receipts||[]).length!==1?'s':''}  $${totalSpend.toFixed(2)} total">
 <meta property="og:image" content="${trip.cover_image ? baseUrl+'/trip/'+tripId+'/cover-image' : 'https://ravensplit.com/raven-hero.png'}">
 <meta property="og:image:width" content="800">
 <meta property="og:image:height" content="400">
 <meta property="og:url" content="${tripUrl}">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="${experienceIcon} ${esc(trip.name)} â€” ${pageTitleSuffix}">
-<meta name="twitter:description" content="${people.length} ${memberCountLabel} Â· ${(receipts||[]).length} ${receiptCountLabel}${(receipts||[]).length!==1?'s':''} Â· $${totalSpend.toFixed(2)} total">
+<meta name="twitter:title" content="${experienceIcon} ${esc(trip.name)}  ${pageTitleSuffix}">
+<meta name="twitter:description" content="${people.length} ${memberCountLabel}  ${(receipts||[]).length} ${receiptCountLabel}${(receipts||[]).length!==1?'s':''}  $${totalSpend.toFixed(2)} total">
 <meta name="twitter:image" content="${trip.cover_image ? baseUrl+'/trip/'+tripId+'/cover-image' : 'https://ravensplit.com/raven-hero.png'}">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Epilogue:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -3985,12 +3985,12 @@ input:focus,textarea:focus{border-color:var(--purple)}
 </head>
 <body>
 
-<!-- All page data â€” safely JSON-encoded, never interpolated into JS -->
+<!-- All page data  safely JSON-encoded, never interpolated into JS -->
 <script id="page-data" type="application/json">${pageData.replace(/<\/script>/gi, '<\\/script>')}</script>
 
 <div class="hdr"><div class="hdr-inner">
-  <a href="${dashboardBackUrl}" style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;text-decoration:none;color:#9896A8;font-size:13px;font-weight:600;transition:all 0.15s" onmouseover="this.style.color='#F0EEF8';this.style.borderColor='rgba(255,255,255,0.25)'" onmouseout="this.style.color='#9896A8';this.style.borderColor='rgba(255,255,255,0.1)'">â† Dashboard</a>
-  <a href="${dashboardBackUrl}" id="raven-home-link" class="raven-home-link" style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:0.15em;text-decoration:none;color:#F0EEF8">ðŸª¶ RAVEN</a>
+  <a href="${dashboardBackUrl}" style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;text-decoration:none;color:#9896A8;font-size:13px;font-weight:600;transition:all 0.15s" onmouseover="this.style.color='#F0EEF8';this.style.borderColor='rgba(255,255,255,0.25)'" onmouseout="this.style.color='#9896A8';this.style.borderColor='rgba(255,255,255,0.1)'">Dashboard</a>
+  <a href="${dashboardBackUrl}" id="raven-home-link" class="raven-home-link" style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:0.15em;text-decoration:none;color:#F0EEF8">RAVEN</a>
   <div style="font-size:10px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:12px;font-weight:600">${esc(tripId)}</div>
 </div></div>
 
@@ -4069,7 +4069,7 @@ ${coverHTML}
       <div>
         <div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600">${whoPaidLabel}</div>
         <select id="r-paidby" style="width:100%;padding:12px 14px;background:#13131A;border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#F0EEF8;font-family:'Epilogue',sans-serif;font-size:14px;font-weight:600">
-          <option value="">â€” Select who paid â€”</option>
+          <option value="">Select who paid</option>
           ${people.map(p => '<option value="' + esc(p) + '">' + esc(p) + '</option>').join('')}
         </select>
       </div>
@@ -4084,7 +4084,7 @@ ${coverHTML}
       <div id="r-scan-status" style="display:none"></div>
       <div>
         <div style="font-size:12px;color:#6E6B80;margin-bottom:8px;font-weight:600">Split type</div>
-        <div style="display:flex;gap:8px"><button class="spl ae" id="r-btn-e" id="r-btn-e">âš–ï¸ Even</button><button class="spl" id="r-btn-i">ðŸ“‹ Itemized</button></div>
+          <div style="display:flex;gap:8px"><button class="spl ae" id="r-btn-e" id="r-btn-e">Even</button><button class="spl" id="r-btn-i">Itemized</button></div>
       </div>
       <div id="r-even-sec">
         <div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600">Total Amount</div>
@@ -4141,11 +4141,11 @@ ${coverHTML}
 <div class="sec" style="margin-top:20px">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;cursor:pointer" onclick="toggleReceipts()">
     <div class="sec-lbl" style="margin-bottom:0">${sectionReceiptsLabel} (${(receipts||[]).length})</div>
-    <div id="receipts-toggle" style="font-size:12px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:8px;user-select:none">${(receipts||[]).length > 0 ? 'â–¾ Show' : ''}</div>
+    <div id="receipts-toggle" style="font-size:12px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:8px;user-select:none">${(receipts||[]).length > 0 ? 'Show' : ''}</div>
   </div>
   <div id="receipts-body" style="display:none">
     ${(receipts||[]).length===0
-      ? '<div style="text-align:center;padding:28px 20px;color:#6E6B80;font-size:14px;background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:16px"><div style="font-size:32px;margin-bottom:10px">ðŸ§¾</div><div style="font-weight:600;color:#9896A8;margin-bottom:4px">' + emptyReceiptsTitle + '</div><div>' + emptyReceiptsBody + '</div></div>'
+      ? '<div style="text-align:center;padding:28px 20px;color:#6E6B80;font-size:14px;background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:16px"><div style="font-weight:600;color:#9896A8;margin-bottom:4px">' + emptyReceiptsTitle + '</div><div>' + emptyReceiptsBody + '</div></div>'
       : '<div class="card">' + receiptRows + '</div>'}
   </div>
 </div>
@@ -4164,7 +4164,7 @@ ${coverHTML}
     <div id="gif-preview-wrap" style="display:none;padding:10px 12px;border-bottom:1px solid var(--border)">
       <div style="display:flex;align-items:center;gap:8px">
         <img id="gif-preview-img" style="height:80px;border-radius:8px;object-fit:cover">
-        <button id="gif-clear-btn" style="padding:4px 10px;background:rgba(255,68,68,0.12);border:1px solid rgba(255,68,68,0.25);border-radius:6px;color:#FF6B6B;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">âœ• Remove</button>
+        <button id="gif-clear-btn" style="padding:4px 10px;background:rgba(255,68,68,0.12);border:1px solid rgba(255,68,68,0.25);border-radius:6px;color:#FF6B6B;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit"> Remove</button>
       </div>
     </div>
     <textarea id="comment-body" placeholder="${commentPlaceholder}" rows="2" style="border-radius:0;border:none;border-bottom:1px solid var(--border);background:transparent;resize:none;display:block"></textarea>
@@ -4173,7 +4173,7 @@ ${coverHTML}
       <div id="gif-results" style="display:flex;flex-wrap:wrap;gap:4px;padding:0 12px 10px;max-height:180px;overflow-y:auto"><div style="color:#6E6B80;font-size:12px;padding:8px 0">Type to search GIFs...</div></div>
     </div>
     <div style="display:flex">
-      <button id="gif-toggle-btn" style="padding:13px 16px;background:transparent;border:none;border-right:1px solid var(--border);color:#6E6B80;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;flex-shrink:0">ðŸŽ­ GIF</button>
+        <button id="gif-toggle-btn" style="padding:13px 16px;background:transparent;border:none;border-right:1px solid var(--border);color:#6E6B80;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;flex-shrink:0">GIF</button>
       <button id="post-comment-btn" style="flex:1;padding:13px;background:rgba(48,209,88,0.12);border:none;color:#30D158;font-family:inherit;font-size:15px;font-weight:700;cursor:pointer">${postCommentLabel}</button>
     </div>
   </div>
@@ -4183,7 +4183,7 @@ ${coverHTML}
 <div class="modal-bg" id="member-profile-modal" onclick="if(event.target.id==='member-profile-modal')closeMemberProfile()">
   <div style="background:#13131A;border:1px solid rgba(255,255,255,0.1);border-radius:24px 24px 0 0;width:100%;max-width:480px">
     <div style="height:130px;background:linear-gradient(135deg,#7C3AED,#30D158);border-radius:24px 24px 0 0;position:relative">
-      <button onclick="closeMemberProfile()" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,0.3);border:none;color:#fff;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;line-height:1;z-index:1">âœ•</button>
+      <button onclick="closeMemberProfile()" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,0.3);border:none;color:#fff;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;line-height:1;z-index:1">x</button>
       <div id="mp-avatar" style="position:absolute;bottom:-36px;left:24px;width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#30D158);border:4px solid #13131A;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;color:#fff;overflow:hidden"></div>
     </div>
     <div style="padding:48px 24px 32px">
@@ -4204,7 +4204,7 @@ ${coverHTML}
     <div style="width:36px;height:4px;background:rgba(255,255,255,0.15);border-radius:2px;margin:0 auto 20px"></div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
       <div style="font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:0.05em">${editReceiptTitle}</div>
-      <button onclick="closeEditReceipt()" style="background:rgba(255,255,255,0.07);border:none;color:#9896A8;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:16px">âœ•</button>
+      <button onclick="closeEditReceipt()" style="background:rgba(255,255,255,0.07);border:none;color:#9896A8;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:16px"></button>
     </div>
     <div style="display:flex;flex-direction:column;gap:16px">
       <div>
@@ -4214,7 +4214,7 @@ ${coverHTML}
       <div>
         <div style="font-size:12px;color:#6E6B80;font-weight:600;margin-bottom:6px">Who Paid?</div>
         <select id="edit-r-paidby" style="width:100%;padding:12px 14px;background:#0C0C12;border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#F0EEF8;font-family:'Epilogue',sans-serif;font-size:14px;font-weight:600">
-          <option value="">â€” No one selected â€”</option>
+          <option value=""> No one selected </option>
           ${people.map(p => '<option value="' + esc(p) + '">' + esc(p) + '</option>').join('')}
         </select>
       </div>
@@ -4246,7 +4246,7 @@ ${coverHTML}
     <div style="margin-bottom:16px"><div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">${settingsDateLabel}</div><input id="settings-date" type="date"></div>
     <div style="margin-bottom:16px"><div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">${settingsEndDateLabel} <span style="font-weight:400;text-transform:none;font-size:11px;letter-spacing:0">${settingsEndDateHint}</span></div><input id="settings-end-date" type="date"></div>
     <div style="margin-bottom:16px"><div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em">${settingsDueDateLabel} <span style="font-weight:400;text-transform:none;font-size:11px;letter-spacing:0">${settingsDueDateHint}</span></div><input id="settings-due-date" type="date"></div>
-    <button class="btn-g" id="save-settings-btn" style="margin-bottom:10px">ðŸ’¾ Save Changes</button>
+    <button class="btn-g" id="save-settings-btn" style="margin-bottom:10px"> Save Changes</button>
     <button class="btn-o" id="close-settings-btn">Cancel</button>
   </div>
 </div>
@@ -4299,7 +4299,7 @@ ${coverHTML}
 <div id="toast" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:#13131A;border:1px solid rgba(255,255,255,0.12);border-radius:12px;padding:12px 20px;font-size:13px;color:#F0EEF8;z-index:9999;opacity:0;transition:all 0.3s;white-space:nowrap;box-shadow:0 20px 60px rgba(0,0,0,0.5)"></div>
 
 <script>
-// â”€â”€ Read all data from JSON â€” no user content ever touches JS source code â”€â”€
+//  Read all data from JSON  no user content ever touches JS source code 
 const D = JSON.parse(document.getElementById('page-data').textContent);
 const TRIP_ID    = D.tripId;
 const TRIP_TOKEN = D.shareToken;
@@ -4315,7 +4315,7 @@ const TRIP_REMINDER_LAST_SENT_AT = D.reminderLastSentAt || '';
 const CREATOR_EMAIL = D.creatorEmail || '';
 let   PEOPLE     = D.people;
 const PAY_PROFILES = D.memberPayProfiles || {};
-const receiptsDataMap = {}; // keyed by receipt id â€” safe lookup, no user data in onclick
+const receiptsDataMap = {}; // keyed by receipt id  safe lookup, no user data in onclick
 (D.receiptsData || []).forEach(r => { receiptsDataMap[r.id] = r; });
 let ravenHomeArmedUntil = 0;
 
@@ -4348,7 +4348,7 @@ function buildApplePayHref(value, amount, contextName) {
   return 'sms:' + e164;
 }
 
-// Determine if current viewer is admin (creator) â€” checked after page loads
+// Determine if current viewer is admin (creator)  checked after page loads
 function checkIsAdmin() {
   try {
     const local = JSON.parse(localStorage.getItem('raven_profile') || '{}');
@@ -4357,7 +4357,7 @@ function checkIsAdmin() {
     const myEmailPrefix = myEmail.split('@')[0];
     // Creator check
     if (myEmail && CREATOR_EMAIL && myEmail === CREATOR_EMAIL.toLowerCase()) return true;
-    // Co-admin check â€” match by first name OR email prefix
+    // Co-admin check  match by first name OR email prefix
     const coAdmins = (D.coAdmins || []).map(n => n.toLowerCase());
     if (myName && coAdmins.includes(myName)) return true;
     if (myEmailPrefix && coAdmins.includes(myEmailPrefix)) return true;
@@ -4444,7 +4444,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Build saved receipts photo gallery â€” runs after DOM ready so it works on mobile too
+  // Build saved receipts photo gallery  runs after DOM ready so it works on mobile too
   const deferTripEnhancement = window.requestIdleCallback
     ? function(fn) { window.requestIdleCallback(fn, { timeout: 1200 }); }
     : function(fn) { setTimeout(fn, 220); };
@@ -4455,7 +4455,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try { applyAllMemberAvatars(); } catch(e) {}
   });
 
-  // â”€â”€ REALTIME â€” Supabase live sync so all members see changes instantly â”€â”€
+  //  REALTIME  Supabase live sync so all members see changes instantly 
   setTimeout(() => { loadTripComments(); }, 120);
   const _tripId = ${JSON.stringify(tripId)};
   const _tripToken = ${JSON.stringify(trip.share_token || '')};
@@ -4469,7 +4469,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Don't reload if a button is currently in mid-action (confirming state)
     if (document.querySelector('[data-confirming="1"],[data-confirming="unsettle"],[disabled]')) return;
     _reloadPending = true;
-    toast('ðŸ”„ Live update...', true);
+    toast(' Live update...', true);
     reloadPage(800);
   }
 
@@ -4525,7 +4525,7 @@ document.addEventListener('DOMContentLoaded', () => {
         .subscribe(function(status) {
           console.log('[Realtime] channel status:', status);
           if (status === 'SUBSCRIBED') {
-            console.log('[Realtime] âœ… Live sync active for trip', _tripId);
+            console.log('[Realtime]  Live sync active for trip', _tripId);
           }
         });
 
@@ -4561,7 +4561,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Init realtime after a short delay so page renders first
   setTimeout(initRealtime, 1000);
 
-  // Wire up "Mark as Settled" buttons via event delegation â€” safe for any name
+  // Wire up "Mark as Settled" buttons via event delegation  safe for any name
   document.addEventListener('click', function(e) {
     const btn = e.target.closest('.mark-settled-btn');
     if (btn) {
@@ -4645,7 +4645,7 @@ async function sendTripReminder() {
       if ((d.sent || 0) > 0) {
         sessionStorage.setItem(getReminderLockKey(), getEasternDateStamp());
         lockTripReminderUI(d.message || 'Reminder sent. The bell will unlock again tomorrow.');
-        toast('ðŸ”” Reminder sent to ' + (d.sent || 0) + ' member' + ((d.sent || 0) === 1 ? '' : 's'), true);
+        toast(' Reminder sent to ' + (d.sent || 0) + ' member' + ((d.sent || 0) === 1 ? '' : 's'), true);
       } else {
         btn.disabled = false;
         btn.style.cursor = 'pointer';
@@ -4758,7 +4758,7 @@ async function loadTripComments(force) {
   }
 }
 
-// â”€â”€ TOAST â”€â”€
+//  TOAST 
 function toast(msg, ok) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -4778,7 +4778,7 @@ function reloadPage(ms) {
   }, ms || 800);
 }
 
-// â”€â”€ AUTO-FILL NAME + AVATAR â”€â”€
+//  AUTO-FILL NAME + AVATAR 
 const SUPA_URL = 'https://ffjpzkpdumdcwnakpaje.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmanB6a3BkdW1kY3duYWtwYWplIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5ODc4OTcsImV4cCI6MjA4ODU2Mzg5N30.JtDLVu4K1TJ8emcN_mvSHBu6e0y8-jPQv-ypoc9p0RU';
 
@@ -4917,7 +4917,7 @@ async function applyAllMemberAvatars() {
 
     // Always try to fetch fresh avatar + name from Supabase
     try {
-      // Find the Supabase session token â€” key format varies by supabase-js version
+      // Find the Supabase session token  key format varies by supabase-js version
       let sbSession = null;
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
@@ -4942,13 +4942,28 @@ async function applyAllMemberAvatars() {
           }
         }
       }
+      if (firstName && !document.getElementById('comment-avatar')?.querySelector('img')) {
+        const safeName = encodeURIComponent(firstName);
+        const publicResp = await fetch(SUPA_URL + '/rest/v1/profiles?select=first_name,avatar_url&raven_id=eq.' + safeName, {
+          headers: { 'apikey': SUPA_KEY, 'Accept': 'application/json' }
+        });
+        let profiles = publicResp.ok ? await publicResp.json() : [];
+        if (!profiles || profiles.length === 0) {
+          const byNameResp = await fetch(SUPA_URL + '/rest/v1/profiles?select=first_name,avatar_url&first_name=eq.' + safeName, {
+            headers: { 'apikey': SUPA_KEY, 'Accept': 'application/json' }
+          });
+          profiles = byNameResp.ok ? await byNameResp.json() : [];
+        }
+        const p = profiles && profiles[0];
+        if (p?.avatar_url) applyNameAndAvatar(p.first_name || firstName, p.avatar_url);
+      }
     } catch(e) { /* best effort */ }
   } catch(e) {}
 })();
 
 // Apply all trip members' profile pictures to avatar circles
 
-// â”€â”€ AUTO-OPEN receipt form â”€â”€
+//  AUTO-OPEN receipt form 
 if (new URLSearchParams(window.location.search).get('action') === 'receipt') {
   setTimeout(() => {
     const wrap = document.getElementById('receipt-form-wrap');
@@ -4962,7 +4977,7 @@ if (new URLSearchParams(window.location.search).get('action') === 'receipt') {
   }, 300);
 }
 
-// â”€â”€ RECEIPT PHOTO VIEWER with pinch-to-zoom â”€â”€
+//  RECEIPT PHOTO VIEWER with pinch-to-zoom 
 function openReceiptPhoto(src, caption) {
   // Overlay
   const ov = document.createElement('div');
@@ -4970,14 +4985,14 @@ function openReceiptPhoto(src, caption) {
 
   // Close button
   const closeBtn = document.createElement('button');
-  closeBtn.textContent = 'âœ•';
+  closeBtn.textContent = '';
   closeBtn.style.cssText = 'position:absolute;top:16px;right:16px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.15);color:#fff;width:44px;height:44px;border-radius:50%;cursor:pointer;font-size:18px;z-index:10000;display:flex;align-items:center;justify-content:center;pointer-events:auto;touch-action:manipulation';
   closeBtn.addEventListener('click', () => ov.remove());
   closeBtn.addEventListener('touchend', (e) => { e.preventDefault(); e.stopPropagation(); ov.remove(); });
 
   // Hint
   const hint = document.createElement('div');
-  hint.textContent = 'Pinch to zoom Â· Double-tap to reset';
+  hint.textContent = 'Pinch to zoom  Double-tap to reset';
   hint.style.cssText = 'position:absolute;bottom:20px;left:50%;transform:translateX(-50%);font-size:11px;color:rgba(255,255,255,0.35);white-space:nowrap;z-index:2;pointer-events:none';
 
   // Caption
@@ -5003,7 +5018,7 @@ function openReceiptPhoto(src, caption) {
   ov.appendChild(wrap);
   document.body.appendChild(ov);
 
-  // â”€â”€ Pinch-to-zoom state â”€â”€
+  //  Pinch-to-zoom state 
   let scale = 1, minScale = 1, maxScale = 5;
   let tx = 0, ty = 0;            // translation
   let lastTX = 0, lastTY = 0;
@@ -5098,10 +5113,10 @@ function openReceiptPhoto(src, caption) {
   });
 }
 
-// â”€â”€ SAVED RECEIPTS â€” build gallery from DB receipts (visible to ALL members) â”€â”€
+//  SAVED RECEIPTS  build gallery from DB receipts (visible to ALL members) 
 function buildSavedReceiptsGallery() {
   try {
-    // Use receipts from the DB (passed via pageData) â€” not localStorage
+    // Use receipts from the DB (passed via pageData)  not localStorage
     const dbReceipts = (D.receiptsData || []).filter(r => r.photo_url);
     // Also check localStorage for pending (not-yet-submitted) photos by this user
     let pending = [];
@@ -5118,10 +5133,10 @@ function buildSavedReceiptsGallery() {
     const header = document.createElement('div');
     header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;cursor:pointer';
     header.innerHTML =
-      '<div class="sec-lbl" style="margin-bottom:0">ðŸ“¸ Saved Receipt Photos (' + totalCount + ')' +
+      '<div class="sec-lbl" style="margin-bottom:0"> Saved Receipt Photos (' + totalCount + ')' +
       (pending.length > 0 ? ' <span style="font-size:10px;background:rgba(255,107,53,0.15);color:#FF6B35;border-radius:6px;padding:2px 8px;font-weight:700">' + pending.length + ' pending</span>' : '') +
       '</div>' +
-      '<div style="font-size:12px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:8px;user-select:none"><span id="saved-receipts-toggle">â–´ Hide</span></div>';
+      '<div style="font-size:12px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:8px;user-select:none"><span id="saved-receipts-toggle"> Hide</span></div>';
 
     const body = document.createElement('div');
     body.id = 'saved-receipts-body';
@@ -5130,7 +5145,7 @@ function buildSavedReceiptsGallery() {
     const grid = document.createElement('div');
     grid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px';
 
-    // DB receipts with photos â€” visible to everyone
+    // DB receipts with photos  visible to everyone
     dbReceipts.forEach(r => {
       const d = new Date(r.created_at);
       const label = d.toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'America/New_York'});
@@ -5142,14 +5157,14 @@ function buildSavedReceiptsGallery() {
       img.addEventListener('error', () => { cell.style.display='none'; });
       const overlay = document.createElement('div');
       overlay.style.cssText = 'position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.7);padding:4px 6px';
-      overlay.innerHTML = '<div style="font-size:9px;color:#30D158;font-weight:600">âœ…</div><div style="font-size:8px;color:#9896A8">' + label + '</div>';
+      overlay.innerHTML = '<div style="font-size:9px;color:#30D158;font-weight:600"></div><div style="font-size:8px;color:#9896A8">' + label + '</div>';
       cell.appendChild(img);
       cell.appendChild(overlay);
-      cell.addEventListener('click', () => openReceiptPhoto(r.photo_url, r.name + ' Â· $' + r.total.toFixed(2)));
+      cell.addEventListener('click', () => openReceiptPhoto(r.photo_url, r.name + '  $' + r.total.toFixed(2)));
       grid.appendChild(cell);
     });
 
-    // Pending (localStorage) photos â€” only this user sees these until submitted
+    // Pending (localStorage) photos  only this user sees these until submitted
     pending.forEach(r => {
       const d = new Date(r.savedAt);
       const label = d.toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'America/New_York'});
@@ -5157,7 +5172,7 @@ function buildSavedReceiptsGallery() {
       cell.style.cssText = 'position:relative;border-radius:10px;overflow:hidden;cursor:pointer;border:2px solid rgba(255,107,53,0.4)';
       cell.innerHTML = '<img src="data:' + (r.mediaType||'image/jpeg') + ';base64,' + r.imageBase64 + '" style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block">' +
         '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.7);padding:4px 6px">' +
-        '<div style="font-size:9px;color:#FF6B35;font-weight:600">â³ Pending</div>' +
+        '<div style="font-size:9px;color:#FF6B35;font-weight:600"> Pending</div>' +
         '<div style="font-size:8px;color:#9896A8">' + label + '</div></div>';
       cell.addEventListener('click', () => viewSavedReceipt(r.id));
       grid.appendChild(cell);
@@ -5168,13 +5183,13 @@ function buildSavedReceiptsGallery() {
     if (pending.length > 0) {
       const retryBtn = document.createElement('button');
       retryBtn.style.cssText = 'width:100%;padding:10px;background:rgba(255,107,53,0.1);border:1px solid rgba(255,107,53,0.3);border-radius:10px;color:#FF6B35;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:8px';
-      retryBtn.textContent = 'â†» Retry scanning ' + pending.length + ' pending photo' + (pending.length>1?'s':'');
+      retryBtn.textContent = ' Retry scanning ' + pending.length + ' pending photo' + (pending.length>1?'s':'');
       retryBtn.addEventListener('click', retryPendingScans);
       body.appendChild(retryBtn);
     } else {
       const doneMsg = document.createElement('div');
       doneMsg.style.cssText = 'font-size:12px;color:#30D158;text-align:center;padding:6px 0';
-      doneMsg.textContent = 'All photos scanned âœ…';
+      doneMsg.textContent = 'All photos scanned ';
       body.appendChild(doneMsg);
     }
 
@@ -5182,7 +5197,7 @@ function buildSavedReceiptsGallery() {
       const open = body.style.display !== 'none';
       body.style.display = open ? 'none' : 'block';
       const tog = document.getElementById('saved-receipts-toggle');
-      if (tog) tog.textContent = open ? 'â–¾ Show' : 'â–´ Hide';
+      if (tog) tog.textContent = open ? ' Show' : ' Hide';
     });
 
     section.appendChild(header);
@@ -5269,7 +5284,7 @@ function renderPaySlots() {
     const slotId = 'payopt-' + Math.random().toString(36).slice(2,8);
     const mainBtn = document.createElement('button');
     mainBtn.style.cssText = 'display:inline-flex;align-items:center;gap:8px;padding:10px 18px;background:linear-gradient(135deg,#30D158,#0EA5E9);border:none;border-radius:10px;font-family:inherit;font-size:14px;font-weight:700;color:#000;cursor:pointer';
-    mainBtn.innerHTML = 'ðŸ’³ Pay ' + payerName + ' Â· $' + a + ' <span style="font-size:12px" id="' + slotId + '-arrow">â–¾</span>';
+    mainBtn.innerHTML = ' Pay ' + payerName + '  $' + a + ' <span style="font-size:12px" id="' + slotId + '-arrow"></span>';
 
     // Options panel
     const panel = document.createElement('div');
@@ -5280,12 +5295,12 @@ function renderPaySlots() {
     if (prof.zelle)   {
       const zelleVal = prof.zelle;
       const zelleHref = buildZelleHref(zelleVal, a, TRIP_NAME || 'this trip');
-      methods.push({ label:'Zelle', sub: zelleVal + (zelleVal.includes('@') ? ' Â· opens Mail' : ' Â· opens Messages'), color:'#6D1ED4', icon:'Z', href: zelleHref, copy: zelleVal });
+      methods.push({ label:'Zelle', sub: zelleVal + (zelleVal.includes('@') ? '  opens Mail' : '  opens Messages'), color:'#6D1ED4', icon:'Z', href: zelleHref, copy: zelleVal });
     }
     if (prof.applepay) {
       const ap = prof.applepay;
       const apHref = buildApplePayHref(ap, a, TRIP_NAME || 'this trip');
-      methods.push({ label:'Apple Pay', sub: apHref ? 'Opens iMessage Â· send Apple Pay manually' : ap + ' Â· copy, then send Apple Pay manually', color:'#1c1c1e', icon:'', href: apHref, copy: ap, border:'1px solid #444' });
+      methods.push({ label:'Apple Pay', sub: apHref ? 'Opens iMessage  send Apple Pay manually' : ap + '  copy, then send Apple Pay manually', color:'#1c1c1e', icon:'', href: apHref, copy: ap, border:'1px solid #444' });
     }
 
     methods.forEach((m, mi) => {
@@ -5303,13 +5318,13 @@ function renderPaySlots() {
       }
       const iconEl = document.createElement('div');
       iconEl.style.cssText = 'width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;font-size:' + (m.icon.length > 1 ? '9px' : '20px') + ';font-weight:800;color:#fff;flex-shrink:0';
-      iconEl.textContent = m.icon || 'âœ¦';
+      iconEl.textContent = m.icon || '';
       const info = document.createElement('div');
       info.style.cssText = 'flex:1;min-width:0';
       info.innerHTML = '<div style="font-size:15px;font-weight:700;color:#fff">' + m.label + '</div><div style="font-size:12px;color:rgba(255,255,255,0.7);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + m.sub + '</div>';
       const arrow = document.createElement('div');
       arrow.style.cssText = 'font-size:18px;color:rgba(255,255,255,0.5);flex-shrink:0';
-      arrow.textContent = 'â†’';
+      arrow.textContent = '';
       row.appendChild(iconEl); row.appendChild(info); row.appendChild(arrow);
       panel.appendChild(row);
     });
@@ -5317,7 +5332,7 @@ function renderPaySlots() {
       const open = panel.style.display !== 'none';
       panel.style.display = open ? 'none' : 'block';
       const arrow = document.getElementById(slotId + '-arrow');
-      if (arrow) arrow.textContent = open ? 'â–¾' : 'â–´';
+      if (arrow) arrow.textContent = open ? '' : '';
     });
 
     const wrap = document.createElement('div');
@@ -5331,7 +5346,7 @@ function renderPaySlots() {
 // Run after page loads and PAY_PROFILES is enriched from localStorage
 setTimeout(renderPaySlots, 300);
 
-// â”€â”€ AVATAR OVERFLOW TOGGLE â”€â”€
+//  AVATAR OVERFLOW TOGGLE 
 function toggleAvatarOverflow() {
   const list = document.getElementById('avatar-overflow-list');
   const btn = document.getElementById('avatar-overflow-btn');
@@ -5351,14 +5366,14 @@ document.addEventListener('click', function(e) {
   }
 });
 
-// â”€â”€ PER-RECEIPT MARK AS PAID â€” server-side, shared across all users â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+//  PER-RECEIPT MARK AS PAID  server-side, shared across all users 
 function markReceiptItemPaid(personName, receiptId, amount, btn) {
   if (!btn) return;
 
-  // â”€â”€ UNSETTLE path â€” single tap â”€â”€
+  //  UNSETTLE path  single tap 
   if (btn.dataset.settled === '1') {
     btn.disabled = true;
-    btn.textContent = 'â³ Savingâ€¦';
+    btn.textContent = ' Saving';
     fetch(BACKEND + '/trip/' + TRIP_ID + '/partial-unsettle', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
@@ -5367,27 +5382,27 @@ function markReceiptItemPaid(personName, receiptId, amount, btn) {
     .then(r => r.json())
     .then(d => {
       if (d.success) {
-        btn.textContent = 'âœ“ Settle this receipt';
+        btn.textContent = ' Settle this receipt';
         btn.style.background = 'rgba(48,209,88,0.06)';
         btn.style.borderColor = 'rgba(48,209,88,0.2)';
         btn.style.color = '#30D158';
         btn.disabled = false;
         btn.dataset.settled = '';
-        toast(personName + ' unsettled â†©', true);
+        toast(personName + ' unsettled ', true);
         reloadPage(1500);
       } else {
         btn.disabled = false;
-        btn.textContent = 'âœ… Settled Â· tap to undo';
+        btn.textContent = ' Settled  tap to undo';
         toast('Error: ' + (d.error || 'Could not unsettle'), false);
       }
     })
-    .catch(() => { btn.disabled = false; btn.textContent = 'âœ… Settled Â· tap to undo'; toast('Network error', false); });
+    .catch(() => { btn.disabled = false; btn.textContent = ' Settled  tap to undo'; toast('Network error', false); });
     return;
   }
 
-  // â”€â”€ SETTLE path â€” single tap, no confirm needed â”€â”€
+  //  SETTLE path  single tap, no confirm needed 
   btn.disabled = true;
-  btn.textContent = 'â³ Savingâ€¦';
+  btn.textContent = ' Saving';
   fetch(BACKEND + '/trip/' + TRIP_ID + '/mark-settled', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
@@ -5396,13 +5411,13 @@ function markReceiptItemPaid(personName, receiptId, amount, btn) {
   .then(r => r.json())
   .then(d => {
     if (d.success) {
-      btn.textContent = 'âœ… Settled Â· tap to undo';
+      btn.textContent = ' Settled  tap to undo';
       btn.style.background = 'rgba(48,209,88,0.15)';
       btn.style.borderColor = 'rgba(48,209,88,0.4)';
       btn.style.color = '#30D158';
       btn.disabled = false;
       btn.dataset.settled = '1';
-      toast(personName + ' paid $' + parseFloat(amount).toFixed(2) + ' âœ“', true);
+      toast(personName + ' paid $' + parseFloat(amount).toFixed(2) + ' ', true);
       // Update outstanding footer immediately
       if (d.outstanding !== undefined) {
         const outEl = document.getElementById('outstanding-amt');
@@ -5418,11 +5433,11 @@ function markReceiptItemPaid(personName, receiptId, amount, btn) {
           const statusEl = row.querySelector('.person-status-display');
           const isFullySettled = remaining <= 0.02;
           if (balEl) {
-            balEl.textContent = isFullySettled ? 'âœ…' : '-$' + remaining.toFixed(2);
+            balEl.textContent = isFullySettled ? '' : '-$' + remaining.toFixed(2);
             balEl.style.color = isFullySettled ? '#30D158' : '#FF9A3C';
           }
           if (statusEl) {
-            statusEl.textContent = isFullySettled ? 'âœ… all settled' : 'owes $' + remaining.toFixed(2);
+            statusEl.textContent = isFullySettled ? ' all settled' : 'owes $' + remaining.toFixed(2);
             statusEl.style.color = isFullySettled ? '#30D158' : '#FF9A3C';
           }
           if (isFullySettled) {
@@ -5447,11 +5462,11 @@ function markReceiptItemPaid(personName, receiptId, amount, btn) {
       reloadPage(2000);
     } else {
       btn.disabled = false;
-      btn.textContent = 'âœ“ Settle this receipt';
+      btn.textContent = ' Settle this receipt';
       toast('Error: ' + (d.error || 'Could not save'), false);
     }
   })
-  .catch(() => { btn.disabled = false; btn.textContent = 'âœ“ Settle this receipt'; toast('Network error', false); });
+  .catch(() => { btn.disabled = false; btn.textContent = ' Settle this receipt'; toast('Network error', false); });
 }
 
 function updatePersonBalanceDisplay(personName) {
@@ -5466,21 +5481,21 @@ function updatePersonBalanceDisplay(personName) {
   const fullySettled = sb && sb.style.display !== 'none';
   const remaining = fullySettled ? 0 : rawOwed;
 
-  // â”€â”€ Update balance number â”€â”€
+  //  Update balance number 
   const displayEl = row.querySelector('.person-balance-display');
   if (displayEl) {
     displayEl.textContent = remaining > 0.02 ? '-$' + remaining.toFixed(2) : '$0.00';
     displayEl.style.color = remaining > 0.02 ? '#FF9A3C' : '#9896A8';
   }
 
-  // â”€â”€ Update status text â”€â”€
+  //  Update status text 
   const statusEl = row.querySelector('.person-status-display');
   if (statusEl) {
-    statusEl.textContent = remaining > 0.02 ? 'owes $' + remaining.toFixed(2) : 'all settled âœ“';
+    statusEl.textContent = remaining > 0.02 ? 'owes $' + remaining.toFixed(2) : 'all settled ';
     statusEl.style.color = remaining > 0.02 ? '#FF9A3C' : '#30D158';
   }
 
-  // â”€â”€ Show/hide the settled badge vs pay-buttons block â”€â”€
+  //  Show/hide the settled badge vs pay-buttons block 
   // The server renders either a settled-block OR a pay-buttons block.
   // After client-side unsettling we need to toggle between them.
   const settledBlock = row.querySelector('.client-settled-block');
@@ -5488,7 +5503,7 @@ function updatePersonBalanceDisplay(personName) {
   if (settledBlock) settledBlock.style.display = fullySettled ? '' : 'none';
   if (payBlock)    payBlock.style.display    = fullySettled ? 'none' : '';
 
-  // â”€â”€ Recompute grand outstanding + settled counts from server-rendered DOM â”€â”€
+  //  Recompute grand outstanding + settled counts from server-rendered DOM 
   let grandOutstanding = 0;
   document.querySelectorAll('[data-raw-owed]').forEach(el => {
     const rowEl = el.closest('[id^="row-"]');
@@ -5524,7 +5539,7 @@ function updatePersonBalanceDisplay(personName) {
     const iconEl = outSub.previousElementSibling;
     if (iconEl) {
       iconEl.style.background = allSettled ? 'rgba(48,209,88,0.2)' : 'rgba(255,107,53,0.15)';
-      iconEl.textContent = allSettled ? 'âœ“' : '!';
+      iconEl.textContent = allSettled ? '' : '!';
     }
     const labelEl = outSub.querySelector('div:first-child');
     const label = totalPeople > 0 ? settledPeople + '/' + totalPeople + ' people settled' : '';
@@ -5533,7 +5548,7 @@ function updatePersonBalanceDisplay(personName) {
   }
 }
 
-// State is fully server-rendered â€” just sync footer display
+// State is fully server-rendered  just sync footer display
 (function initBalanceDisplays() {
   const people = D.people || [];
   people.forEach(p => updatePersonBalanceDisplay(p));
@@ -5544,11 +5559,11 @@ function markTripPersonPaid(personName, personId, btn) {
   if (!btn) btn = document.getElementById('markpaid-' + personId);
   if (!btn) return;
 
-  // â”€â”€ UNSETTLE path â€” button is currently showing Settled â”€â”€
+  //  UNSETTLE path  button is currently showing Settled 
   if (btn.dataset.settled === '1') {
     if (btn.dataset.confirming === 'unsettle') {
       btn.disabled = true;
-      btn.textContent = 'â³ Savingâ€¦';
+      btn.textContent = ' Saving';
       btn.dataset.confirming = '';
       fetch(BACKEND + '/trip/' + TRIP_ID + '/unsettle', {
         method: 'POST',
@@ -5558,36 +5573,36 @@ function markTripPersonPaid(personName, personId, btn) {
       .then(r => r.json())
       .then(d => {
         if (d.success) {
-          toast(personName + ' unsettled â†©', true);
+          toast(personName + ' unsettled ', true);
           setTimeout(() => {
-            // Reload preserving the t= token â€” just add a nocache param
+            // Reload preserving the t= token  just add a nocache param
             reloadPage(0);
           }, 1500);
         } else {
           btn.disabled = false;
-          btn.textContent = 'âœ… Settled';
+          btn.textContent = ' Settled';
           btn.dataset.settled = '1';
           toast('Error: ' + (d.error || 'Could not unsettle'), false);
         }
       })
       .catch(() => {
         btn.disabled = false;
-        btn.textContent = 'âœ… Settled';
+        btn.textContent = ' Settled';
         btn.dataset.settled = '1';
         toast('Network error', false);
       });
       return;
     }
-    // First tap â€” confirm state
+    // First tap  confirm state
     btn.dataset.confirming = 'unsettle';
-    btn.textContent = 'âš ï¸ Tap again to unsettle';
+    btn.textContent = ' Tap again to unsettle';
     btn.style.background = 'rgba(255,107,53,0.12)';
     btn.style.borderColor = 'rgba(255,107,53,0.4)';
     btn.style.color = '#FF6B35';
     setTimeout(() => {
       if (btn.dataset.confirming === 'unsettle') {
         btn.dataset.confirming = '';
-        btn.textContent = 'âœ… Settled';
+        btn.textContent = ' Settled';
         btn.style.background = 'rgba(48,209,88,0.15)';
         btn.style.borderColor = 'rgba(48,209,88,0.4)';
         btn.style.color = '#30D158';
@@ -5596,11 +5611,11 @@ function markTripPersonPaid(personName, personId, btn) {
     return;
   }
 
-  // â”€â”€ SETTLE path â€” single tap â”€â”€
+  //  SETTLE path  single tap 
   // Single-tap settle for top-level "Who Owes What"
   const settleAmt2 = parseFloat(btn.getAttribute('data-settle-amount') || '0') || 0;
   btn.disabled = true;
-  btn.textContent = 'â³ Savingâ€¦';
+  btn.textContent = ' Saving';
   fetch(BACKEND+'/trip/'+TRIP_ID+'/mark-settled', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
@@ -5609,7 +5624,7 @@ function markTripPersonPaid(personName, personId, btn) {
   .then(r => r.json())
   .then(d => {
     if (d.success) {
-      btn.textContent = 'âœ… Paid';
+      btn.textContent = ' Paid';
       btn.dataset.settled = '1';
       btn.style.background = 'rgba(48,209,88,0.15)';
       btn.style.borderColor = 'rgba(48,209,88,0.4)';
@@ -5619,24 +5634,24 @@ function markTripPersonPaid(personName, personId, btn) {
       if (row) {
         row.setAttribute('data-is-settled', '1');
         const statusEl = row.querySelector('.person-status-display');
-        if (statusEl) { statusEl.textContent = 'âœ… all settled'; statusEl.style.color = '#30D158'; }
+        if (statusEl) { statusEl.textContent = ' all settled'; statusEl.style.color = '#30D158'; }
         const balEl = row.querySelector('.person-balance-display');
-        if (balEl) { balEl.textContent = 'âœ…'; balEl.style.color = '#30D158'; }
+        if (balEl) { balEl.textContent = ''; balEl.style.color = '#30D158'; }
         const payBlock = row.querySelector('.client-pay-block');
         if (payBlock) payBlock.style.display = 'none';
       }
-      toast(personName + ' marked as paid âœ“', true);
+      toast(personName + ' marked as paid ', true);
       updatePersonBalanceDisplay(personName);
     } else {
       btn.disabled = false;
-      btn.textContent = 'âœ“ Settle balance';
+      btn.textContent = ' Settle balance';
       toast('Error: ' + (d.error || 'Could not save'), false);
     }
   })
-  .catch(() => { btn.disabled = false; btn.textContent = 'âœ“ Settle balance'; toast('Network error', false); });
+  .catch(() => { btn.disabled = false; btn.textContent = ' Settle balance'; toast('Network error', false); });
 }
 
-// â”€â”€ DELETE RECEIPT (admin only) â”€â”€
+//  DELETE RECEIPT (admin only) 
 function adminDeleteReceipt(btn) {
   const receiptId   = btn.getAttribute('data-receipt-id');
   const receiptName = btn.getAttribute('data-receipt-name') || 'Receipt';
@@ -5654,38 +5669,38 @@ function adminDeleteReceipt(btn) {
       if (d.success) {
         const wrap = document.getElementById(receiptId + '-wrap');
         if (wrap) wrap.remove();
-        toast('ðŸ—‘ ' + receiptName + ' deleted', true);
+        toast(' ' + receiptName + ' deleted', true);
         reloadPage(600);
       } else {
         btn.disabled = false;
-        btn.textContent = 'ðŸ—‘';
+        btn.textContent = '';
         toast('Error: ' + (d.error || 'Could not delete'), false);
       }
     })
     .catch(() => {
       btn.disabled = false;
-      btn.textContent = 'ðŸ—‘';
+      btn.textContent = '';
       toast('Network error', false);
     });
     return;
   }
   btn.dataset.confirming = '1';
-  btn.textContent = 'â“';
+  btn.textContent = '';
   btn.title = 'Tap again to confirm delete';
   setTimeout(() => {
     if (btn.dataset.confirming === '1') {
       btn.dataset.confirming = '';
-      btn.textContent = 'ðŸ—‘';
+      btn.textContent = '';
       btn.title = 'Delete';
     }
   }, 3000);
 }
 
-// Settled state is fully server-rendered â€” no client restore needed
+// Settled state is fully server-rendered  no client restore needed
 // Also re-run when a receipt is expanded
-// pay slots re-rendered on receipt expand â€” see toggleReceipt below
+// pay slots re-rendered on receipt expand  see toggleReceipt below
 
-// â”€â”€ PULL TO REFRESH â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+//  PULL TO REFRESH 
 (function() {
   let startY = 0, pulling = false, indicator = null;
   const THRESHOLD = 80; // px drag needed to trigger refresh
@@ -5694,7 +5709,7 @@ function adminDeleteReceipt(btn) {
     indicator = document.createElement('div');
     indicator.id = 'ptr-indicator';
     indicator.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;display:flex;align-items:center;justify-content:center;height:0;overflow:hidden;background:rgba(12,12,18,0.95);transition:height 0.1s;pointer-events:none';
-    indicator.innerHTML = '<div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#30D158"><span id="ptr-icon" style="font-size:18px;display:inline-block;transition:transform 0.2s">â†“</span><span id="ptr-text">Pull to refresh</span></div>';
+    indicator.innerHTML = '<div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#30D158"><span id="ptr-icon" style="font-size:18px;display:inline-block;transition:transform 0.2s"></span><span id="ptr-text">Pull to refresh</span></div>';
     document.body.appendChild(indicator);
   }
 
@@ -5714,10 +5729,10 @@ function adminDeleteReceipt(btn) {
     const icon = document.getElementById('ptr-icon');
     const text = document.getElementById('ptr-text');
     if (dist >= THRESHOLD) {
-      if (icon) { icon.style.transform = 'rotate(180deg)'; icon.textContent = 'â†‘'; }
+      if (icon) { icon.style.transform = 'rotate(180deg)'; icon.textContent = ''; }
       if (text) text.textContent = 'Release to refresh';
     } else {
-      if (icon) { icon.style.transform = 'none'; icon.textContent = 'â†“'; }
+      if (icon) { icon.style.transform = 'none'; icon.textContent = ''; }
       if (text) text.textContent = 'Pull to refresh';
     }
   }, { passive: true });
@@ -5727,7 +5742,7 @@ function adminDeleteReceipt(btn) {
     pulling = false;
     const dist = e.changedTouches[0].clientY - startY;
     if (dist >= THRESHOLD) {
-      if (indicator) { indicator.style.height = '60px'; const t = document.getElementById('ptr-text'); if (t) t.textContent = 'Refreshingâ€¦'; }
+      if (indicator) { indicator.style.height = '60px'; const t = document.getElementById('ptr-text'); if (t) t.textContent = 'Refreshing'; }
       reloadPage(150);
     } else {
       if (indicator) indicator.style.height = '0';
@@ -5748,7 +5763,7 @@ function toggleReceipts() {
   const btn  = document.getElementById('receipts-toggle');
   const open = body.style.display !== 'none';
   body.style.display = open ? 'none' : 'block';
-  if (btn) btn.textContent = open ? 'â–¾ Show' : 'â–´ Hide';
+  if (btn) btn.textContent = open ? ' Show' : ' Hide';
 }
 
 function toggleReceipt(id) {
@@ -5761,12 +5776,12 @@ function toggleReceipt(id) {
     chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
     chevron.style.background = isOpen ? 'rgba(255,255,255,0.05)' : 'rgba(48,209,88,0.12)';
     chevron.style.color = isOpen ? '#6E6B80' : '#30D158';
-    chevron.textContent = 'â–¾';
+    chevron.textContent = '';
   }
   if (!isOpen) renderPaySlots(); // fill pay buttons when expanding
 }
 
-// â”€â”€ MEMBER PROFILE MODAL â”€â”€
+//  MEMBER PROFILE MODAL 
 if (typeof getTripProfileDisplayName !== 'function') {
   function normalizeTripAlias(value) {
     return String(value || '').trim().replace(/^@/, '').toLowerCase();
@@ -5948,14 +5963,14 @@ function openMemberProfile(name) {
   if (avEl) { if (cachedAvatar) { avEl.innerHTML = '<img src="'+cachedAvatar+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%">'; avEl.style.background="transparent"; } else { avEl.innerHTML = ''; avEl.textContent=displayName[0].toUpperCase(); avEl.style.background=colors[displayName.charCodeAt(0)%colors.length]; } }
   const nameEl=document.getElementById("mp-name"); if(nameEl) nameEl.textContent=displayName;
   const ridEl=document.getElementById("mp-raven-id"); if(ridEl) ridEl.textContent=prof?.raven_id?"@"+prof.raven_id:"";
-  const sinceEl=document.getElementById("mp-member-since"); if(sinceEl) { if(prof?.created_at){const d=new Date(prof.created_at);sinceEl.textContent="ðŸª¶ RAVEN member since "+d.toLocaleDateString("en-US",{month:"long",year:"numeric"});}else{sinceEl.textContent="ðŸª¶ RAVEN member";}}
+  const sinceEl=document.getElementById("mp-member-since"); if(sinceEl) { if(prof?.created_at){const d=new Date(prof.created_at);sinceEl.textContent=" RAVEN member since "+d.toLocaleDateString("en-US",{month:"long",year:"numeric"});}else{sinceEl.textContent=" RAVEN member";}}
   const chipsEl=document.getElementById("mp-payment-chips"); if(chipsEl){const chips=[];if(prof?.venmo)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#0084FF;border-radius:8px;font-size:12px;font-weight:700;color:#fff"><span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;background:rgba(255,255,255,0.18);font-size:10px;line-height:1;font-weight:800">V</span> Venmo</span>');if(prof?.cashapp)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#00D632;border-radius:8px;font-size:12px;font-weight:700;color:#000"><span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;background:rgba(0,0,0,0.14);font-size:10px;line-height:1;font-weight:800">$</span> Cash App</span>');if(prof?.zelle)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#6D1ED4;border-radius:8px;font-size:12px;font-weight:700;color:#fff"><span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;background:rgba(255,255,255,0.18);font-size:10px;line-height:1;font-weight:800">Z</span> Zelle</span>');if(prof?.applepay)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#1a1a1a;border:1px solid #555;border-radius:8px;font-size:12px;font-weight:700;color:#fff"><span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;background:rgba(255,255,255,0.12);font-size:10px;line-height:1;font-weight:800">Pay</span> Apple Pay</span>');chipsEl.innerHTML=chips.length?chips.join(""):'<span style="font-size:12px;color:#6E6B80">No payment methods set up</span>';}
-  const actEl=document.getElementById("mp-actions"); if(actEl){actEl.innerHTML="";if(prof?.raven_id&&!isOwnProfile){const addBtn=document.createElement("button");addBtn.style.cssText="width:100%;padding:13px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.3);border-radius:12px;font-family:inherit;font-size:14px;font-weight:700;color:#A855F7;cursor:pointer";addBtn.textContent="ðŸ‘¥ Add Friend on RAVEN";addBtn.onclick=()=>{window.open("https://ravensplit.com/dashboard.html","_blank");toast("Search for @"+prof.raven_id+" in Friends");closeMemberProfile();};actEl.appendChild(addBtn);(async()=>{try{if(await tripProfileIsFriend(prof)){addBtn.textContent='ðŸ’¬ Message on RAVEN';addBtn.onclick=()=>{const dmUrl='https://ravensplit.com/dashboard.html?dm_friend='+encodeURIComponent(String(prof?.id||''))+'&dm_name='+encodeURIComponent(displayName)+'&dm_raven_id='+encodeURIComponent(String(prof?.raven_id||''));window.open(dmUrl,'_blank');closeMemberProfile();};}}catch(e){}})();}const closeBtn=document.createElement("button");closeBtn.style.cssText="width:100%;padding:13px;background:transparent;border:1px solid rgba(255,255,255,0.1);border-radius:12px;font-family:inherit;font-size:14px;color:#6E6B80;cursor:pointer";closeBtn.textContent="Close";closeBtn.onclick=closeMemberProfile;actEl.appendChild(closeBtn);}
+  const actEl=document.getElementById("mp-actions"); if(actEl){actEl.innerHTML="";if(prof?.raven_id&&!isOwnProfile){const addBtn=document.createElement("button");addBtn.style.cssText="width:100%;padding:13px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.3);border-radius:12px;font-family:inherit;font-size:14px;font-weight:700;color:#A855F7;cursor:pointer";addBtn.textContent=" Add Friend on RAVEN";addBtn.onclick=()=>{window.open("https://ravensplit.com/dashboard.html","_blank");toast("Search for @"+prof.raven_id+" in Friends");closeMemberProfile();};actEl.appendChild(addBtn);(async()=>{try{if(await tripProfileIsFriend(prof)){addBtn.textContent=' Message on RAVEN';addBtn.onclick=()=>{const dmUrl='https://ravensplit.com/dashboard.html?dm_friend='+encodeURIComponent(String(prof?.id||''))+'&dm_name='+encodeURIComponent(displayName)+'&dm_raven_id='+encodeURIComponent(String(prof?.raven_id||''));window.open(dmUrl,'_blank');closeMemberProfile();};}}catch(e){}})();}const closeBtn=document.createElement("button");closeBtn.style.cssText="width:100%;padding:13px;background:transparent;border:1px solid rgba(255,255,255,0.1);border-radius:12px;font-family:inherit;font-size:14px;color:#6E6B80;cursor:pointer";closeBtn.textContent="Close";closeBtn.onclick=closeMemberProfile;actEl.appendChild(closeBtn);}
   if(modal) modal.classList.add("open");
 }
 function closeMemberProfile(){const m=document.getElementById("member-profile-modal");if(m)m.classList.remove("open");}
 
-// â”€â”€ EDIT RECEIPT â”€â”€
+//  EDIT RECEIPT 
 let _editReceiptId = null;
 function openEditReceipt(id) {
   const r = receiptsDataMap[id];
@@ -6075,12 +6090,12 @@ async function saveEditReceipt() {
       body: JSON.stringify({ token: TRIP_TOKEN, name, paid_by: paidBy || null, total, splits })
     });
     const d = await r.json();
-    if (d.success) { closeEditReceipt(); toast('âœ… Receipt updated!'); reloadPage(900); }
+    if (d.success) { closeEditReceipt(); toast(' Receipt updated!'); reloadPage(900); }
     else { toast(d.error || 'Error saving', false); btn.textContent = 'Save Changes'; btn.disabled = false; }
   } catch(e) { toast('Network error', false); btn.textContent = 'Save Changes'; btn.disabled = false; }
 }
 
-// â”€â”€ MODAL HELPERS â”€â”€
+//  MODAL HELPERS 
 function openModal(id)  { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
@@ -6101,7 +6116,7 @@ document.getElementById('close-members-btn').addEventListener('click', () => clo
 document.getElementById('open-receipt-btn').addEventListener('click',  () => { document.getElementById('receipt-form-wrap').style.display='block'; document.getElementById('open-receipt-btn').style.display='none'; setTimeout(()=>{ document.getElementById('receipt-form-wrap').scrollIntoView({behavior:'smooth',block:'start'}); updateEven(); },50); });
 document.getElementById('close-receipt-btn').addEventListener('click', () => { document.getElementById('receipt-form-wrap').style.display='none'; document.getElementById('open-receipt-btn').style.display='block'; });
 
-// â”€â”€ COVER PHOTO â”€â”€
+//  COVER PHOTO 
 (function(){
   const inp = document.getElementById('cover-upload');
   const btn = document.getElementById('cover-change-btn');
@@ -6125,7 +6140,7 @@ document.getElementById('close-receipt-btn').addEventListener('click', () => { d
         if (existing) existing.src = resized;
         toast('Saving cover...');
         fetch(BACKEND+'/trip/'+TRIP_ID+'/cover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,image:resized.split(',')[1]})})
-          .then(r=>r.json()).then(d=>{ if(d.success){toast('ðŸ–¼ Cover saved!');reloadPage(1200);}else toast(d.error||'Error',false); })
+          .then(r=>r.json()).then(d=>{ if(d.success){toast(' Cover saved!');reloadPage(1200);}else toast(d.error||'Error',false); })
           .catch(()=>toast('Network error',false));
       };
       img.src = e.target.result;
@@ -6134,7 +6149,7 @@ document.getElementById('close-receipt-btn').addEventListener('click', () => { d
   });
 })();
 
-// â”€â”€ SETTINGS â”€â”€
+//  SETTINGS 
 document.getElementById('save-settings-btn').addEventListener('click', async function() {
   const name = document.getElementById('settings-name').value.trim();
   const date = document.getElementById('settings-date').value;
@@ -6145,13 +6160,13 @@ document.getElementById('save-settings-btn').addEventListener('click', async fun
     const endDate = document.getElementById('settings-end-date')?.value || null;
     const r = await fetch(BACKEND+'/trip/'+TRIP_ID+'/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,name,trip_date:date||null,due_date:dueDate||null,end_date:endDate||null})});
     const d = await r.json();
-    if (d.success) { toast('âœ… Trip updated!'); reloadPage(1200); }
+    if (d.success) { toast(' Trip updated!'); reloadPage(1200); }
     else toast(d.error||'Error',false);
   } catch(e) { toast('Network error',false); }
-  this.textContent='ðŸ’¾ Save Changes'; this.disabled=false;
+  this.textContent=' Save Changes'; this.disabled=false;
 });
 
-// â”€â”€ COPY / SHARE â”€â”€
+//  COPY / SHARE 
 document.getElementById('copy-trip-btn').addEventListener('click',    () => navigator.clipboard.writeText(TRIP_URL).then(()=>toast('Trip link copied!')).catch(()=>prompt('Copy:',TRIP_URL)));
 document.getElementById('share-trip-btn').addEventListener('click',   () => { if(navigator.share)navigator.share({title:TRIP_NAME,url:TRIP_URL}).catch(()=>navigator.clipboard.writeText(TRIP_URL));else navigator.clipboard.writeText(TRIP_URL).then(()=>toast('Copied!')); });
 document.getElementById('copy-invite-btn').addEventListener('click',  () => navigator.clipboard.writeText(INVITE_URL).then(()=>toast('Invite link copied!')).catch(()=>prompt('Copy:',INVITE_URL)));
@@ -6166,7 +6181,7 @@ document.getElementById('share-invite-btn').addEventListener('click', function()
   }
 });
 
-// â”€â”€ ADD MEMBERS â”€â”€
+//  ADD MEMBERS 
 document.getElementById('add-member-btn').addEventListener('click', addNewMember);
 document.getElementById('new-member-input').addEventListener('keydown', e => { if(e.key==='Enter') addNewMember(); });
 
@@ -6187,7 +6202,7 @@ function renderNewMembers() {
     d.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:rgba(48,209,88,0.05);border:1px solid rgba(48,209,88,0.2);border-radius:10px';
     d.innerHTML = '<div style="display:flex;align-items:center;gap:9px"><div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#30D158,#0EA5E9);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff">' + n[0].toUpperCase() + '</div><span style="font-size:13px;font-weight:600;color:#F0EEF8">' + n.replace(/</g,'&lt;') + '</span></div>';
     const x = document.createElement('button');
-    x.textContent = 'Ã—'; x.style.cssText = 'background:none;border:none;color:#6E6B80;cursor:pointer;font-size:18px;padding:0';
+    x.textContent = ''; x.style.cssText = 'background:none;border:none;color:#6E6B80;cursor:pointer;font-size:18px;padding:0';
     x.addEventListener('click', () => { newMembers=newMembers.filter(p=>p!==n); renderNewMembers(); });
     d.appendChild(x); c.appendChild(d);
   });
@@ -6198,12 +6213,12 @@ document.getElementById('save-members-btn').addEventListener('click', async func
   try {
     const r = await fetch(BACKEND+'/trip/'+TRIP_ID+'/add-members',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,members:newMembers})});
     const d = await r.json();
-    if (d.success) { toast('âœ… Members added!'); reloadPage(1200); }
-    else { toast(d.error||'Error',false); this.textContent='âœ“ Save'; this.disabled=false; }
-  } catch(e) { toast('Network error',false); this.textContent='âœ“ Save'; this.disabled=false; }
+    if (d.success) { toast(' Members added!'); reloadPage(1200); }
+    else { toast(d.error||'Error',false); this.textContent=' Save'; this.disabled=false; }
+  } catch(e) { toast('Network error',false); this.textContent=' Save'; this.disabled=false; }
 });
 
-// â”€â”€ GIF â”€â”€
+//  GIF 
 document.getElementById('gif-toggle-btn').addEventListener('click', () => {
   gifPanelOpen = !gifPanelOpen;
   document.getElementById('gif-panel').style.display = gifPanelOpen ? 'block' : 'none';
@@ -6243,7 +6258,7 @@ function searchGifs(q) {
             document.getElementById('gif-toggle-btn').style.color='#6E6B80';
             document.getElementById('gif-search').value='';
             container.innerHTML='';
-            toast('GIF selected âœ“');
+            toast('GIF selected ');
           });
           container.appendChild(img);
         });
@@ -6251,7 +6266,7 @@ function searchGifs(q) {
   }, 500);
 }
 
-// â”€â”€ POST COMMENT â”€â”€
+//  POST COMMENT 
 document.getElementById('post-comment-btn').addEventListener('click', async function() {
   const author = document.getElementById('comment-author').value.trim();
   const body   = document.getElementById('comment-body').value.trim();
@@ -6267,13 +6282,13 @@ document.getElementById('post-comment-btn').addEventListener('click', async func
   try {
     const r = await fetch(BACKEND+'/trip/'+TRIP_ID+'/comment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,author_name:author,user_id:authorUserId||null,body,gif_url:gifUrl||null})});
     const d = await r.json();
-    if (d.success) { document.getElementById('comment-body').value=''; clearGif(); toast('âœ… Posted!'); reloadPage(900); }
+    if (d.success) { document.getElementById('comment-body').value=''; clearGif(); toast(' Posted!'); reloadPage(900); }
     else toast(d.error||'Error',false);
   } catch(e) { toast('Network error',false); }
-  this.textContent='ðŸ’¬ Post'; this.disabled=false;
+  this.textContent=' Post'; this.disabled=false;
 });
 
-// â”€â”€ RECEIPT SPLIT â”€â”€
+//  RECEIPT SPLIT 
 document.getElementById('r-btn-e').addEventListener('click', () => setSplit('even'));
 document.getElementById('r-btn-i').addEventListener('click', () => setSplit('itemized'));
 document.getElementById('r-total').addEventListener('input', updateEven);
@@ -6303,8 +6318,8 @@ function updateEven() {
   const paidByEl = document.getElementById('r-paidby');
   const paidByT = paidByEl ? paidByEl.value.trim() : '';
   const paidByL = paidByT.toLowerCase();
-  // Exclude payer â€” all non-payers split evenly
-  // Split evenly across ALL people â€” payer fronted their own share too
+  // Exclude payer  all non-payers split evenly
+  // Split evenly across ALL people  payer fronted their own share too
   const per = PEOPLE.length > 0 ? net / PEOPLE.length : 0;
   const prevEl = document.getElementById('r-even-prev');
   if (!prevEl) return;
@@ -6359,7 +6374,7 @@ function renderItems() {
     d.style.cssText='background:#13131A;border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:10px 12px';
     const row = document.createElement('div');
     row.style.cssText='display:flex;align-items:center;gap:8px;margin-bottom:8px';
-    // Editable name input â€” clearly styled so it's obvious it's editable
+    // Editable name input  clearly styled so it's obvious it's editable
     const nameInput=document.createElement('input');
     nameInput.type='text';
     nameInput.value=item.name;
@@ -6369,14 +6384,14 @@ function renderItems() {
     nameInput.addEventListener('blur',()=>{ nameInput.style.borderColor='rgba(255,255,255,0.15)'; item.name=nameInput.value.trim()||item.name; });
     nameInput.addEventListener('input',()=>{ item.name=nameInput.value; });
     const priceSpan=document.createElement('span'); priceSpan.style.cssText='font-family:monospace;font-size:13px;color:#9896A8;flex-shrink:0'; priceSpan.textContent='$'+item.price.toFixed(2);
-    const del=document.createElement('button'); del.textContent='Ã—'; del.style.cssText='background:none;border:none;color:#6E6B80;cursor:pointer;font-size:16px;flex-shrink:0';
+    const del=document.createElement('button'); del.textContent=''; del.style.cssText='background:none;border:none;color:#6E6B80;cursor:pointer;font-size:16px;flex-shrink:0';
     del.addEventListener('click',()=>{ tripItems=tripItems.filter(i=>i.id!==item.id); renderItems(); });
     row.appendChild(nameInput); row.appendChild(priceSpan); row.appendChild(del);
     const btns=document.createElement('div'); btns.style.cssText='display:flex;gap:6px;flex-wrap:wrap';
     PEOPLE.forEach(p => {
       const on=item.assignees.includes(p);
       const b=document.createElement('button');
-      b.textContent=(on?'âœ“ ':'')+p;
+      b.textContent=(on?' ':'')+p;
       b.style.cssText='padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;background:'+(on?'rgba(48,209,88,0.15)':'rgba(255,255,255,0.05)')+';border:1px solid '+(on?'rgba(48,209,88,0.3)':'rgba(255,255,255,0.1)')+';color:'+(on?'#30D158':'#9896A8');
       b.addEventListener('click',()=>{
         if(item.assignees.includes(p)) item.assignees=item.assignees.filter(a=>a!==p); else item.assignees.push(p);
@@ -6406,9 +6421,9 @@ function tripPhoto(file) {
       c.getContext('2d').drawImage(img,0,0,w,h);
       imgBase64=c.toDataURL(outputType,quality).split(',')[1];
 
-      // â”€â”€ SAVE TO LOCALSTORAGE IMMEDIATELY â”€â”€
+      //  SAVE TO LOCALSTORAGE IMMEDIATELY 
       // Receipt photo is stored offline as soon as it's uploaded.
-      // If AI scan fails, it can be retried later â€” photo is never lost.
+      // If AI scan fails, it can be retried later  photo is never lost.
       try {
         const pending = JSON.parse(localStorage.getItem('raven_pending_receipts') || '[]');
         const pendingId = 'pending_' + Date.now();
@@ -6448,7 +6463,7 @@ function tripPhoto(file) {
           clearTimeout(timer);
           const d = await r.json();
 
-          // Full success â€” got items
+          // Full success  got items
           if (d.success && d.items && d.items.length > 0) {
             if (!document.getElementById('r-name').value && d.bill_name) document.getElementById('r-name').value = d.bill_name;
             const tot = d.total || d.items.reduce((s,i)=>s+i.price,0);
@@ -6458,27 +6473,27 @@ function tripPhoto(file) {
             document.getElementById('r-tip').value = tripScanCharges.tip > 0 ? tripScanCharges.tip.toFixed(2) : '';
             document.getElementById('r-service').value = tripScanCharges.service_fee > 0 ? tripScanCharges.service_fee.toFixed(2) : '';
             document.getElementById('r-item-discount').value = (parseFloat(d.discount) || 0) > 0 ? parseFloat(d.discount).toFixed(2) : '';
-            if (d.tax > 0) { /* store tax for display â€” add to total field note */ }
+            if (d.tax > 0) { /* store tax for display  add to total field note */ }
             tripItems = d.items.map((item,idx)=>({id:Date.now()+idx,name:item.name,price:parseFloat(item.price)||0,assignees:[]}));
             setSplit('itemized'); renderItems();
-            st.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:8px"><span>âœ…</span><span style="font-size:13px;color:#30D158;font-weight:600">'+d.items.length+' items found'+(d.tax>0?' Â· Tax $'+parseFloat(d.tax).toFixed(2):'')+'! Photo saved ðŸ“¸</span></div>';
+            st.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:8px"><span></span><span style="font-size:13px;color:#30D158;font-weight:600">'+d.items.length+' items found'+(d.tax>0?'  Tax $'+parseFloat(d.tax).toFixed(2):'')+'! Photo saved </span></div>';
             try { const pid=window._currentPendingId; if(pid){const pending=JSON.parse(localStorage.getItem('raven_pending_receipts')||'[]');const idx=pending.findIndex(p=>p.id===pid);if(idx>=0){pending[idx].scanned=true;localStorage.setItem('raven_pending_receipts',JSON.stringify(pending));}} } catch(e) {}
             return;
           }
 
-          // Partial success â€” got total but no line items
+          // Partial success  got total but no line items
           if (d.success && d.total > 0 && (!d.items || d.items.length === 0)) {
             if (!document.getElementById('r-name').value && d.bill_name) document.getElementById('r-name').value = d.bill_name;
             document.getElementById('r-total').value = parseFloat(d.total).toFixed(2); updateEven();
             document.getElementById('r-discount').value = (parseFloat(d.discount) || 0) > 0 ? parseFloat(d.discount).toFixed(2) : '';
             setSplit('even');
-            st.innerHTML = '<div style="padding:10px 14px;background:rgba(255,152,0,0.07);border:1px solid rgba(255,152,0,0.25);border-radius:8px"><div style="font-size:13px;color:#FFA726;font-weight:600;margin-bottom:4px">âš ï¸ Scanned total: $'+parseFloat(d.total).toFixed(2)+' â€” line items unclear</div><div style="font-size:12px;color:#9896A8">Total filled in. Add items manually or split evenly.</div></div>';
+            st.innerHTML = '<div style="padding:10px 14px;background:rgba(255,152,0,0.07);border:1px solid rgba(255,152,0,0.25);border-radius:8px"><div style="font-size:13px;color:#FFA726;font-weight:600;margin-bottom:4px"> Scanned total: $'+parseFloat(d.total).toFixed(2)+'  line items unclear</div><div style="font-size:12px;color:#9896A8">Total filled in. Add items manually or split evenly.</div></div>';
             return;
           }
 
           // Server error
           if (d.error && (d.error.includes('API key') || d.error.includes('Rate limit'))) {
-            st.innerHTML = '<div style="padding:10px 14px;background:rgba(255,107,53,0.07);border:1px solid rgba(255,107,53,0.25);border-radius:8px"><div style="font-size:13px;color:#FF6B35;font-weight:600">âš ï¸ '+d.error+'</div></div>';
+            st.innerHTML = '<div style="padding:10px 14px;background:rgba(255,107,53,0.07);border:1px solid rgba(255,107,53,0.25);border-radius:8px"><div style="font-size:13px;color:#FF6B35;font-weight:600"> '+d.error+'</div></div>';
             return;
           }
 
@@ -6486,17 +6501,17 @@ function tripPhoto(file) {
           if (attempt < 3) return doScan(attempt+1);
 
           st.innerHTML = '<div style="padding:10px 14px;background:rgba(255,107,53,0.07);border:1px solid rgba(255,107,53,0.25);border-radius:8px">'
-            +'<div style="font-size:13px;color:#FF6B35;font-weight:600;margin-bottom:6px">Still could not scan â€” enter manually or try again later</div>'
+            +'<div style="font-size:13px;color:#FF6B35;font-weight:600;margin-bottom:6px">Still could not scan  enter manually or try again later</div>'
             +'<div style="font-size:12px;color:#9896A8;margin-bottom:8px">Your photo is saved. Enter details manually or retry.</div>'
-            +'<button onclick="retryLastScan()" style="padding:6px 14px;background:rgba(255,107,53,0.12);border:1px solid rgba(255,107,53,0.3);border-radius:7px;color:#FF6B35;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer">â†» Retry Scan</button>'
+            +'<button onclick="retryLastScan()" style="padding:6px 14px;background:rgba(255,107,53,0.12);border:1px solid rgba(255,107,53,0.3);border-radius:7px;color:#FF6B35;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer"> Retry Scan</button>'
             +'</div>';
         } catch(e) {
           clearTimeout(timer);
           if (attempt < 3) return doScan(attempt+1);
           st.innerHTML = '<div style="padding:10px 14px;background:rgba(255,107,53,0.07);border:1px solid rgba(255,107,53,0.25);border-radius:8px">'
-            +'<div style="font-size:13px;color:#FF6B35;font-weight:600;margin-bottom:6px">âš ï¸ Server waking up â€” photo is saved!</div>'
+            +'<div style="font-size:13px;color:#FF6B35;font-weight:600;margin-bottom:6px"> Server waking up  photo is saved!</div>'
             +'<div style="font-size:12px;color:#9896A8;margin-bottom:8px">Enter details manually or retry.</div>'
-            +'<button onclick="retryLastScan()" style="padding:6px 14px;background:rgba(255,107,53,0.12);border:1px solid rgba(255,107,53,0.3);border-radius:7px;color:#FF6B35;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer">â†» Retry Scan</button>'
+            +'<button onclick="retryLastScan()" style="padding:6px 14px;background:rgba(255,107,53,0.12);border:1px solid rgba(255,107,53,0.3);border-radius:7px;color:#FF6B35;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer"> Retry Scan</button>'
             +'</div>';
         }
       }
@@ -6507,7 +6522,7 @@ function tripPhoto(file) {
   reader.readAsDataURL(file);
 }
 
-// â”€â”€ ADD PHOTO TO EXISTING RECEIPT â”€â”€
+//  ADD PHOTO TO EXISTING RECEIPT 
 function addPhotoToReceipt(receiptId) {
   const input = document.createElement('input');
   input.type = 'file';
@@ -6515,7 +6530,7 @@ function addPhotoToReceipt(receiptId) {
   input.onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const MAX = 900; // max dimension â€” keep base64 well under 500KB
+    const MAX = 900; // max dimension  keep base64 well under 500KB
     const reader = new FileReader();
     reader.onload = async (ev) => {
       const img = new Image();
@@ -6528,8 +6543,8 @@ function addPhotoToReceipt(receiptId) {
         const b64 = canvas.toDataURL('image/jpeg', 0.70).split(',')[1];
         const photoUrl = 'data:image/jpeg;base64,' + b64;
         // Guard: if still over 700KB base64 reject early
-        if (b64.length > 700000) { toast('Photo too large â€” try a smaller image', false); return; }
-        toast('Uploading photoâ€¦');
+        if (b64.length > 700000) { toast('Photo too large  try a smaller image', false); return; }
+        toast('Uploading photo');
         try {
           const r = await fetch(BACKEND+'/trip/'+TRIP_ID+'/receipt/'+receiptId+'/add-photo', {
             method: 'POST',
@@ -6537,7 +6552,7 @@ function addPhotoToReceipt(receiptId) {
             body: JSON.stringify({ token: TRIP_TOKEN, photo_url: photoUrl })
           });
           const d = await r.json();
-          if (d.success) { toast('ðŸ“Ž Photo added!'); reloadPage(900); }
+          if (d.success) { toast(' Photo added!'); reloadPage(900); }
           else toast('Error: ' + (d.error || 'Could not save photo'), false);
         } catch(e) { toast('Network error', false); }
       };
@@ -6559,7 +6574,7 @@ async function toggleCoAdmin(btn, name) {
     });
     const d = await r.json();
     if (d.success) {
-      toast(isAdmin ? name+' removed as co-admin' : name+' is now a co-admin âš™ï¸');
+      toast(isAdmin ? name+' removed as co-admin' : name+' is now a co-admin ');
       reloadPage(900);
     } else { toast(d.error || 'Error', false); btn.disabled = false; }
   } catch(e) { toast('Network error', false); btn.disabled = false; }
@@ -6600,7 +6615,7 @@ async function saveReceipt() {
     const finalTotal = Math.max(0, total - discount);
     const paidByT2=(paidBy||'').trim();
     const paidByL2=paidByT2.toLowerCase();
-    // Split evenly across ALL people â€” payer's share is $0 owed (they already fronted it)
+    // Split evenly across ALL people  payer's share is $0 owed (they already fronted it)
     const per=PEOPLE.length>0?finalTotal/PEOPLE.length:0;
     PEOPLE.forEach(p=>{splits[p]=(paidByT2&&p.trim().toLowerCase()===paidByL2)?0:per;});
     total = finalTotal;
@@ -6670,8 +6685,8 @@ async function saveReceipt() {
           localStorage.setItem('raven_pending_receipts', JSON.stringify(pending.filter(x => x.id !== window._currentPendingId)));
         }
       } catch(e) {}
-      toast('âœ… Receipt saved!');
-      // Reset form for next receipt â€” then reload to show updated totals
+      toast(' Receipt saved!');
+      // Reset form for next receipt  then reload to show updated totals
       document.getElementById('r-name').value='';
       document.getElementById('r-total').value='';
       const discEl=document.getElementById('r-discount'); if(discEl) discEl.value='';
@@ -6693,7 +6708,7 @@ async function saveReceipt() {
   }catch(e){btn.textContent='Save Receipt';btn.disabled=false;toast('Network error',false);}
 }
 
-// â”€â”€ GROUP CHAT â”€â”€
+//  GROUP CHAT 
 const SUPABASE_URL_CHAT = 'https://ffjpzkpdumdcwnakpaje.supabase.co';
 const SUPABASE_KEY_CHAT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmanB6a3BkdW1kY3duYWtwYWplIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5ODc4OTcsImV4cCI6MjA4ODU2Mzg5N30.JtDLVu4K1TJ8emcN_mvSHBu6e0y8-jPQv-ypoc9p0RU';
 let chatDb = null;
@@ -6748,7 +6763,7 @@ function openChat() {
   if (!modal) { console.warn('chat-modal not found in DOM'); return; }
   modal.style.display = 'flex';
   const titleEl = document.getElementById('chat-trip-title');
-  if (titleEl) titleEl.textContent = 'âœˆï¸ ' + TRIP_NAME;
+  if (titleEl) titleEl.textContent = TRIP_NAME;
   const memberCount = document.getElementById('chat-member-count');
   if (memberCount) memberCount.textContent = D.people.length + ' members';
   clearUnreadBadge();
@@ -6805,7 +6820,7 @@ async function loadChatMsgs() {
       const messages = await enrichTripMessagesWithProfiles(payload.messages || []);
       container.innerHTML = '';
       if (!messages.length) {
-        container.innerHTML = '<div id="chat-empty" style="text-align:center;color:#6E6B80;font-size:12px;padding:30px 0">No messages yet. Say hi! ðŸ‘‹</div>';
+        container.innerHTML = '<div id="chat-empty" style="text-align:center;color:#6E6B80;font-size:12px;padding:30px 0">No messages yet. Say hi!</div>';
         return;
       }
       messages.forEach(function(msg) { appendMsg(msg, false); });
@@ -6899,7 +6914,7 @@ async function refreshReadReceipts() {
             + '<span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:' + bg + ';color:#fff;font-size:8px;font-weight:700">' + initials + '</span>'
             + '<span style="color:#9896A8">' + firstName + '</span>'
             + '</span>';
-        }).join('<span style="color:#4A4760;margin:0 2px">Â·</span>');
+        }).join('<span style="color:#4A4760;margin:0 2px">.</span>');
   } catch(e) {}
 }
 
@@ -6980,7 +6995,7 @@ function appendMsg(msg, scroll) {
   if (scroll) container.scrollTop = container.scrollHeight;
 }
 
-// â”€â”€ CHAT GIF â”€â”€
+// CHAT GIF
 function toggleChatGifPanel() {
   chatGifPanelOpen = !chatGifPanelOpen;
   const panel = document.getElementById('chat-gif-panel');
@@ -7026,7 +7041,7 @@ function clearChatGif() {
   document.getElementById('chat-gif-preview').src = '';
 }
 
-// â”€â”€ CHAT PHOTO â”€â”€
+// CHAT PHOTO
 function openChatPhotoPicker() {
   document.getElementById('chat-photo-input').click();
 }
@@ -7163,7 +7178,7 @@ initChatDb().then(async function() {
 
 </script>
 
-<!-- â”€â”€ GROUP CHAT MODAL â”€â”€ -->
+<!-- GROUP CHAT MODAL -->
 <div id="chat-modal" style="display:none;position:fixed;bottom:24px;right:24px;width:360px;max-width:calc(100vw - 32px);height:520px;max-height:calc(100vh - 100px);background:#0C0C12;border:1px solid rgba(0,140,255,0.3);border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,0.7);z-index:1000;flex-direction:column;overflow:hidden">
   <!-- Header -->
   <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#13131A;border-bottom:1px solid rgba(255,255,255,0.07);flex-shrink:0">
@@ -7171,11 +7186,11 @@ initChatDb().then(async function() {
       <div style="font-size:13px;font-weight:700;color:#F0EEF8" id="chat-trip-title">Group Chat</div>
       <div style="font-size:10px;color:#6E6B80" id="chat-member-count"></div>
     </div>
-    <button onclick="closeChat()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:50%;width:28px;height:28px;color:#9896A8;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center">Ã—</button>
+    <button onclick="closeChat()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:50%;width:28px;height:28px;color:#9896A8;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center">x</button>
   </div>
   <!-- Messages -->
   <div id="chat-msgs" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;min-height:0">
-    <div id="chat-empty" style="text-align:center;color:#6E6B80;font-size:12px;padding:30px 0">No messages yet. Say hi! ðŸ‘‹</div>
+    <div id="chat-empty" style="text-align:center;color:#6E6B80;font-size:12px;padding:30px 0">No messages yet. Say hi!</div>
   </div>
   <!-- GIF panel -->
   <div id="chat-gif-panel" style="display:none;background:#13131A;border-top:1px solid rgba(255,255,255,0.07);padding:8px 12px;flex-shrink:0">
@@ -7187,11 +7202,11 @@ initChatDb().then(async function() {
   <!-- Previews -->
   <div id="chat-gif-preview-wrap" style="display:none;align-items:center;gap:8px;padding:6px 12px;background:#13131A;border-top:1px solid rgba(255,255,255,0.07);flex-shrink:0">
     <img id="chat-gif-preview" src="" style="height:60px;border-radius:8px">
-    <button onclick="clearChatGif()" style="background:rgba(255,68,68,0.15);border:1px solid rgba(255,68,68,0.3);border-radius:6px;color:#FF6B6B;font-size:11px;padding:4px 8px;cursor:pointer">âœ• Remove</button>
+    <button onclick="clearChatGif()" style="background:rgba(255,68,68,0.15);border:1px solid rgba(255,68,68,0.3);border-radius:6px;color:#FF6B6B;font-size:11px;padding:4px 8px;cursor:pointer">Remove</button>
   </div>
   <div id="chat-photo-preview-wrap" style="display:none;align-items:center;gap:8px;padding:6px 12px;background:#13131A;border-top:1px solid rgba(255,255,255,0.07);flex-shrink:0">
     <img id="chat-photo-preview" src="" style="height:60px;border-radius:8px;object-fit:cover">
-    <button onclick="clearChatPhoto()" style="background:rgba(255,68,68,0.15);border:1px solid rgba(255,68,68,0.3);border-radius:6px;color:#FF6B6B;font-size:11px;padding:4px 8px;cursor:pointer">âœ• Remove</button>
+    <button onclick="clearChatPhoto()" style="background:rgba(255,68,68,0.15);border:1px solid rgba(255,68,68,0.3);border-radius:6px;color:#FF6B6B;font-size:11px;padding:4px 8px;cursor:pointer">Remove</button>
   </div>
   <!-- Input row -->
   <div style="padding:10px 12px;border-top:1px solid rgba(255,255,255,0.07);flex-shrink:0;background:#0C0C12">
@@ -7199,12 +7214,12 @@ initChatDb().then(async function() {
       <!-- GIF button -->
       <button onclick="toggleChatGifPanel()" title="GIF" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;width:34px;height:34px;color:#9896A8;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0;display:flex;align-items:center;justify-content:center">GIF</button>
       <!-- Photo button -->
-      <button onclick="openChatPhotoPicker()" title="Photo" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;width:34px;height:34px;color:#9896A8;cursor:pointer;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center">ðŸ“·</button>
+      <button onclick="openChatPhotoPicker()" title="Photo" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;width:48px;height:34px;color:#9896A8;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0;display:flex;align-items:center;justify-content:center">Photo</button>
       <input id="chat-photo-input" type="file" accept="image/*" style="display:none" onchange="handleChatPhoto(this)">
       <!-- Text input -->
       <textarea id="chat-input" placeholder="Message the group..." rows="1" style="flex:1;background:#1A1A24;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:9px 12px;color:#F0EEF8;font-family:'Epilogue',sans-serif;font-size:13px;resize:none;outline:none;max-height:80px;line-height:1.5;transition:border 0.2s" onfocus="this.style.borderColor='rgba(0,140,255,0.4)'" onblur="this.style.borderColor='rgba(255,255,255,0.1)'" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
       <!-- Send button -->
-      <button onclick="sendChat()" style="background:#0A84FF;border:none;border-radius:12px;width:34px;height:34px;color:#fff;font-size:18px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center">â†‘</button>
+      <button onclick="sendChat()" style="background:#0A84FF;border:none;border-radius:12px;width:48px;height:34px;color:#fff;font-size:11px;font-weight:800;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center">Send</button>
     </div>
   </div>
 </div>
@@ -7214,7 +7229,7 @@ initChatDb().then(async function() {
 });
 
 
-// â”€â”€ TRIP COMMENT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+//  TRIP COMMENT 
 app.get('/trip/:tripId/comments', async (req, res) => {
   try {
     const { tripId } = req.params;
