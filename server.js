@@ -1,4 +1,4 @@
-﻿require('dotenv').config();
+require('dotenv').config();
 const express = require('express');
 const twilio = require('twilio');
 const { createClient } = require('@supabase/supabase-js');
@@ -1066,6 +1066,7 @@ app.get('/bill/:billId', async (req, res) => {
   try {
     const { billId } = req.params;
     const token = req.query.t || req.query.token;
+    const isAppBillMode = req.query.app === '1';
     const { data: loadedBill } = await supabase.from('bills').select('*').eq('id', billId).single();
     bill = loadedBill;
     if (!bill) return res.status(404).send('<h1>Bill not found</h1>');
@@ -1412,9 +1413,9 @@ app.get('/bill/:billId', async (req, res) => {
     function getRavenCommentIdentity(){
       try {
         const profile = JSON.parse(localStorage.getItem('raven_profile')||'{}');
-        const ravenId = String(profile.raven_id || profile.username || '').trim();
-        const hasAccount = !!(profile.user_id || profile.email);
-        return hasAccount && ravenId ? ravenId : '';
+        const identity = String(profile.raven_id || profile.username || profile.first_name || (profile.email || '').split('@')[0] || '').trim();
+        const hasAccount = !!(profile.user_id || profile.id || profile.email || profile.first_name || profile.raven_id || profile.username);
+        return hasAccount && identity ? identity : '';
       } catch(e) { return ''; }
     }
     function initBillCommentComposer(){
@@ -1427,11 +1428,11 @@ app.get('/bill/:billId', async (req, res) => {
       if (identity) {
         if (bodyEl) { bodyEl.disabled = false; bodyEl.placeholder = 'Add a comment...'; bodyEl.style.opacity = '1'; }
         if (noteEl) noteEl.textContent = 'Posting as @' + identity + ' from this RAVEN account.';
-        if (btnEl) { btnEl.disabled = false; btnEl.style.opacity = '1'; btnEl.textContent = 'ðŸ’¬ Post Comment'; }
+        if (btnEl) { btnEl.disabled = false; btnEl.style.opacity = '1'; btnEl.textContent = 'Post Comment'; }
       } else {
         if (bodyEl) { bodyEl.disabled = true; bodyEl.placeholder = 'Create a RAVEN account to comment'; bodyEl.style.opacity = '0.6'; }
         if (noteEl) noteEl.innerHTML = 'Create a <a href="https://ravensplit.com/dashboard.html" style="color:#30D158;text-decoration:none;font-weight:700">RAVEN account</a> to comment.';
-        if (btnEl) { btnEl.disabled = true; btnEl.style.opacity = '0.55'; btnEl.textContent = 'ðŸ’¬ RAVEN account required'; }
+        if (btnEl) { btnEl.disabled = true; btnEl.style.opacity = '0.55'; btnEl.textContent = 'RAVEN account required'; }
       }
     }
     initBillCommentComposer();
@@ -1589,23 +1590,33 @@ app.get('/bill/:billId', async (req, res) => {
     .btn-g{width:100%;padding:14px;background:#30D158;border:none;border-radius:12px;color:#000;font-family:inherit;font-size:15px;font-weight:800;cursor:pointer}
     .qr-section{max-width:800px;margin:20px auto 0;padding:0 16px;display:flex;flex-direction:column;align-items:center;gap:12px}
     .pulse{animation:pulse 2s infinite}
+    body.app-bill{font-family:'Epilogue',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding-bottom:96px}
+    body.app-bill .hdr{top:0;padding-top:env(safe-area-inset-top,0px)}
+    body.app-bill .hdr-i{height:64px;max-width:560px}
+    body.app-bill .sec{max-width:560px;padding:0 18px}
+    body.app-bill .bill-title{font-size:clamp(30px,8vw,44px)!important;line-height:1.08!important;letter-spacing:0!important}
+    body.app-bill .bill-total{font-family:'Epilogue',-apple-system,sans-serif!important;letter-spacing:.08em;font-size:clamp(38px,10vw,58px)!important}
+    body.app-bill .clean-icon{font-family:'Bebas Neue',Impact,sans-serif;font-size:34px;line-height:1;background:linear-gradient(135deg,#C084FC,#30D158);-webkit-background-clip:text;color:transparent}
+    body.app-bill .qr-btn{font-size:13px!important;padding:10px 16px!important}
+    body.app-bill .item-name-text{font-size:18px!important;line-height:1.2}
+    body.app-bill .sec-lbl{font-size:12px!important;letter-spacing:.16em}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
   </style>
 </head>
-<body>
+<body class="${isAppBillMode ? 'app-bill' : ''}">
 
 <!-- Name entry modal -->
 <div id="name-modal" class="name-modal" style="display:none">
   <div class="name-modal-bg" id="name-modal-bg"></div>
   <div class="name-modal-box" style="position:fixed;inset:0;width:100vw;height:100vh;max-width:none;max-height:none;min-height:100vh;margin:0;border-radius:0;padding:28px 20px calc(48px + env(safe-area-inset-bottom));overflow-y:auto;">
     <div style="width:36px;height:4px;background:rgba(255,255,255,0.12);border-radius:2px;margin:0 auto 20px"></div>
-    <div style="font-size:22px;font-weight:800;margin-bottom:6px">Who are you? ðŸ‘‹</div>
+    <div style="font-size:22px;font-weight:800;margin-bottom:6px">Who are you?</div>
     <div style="font-size:14px;color:#6E6B80;margin-bottom:24px">Enter your name to claim items on the bill</div>
     <div id="name-picker-list" style="display:none;flex-direction:column;gap:8px;margin-bottom:14px"></div>
     <button id="name-picker-other" type="button" style="display:none;width:100%;padding:11px 14px;margin-bottom:12px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#9896A8;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">I'm someone else</button>
     <input id="name-input" type="text" placeholder="Your name" autocomplete="name"
       style="width:100%;padding:14px 16px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:12px;color:#F0EEF8;font-size:16px;font-family:inherit;outline:none;margin-bottom:12px">
-    <button class="btn-g" onclick="submitName()">Start Claiming Items â†’</button>
+    <button class="btn-g" onclick="submitName()">Start Claiming Items</button>
     <div style="margin-top:8px;font-size:11px;line-height:1.5;color:#6E6B80;text-align:center">New to RAVEN? <a href="https://ravensplit.com/dashboard.html" style="color:#30D158;font-weight:700;text-decoration:none">Create, split, and share your own bills for free</a>.</div>
   </div>
   <div style="max-width:800px;margin:8px auto 0;font-size:11px;line-height:1.5;color:#6E6B80;text-align:center">New to RAVEN? <a href="https://ravensplit.com/dashboard.html" style="color:#30D158;font-weight:700;text-decoration:none">Create, split, and share your own bills for free</a>.</div>
@@ -1635,11 +1646,11 @@ app.get('/bill/:billId', async (req, res) => {
       <div style="font-size:12px;color:#6E6B80">You owe <strong style="color:#FF9A3C" id="bar-to">...</strong></div>
       <div style="font-size:22px;font-weight:900;color:#30D158;font-family:monospace" id="bar-amt">$0.00</div>
     </div>
-    <button onclick="showMyPayModal(parseFloat(document.getElementById('bar-amt').textContent.replace('$','')))" style="padding:14px 28px;background:#30D158;border:none;border-radius:14px;color:#000;font-weight:900;font-size:15px;cursor:pointer;font-family:inherit;flex-shrink:0">ðŸ’³ Pay Now</button>
+    <button onclick="showMyPayModal(parseFloat(document.getElementById('bar-amt').textContent.replace('$','')))" style="padding:14px 28px;background:#30D158;border:none;border-radius:14px;color:#000;font-weight:900;font-size:15px;cursor:pointer;font-family:inherit;flex-shrink:0">Pay Now</button>
   </div>
   <div style="max-width:800px;margin:10px auto 0">
     <a href="https://ravensplit.com/dashboard.html" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:7px 10px;background:linear-gradient(135deg,rgba(48,209,88,0.06),rgba(124,58,237,0.06));border:1px solid rgba(48,209,88,0.12);border-radius:10px;color:#9D98AF;text-decoration:none;font-size:10px;line-height:1.3;text-align:center">
-      <span style="color:#30D158;font-size:11px;flex-shrink:0">ðŸª¶</span>
+      <span style="color:#30D158;font-size:11px;flex-shrink:0">R</span>
       <span>New to RAVEN? <strong style="color:#30D158;font-weight:800">Create, split, and share your own bills for free</strong></span>
     </a>
   </div>
@@ -1648,14 +1659,14 @@ app.get('/bill/:billId', async (req, res) => {
 <!-- Header -->
 <div class="hdr"><div class="hdr-i">
   <div style="display:flex;align-items:center;gap:10px">
-    <div style="font-size:20px;font-weight:900;letter-spacing:0.1em"><a href="https://ravensplit.com/" style="text-decoration:none;color:inherit">ðŸª¶</a></div>
+    <div class="clean-icon"><a href="https://ravensplit.com/dashboard.html?app=1&page=overview" style="text-decoration:none;color:inherit">R</a></div>
     <div>
       <div style="font-size:15px;font-weight:700">${bill.name}</div>
       <div style="font-size:11px;color:#6E6B80">ID: ${billId}</div>
     </div>
   </div>
   <div style="display:flex;align-items:center;gap:8px">
-    <button onclick="showQR()" style="padding:7px 14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;color:#9896A8;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">ðŸ“± QR</button>
+    <button class="qr-btn" onclick="showQR()" style="padding:7px 14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;color:#9896A8;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">QR</button>
   </div>
 </div></div>
 
@@ -1663,18 +1674,18 @@ app.get('/bill/:billId', async (req, res) => {
 <div class="sec" style="margin-top:20px">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
     <div>
-      <div style="font-size:28px;font-weight:800">${bill.name}</div>
+      <div class="bill-title" style="font-size:28px;font-weight:800">${bill.name}</div>
       <div style="font-size:13px;color:#6E6B80;margin-top:4px">
-        $${parseFloat(bill.total||0).toFixed(2)} total Â· ${participants.length} people
+        $${parseFloat(bill.total||0).toFixed(2)} total &middot; ${participants.length} people
       </div>
       ${participants.length ? `<div style="font-size:12px;color:#30D158;margin-top:4px;font-weight:700">${(() => {
         const paidByKey = String(bill.paid_by || '').trim().toLowerCase();
         return participants.filter(p => !!p.paid || (paidByKey && String(p.name || '').trim().toLowerCase() === paidByKey)).length;
       })()}/${participants.length} paid</div>` : ''}
     </div>
-    <div style="font-size:32px;font-weight:900;color:#30D158;font-family:'Courier New',monospace">$${parseFloat(bill.total||0).toFixed(2)}</div>
+    <div class="bill-total" style="font-size:32px;font-weight:900;color:#30D158;font-family:'Courier New',monospace">$${parseFloat(bill.total||0).toFixed(2)}</div>
   </div>
-  ${paidByLower ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:10px;margin-bottom:4px"><span style="font-size:16px">ðŸ’³</span><div><div style="font-size:13px;font-weight:700;color:#C084FC">${bill.paid_by} paid the bill</div><div style="font-size:11px;color:#6E6B80">Everyone else needs to pay them back</div></div></div>` : ''}
+  ${paidByLower ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:10px;margin-bottom:4px"><span style="font-size:16px">Paid</span><div><div style="font-size:13px;font-weight:700;color:#C084FC">${bill.paid_by} paid the bill</div><div style="font-size:11px;color:#6E6B80">Everyone else needs to pay them back</div></div></div>` : ''}
 </div>
 
 <!-- Live Mode Banner -->
@@ -1684,7 +1695,7 @@ app.get('/bill/:billId', async (req, res) => {
       <div style="width:8px;height:8px;border-radius:50%;background:#30D158;animation:pulse 2s infinite;flex-shrink:0"></div>
       <div>
         <div style="font-size:13px;font-weight:700;color:#30D158">Live Mode</div>
-        <div style="font-size:11px;color:#6E6B80" id="live-lbl">Live Â· auto-updates every 2s</div>
+        <div style="font-size:11px;color:#6E6B80" id="live-lbl">Live &middot; auto-updates every 2s</div>
       </div>
     </div>
     <div id="you-badge" style="display:none;padding:5px 12px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.3);border-radius:20px;font-size:12px;font-weight:700;color:#30D158"></div>
@@ -1703,7 +1714,7 @@ app.get('/bill/:billId', async (req, res) => {
 <!-- Items section (claimable) -->
 ${items.length > 0 ? `
 <div class="sec" style="margin-top:16px">
-  <div class="sec-lbl">ðŸ“‹ Tap items you ordered</div>
+  <div class="sec-lbl">Tap items you ordered</div>
   <div class="card" id="items-list">
     ${items.map(item => `
     <div class="item-row" id="item-${item.id}" data-item-id="${item.id}" data-item-name="${(item.name||'').replace(/"/g,'&quot;')}">
@@ -1726,7 +1737,7 @@ ${items.length > 0 ? `
 
 <!-- Who owes what -->
 <div class="sec" style="margin-top:16px" id="owes-section">
-  <div class="sec-lbl">ðŸ’° Who owes what</div>
+  <div class="sec-lbl">Who owes what</div>
   <div class="card" id="owes-list">
     <div style="padding:20px;text-align:center;color:#6E6B80;font-size:13px" id="owes-loading">Loading...</div>
   </div>
@@ -1746,13 +1757,13 @@ ${items.length > 0 ? `
 <!-- Receipt image -->
 ${bill.receipt_image ? `
 <div class="sec" style="margin-top:16px">
-  <div class="sec-lbl">ðŸ“¸ Receipt</div>
+  <div class="sec-lbl">Receipt</div>
   <img src="data:image/jpeg;base64,${bill.receipt_image}" style="width:100%;border-radius:14px;display:block">
 </div>` : ''}
 
 <!-- Comments -->
 <div class="sec" style="margin-top:24px">
-  <div class="sec-lbl">ðŸ’¬ Comments</div>
+  <div class="sec-lbl">Comments</div>
   <div id="clist" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
     <div id="no-c" style="color:#6E6B80;font-size:13px;text-align:center;padding:12px 0">No comments yet</div>
   </div>
@@ -1773,8 +1784,8 @@ ${bill.receipt_image ? `
       <div id="bill-comment-gif-results" style="display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 10px;max-height:180px;overflow-y:auto"><div style="color:#6E6B80;font-size:12px;padding:8px 0">Type to search GIFs...</div></div>
     </div>
     <div id="comment-auth-note" style="padding:10px 16px;font-size:12px;color:#6E6B80;border-bottom:1px solid rgba(255,255,255,0.07)">Comments post from your signed-in RAVEN account.</div>
-    <button id="bill-comment-gif-toggle-btn" type="button" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#6E6B80;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">ðŸŽ­ Add GIF</button>
-    <button id="bill-comment-post" onclick="postC()" style="width:100%;padding:13px;background:rgba(48,209,88,0.1);border:none;color:#30D158;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">ðŸ’¬ Post Comment</button>
+    <button id="bill-comment-gif-toggle-btn" type="button" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#6E6B80;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Add GIF</button>
+    <button id="bill-comment-post" onclick="postC()" style="width:100%;padding:13px;background:rgba(48,209,88,0.1);border:none;color:#30D158;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">Post Comment</button>
     <button id="bill-comment-cancel-edit" type="button" onclick="cancelBillCommentEdit()" style="display:none;width:100%;padding:12px 16px;background:transparent;border:none;border-top:1px solid rgba(255,255,255,0.07);color:#9896A8;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Cancel Edit</button>
   </div>
 </div>
@@ -1782,7 +1793,7 @@ ${bill.receipt_image ? `
 <!-- Footer -->
 <div style="max-width:800px;margin:32px auto 0;padding:0 16px 60px;text-align:center">
   <a href="https://ravensplit.com" style="display:inline-flex;align-items:center;gap:8px;padding:10px 18px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:20px;text-decoration:none">
-    <span style="font-size:16px">ðŸª¶</span>
+    <span style="font-size:16px;color:#30D158;font-weight:800">R</span>
     <span style="font-size:12px;color:#6E6B80">Split bills free with <strong style="color:#C084FC">RAVEN</strong></span>
   </a>
 </div>
@@ -1867,7 +1878,7 @@ function setBillCommentComposerMode() {
   const cancelBtn = document.getElementById('bill-comment-cancel-edit');
   const noteEl = document.getElementById('comment-auth-note');
   if (bodyEl) bodyEl.placeholder = editingBillCommentId ? 'Edit your comment...' : 'Add a comment...';
-  if (postBtn) postBtn.textContent = editingBillCommentId ? 'ðŸ’¾ Save Edit' : 'ðŸ’¬ Post Comment';
+  if (postBtn) postBtn.textContent = editingBillCommentId ? 'Save Edit' : 'Post Comment';
   if (cancelBtn) cancelBtn.style.display = editingBillCommentId ? 'block' : 'none';
   if (noteEl) noteEl.innerHTML = editingBillCommentId
     ? 'Editing your comment. Save changes below or cancel.'
@@ -1876,8 +1887,8 @@ function setBillCommentComposerMode() {
 function getRavenCommentProfile() {
   try {
     const profile = JSON.parse(localStorage.getItem('raven_profile') || '{}');
-    const ravenId = String(profile.raven_id || profile.username || '').trim();
-    const hasAccount = !!(profile.user_id || profile.email);
+    const ravenId = String(profile.raven_id || profile.username || profile.first_name || (profile.email || '').split('@')[0] || '').trim();
+    const hasAccount = !!(profile.user_id || profile.id || profile.email || profile.first_name || profile.raven_id || profile.username);
     return {
       ravenId: hasAccount && ravenId ? ravenId : '',
       avatarUrl: String(profile.avatar_url || '').trim(),
@@ -1899,24 +1910,24 @@ function initBillCommentComposer() {
   const avatarEl = document.getElementById('cavatar');
   const profile = getRavenCommentProfile();
   const identity = profile.ravenId;
-  if (nameEl) nameEl.value = identity ? ('@' + identity) : 'Guest viewer';
+  if (nameEl) nameEl.value = identity ? (identity.includes('@') ? identity : ('@' + identity)) : 'RAVEN member';
   if (avatarEl) {
     if (profile.avatarUrl) avatarEl.innerHTML = '<img src="' + profile.avatarUrl + '" style="width:100%;height:100%;object-fit:cover;display:block">';
     else avatarEl.textContent = ((profile.firstName || identity || 'R').charAt(0) || 'R').toUpperCase();
   }
   if (identity) {
     if (bodyEl) { bodyEl.disabled = false; bodyEl.placeholder = 'Add a comment...'; bodyEl.style.opacity = '1'; }
-    if (noteEl) noteEl.textContent = 'Posting as @' + identity + ' from this RAVEN account.';
+    if (noteEl) noteEl.textContent = 'Posting as ' + (identity.includes('@') ? identity : ('@' + identity)) + ' from this RAVEN account.';
     if (btnEl) btnEl.style.display = 'block';
     if (gifBtn) { gifBtn.disabled = false; gifBtn.style.opacity = '1'; gifBtn.style.display = 'block'; }
-    if (btnEl) { btnEl.disabled = false; btnEl.style.opacity = '1'; btnEl.textContent = 'ðŸ’¬ Post Comment'; }
+    if (btnEl) { btnEl.disabled = false; btnEl.style.opacity = '1'; btnEl.textContent = 'Post Comment'; }
     setBillCommentComposerMode();
   } else {
     if (bodyEl) { bodyEl.disabled = true; bodyEl.placeholder = ''; bodyEl.style.opacity = '0.6'; }
     if (noteEl) noteEl.innerHTML = 'Create a <a href="https://ravensplit.com/dashboard.html" style="color:#30D158;text-decoration:none;font-weight:700">RAVEN account</a> to comment.';
     if (btnEl) btnEl.style.display = 'none';
     if (gifBtn) { gifBtn.disabled = true; gifBtn.style.opacity = '0.55'; gifBtn.style.display = 'none'; }
-    if (btnEl) { btnEl.disabled = true; btnEl.style.opacity = '0.55'; btnEl.textContent = 'ðŸ’¬ RAVEN account required'; }
+    if (btnEl) { btnEl.disabled = true; btnEl.style.opacity = '0.55'; btnEl.textContent = 'RAVEN account required'; }
   }
 }
 function clearBillCommentGif() {
