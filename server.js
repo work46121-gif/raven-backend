@@ -1894,20 +1894,16 @@ function getRavenCommentProfile() {
   try {
     // Primary: localStorage (ravensplit.com domain)
     let profile = JSON.parse(localStorage.getItem('raven_profile') || '{}');
-    // Fallback: server-injected #pd hidden field (works even if localStorage isn't seeded yet)
-    if (!(profile.user_id || profile.id || profile.email || profile.first_name || profile.raven_id || profile.username)) {
-      try {
-        const pdEl = document.getElementById('pd');
-        if (pdEl && pdEl.value) {
-          const pdProfile = JSON.parse(atob(pdEl.value));
-          if (pdProfile && (pdProfile.user_id || pdProfile.id || pdProfile.email || pdProfile.first_name || pdProfile.raven_id || pdProfile.username)) {
-            profile = pdProfile;
-            // Seed localStorage so subsequent calls work
-            try { localStorage.setItem('raven_profile', JSON.stringify(pdProfile)); } catch(e) {}
-          }
-        }
-      } catch(e) {}
+    // Fallback: look up avatar from server-injected participant profiles by claimed name
+    const claimedName = (function(){ try { return localStorage.getItem('raven_bill_name_' + BID) || ''; } catch(e){ return ''; } })();
+    if (claimedName && typeof BILL_PARTICIPANT_PROFILES_BY_KEY !== 'undefined') {
+      const key = billParticipantKeyClient(claimedName);
+      const participantProf = BILL_PARTICIPANT_PROFILES_BY_KEY[key];
+      if (participantProf && !profile.avatar_url && participantProf.avatar_url) {
+        profile = Object.assign({}, profile, { avatar_url: participantProf.avatar_url });
+      }
     }
+    // If localStorage has no identity, nothing to fall back on server-side (bill is public)
     const ravenId = String(profile.raven_id || profile.username || profile.first_name || (profile.email || '').split('@')[0] || '').trim();
     const hasAccount = !!(profile.user_id || profile.id || profile.email || profile.first_name || profile.raven_id || profile.username);
     return {
