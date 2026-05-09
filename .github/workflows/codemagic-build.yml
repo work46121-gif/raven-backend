@@ -4,7 +4,15 @@ on:
   push:
     branches:
       - main
+    paths:
+      - server.js
+      - package.json
+      - package-lock.json
   workflow_dispatch:
+
+concurrency:
+  group: codemagic-ios-build
+  cancel-in-progress: true
 
 jobs:
   start-codemagic-build:
