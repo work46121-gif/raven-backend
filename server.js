@@ -6718,6 +6718,8 @@ let chatReadChannel = null;
 let chatGifUrl = null;
 let chatGifTimer = null;
 let chatGifPanelOpen = false;
+let tripChatMode = 'group';
+let tripRavenbotSummary = null;
 const tripMessageProfileCache = {};
 
 async function enrichTripMessagesWithProfiles(messages) {
@@ -6763,10 +6765,13 @@ function openChat() {
   const modal = document.getElementById('chat-modal');
   if (!modal) { console.warn('chat-modal not found in DOM'); return; }
   modal.style.display = 'flex';
+  tripChatMode = 'group';
   const titleEl = document.getElementById('chat-trip-title');
   if (titleEl) titleEl.textContent = TRIP_NAME;
   const memberCount = document.getElementById('chat-member-count');
   if (memberCount) memberCount.textContent = D.people.length + ' members';
+  const input = document.getElementById('chat-input');
+  if (input) input.placeholder = 'Message the group...';
   clearUnreadBadge();
   loadChatMsgs();
   setTimeout(function() { const inp = document.getElementById('chat-input'); if (inp) inp.focus(); }, 100);
@@ -6853,7 +6858,7 @@ async function loadChatMsgs() {
       const nextMsg = enriched[0] || payload.new;
       const modal = document.getElementById('chat-modal');
       const chatOpen = modal && modal.style.display === 'flex';
-      if (chatOpen) {
+      if (chatOpen && tripChatMode === 'group') {
         appendMsg(nextMsg, true);
         markRead(nextMsg.id);
       } else {
@@ -6876,6 +6881,7 @@ async function loadChatMsgs() {
 function renderTripConcierge(summary) {
   const panel = document.getElementById('trip-concierge-panel');
   if (!panel || !summary || summary.success === false) return;
+  tripRavenbotSummary = summary;
   const insights = (summary.insights || []).slice(0, 3).map(function(text) {
     return '<div style="font-size:11px;line-height:1.45;color:#D9D2F5">' + escapeHtml(text) + '</div>';
   }).join('');
@@ -6894,9 +6900,7 @@ function renderTripConcierge(summary) {
     + '</div>'
     + '<div style="display:flex;flex-direction:column;gap:5px">' + insights + '</div>'
     + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">'
-      + '<button type="button" data-kind="owes" onclick="answerTripConcierge(this.dataset.kind)" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#D9D2F5;border-radius:999px;padding:6px 9px;font-size:10px;font-weight:800;cursor:pointer">Who owes?</button>'
-      + '<button type="button" data-kind="spend" onclick="answerTripConcierge(this.dataset.kind)" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#D9D2F5;border-radius:999px;padding:6px 9px;font-size:10px;font-weight:800;cursor:pointer">Top spend</button>'
-      + '<button type="button" data-kind="sweep" onclick="answerTripConcierge(this.dataset.kind)" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#D9D2F5;border-radius:999px;padding:6px 9px;font-size:10px;font-weight:800;cursor:pointer">Sweep</button>'
+      + '<button type="button" onclick="openTripRavenbot()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#D9D2F5;border-radius:999px;padding:6px 9px;font-size:10px;font-weight:800;cursor:pointer">Speak to RAVENbot</button>'
     + '</div>'
     + '<div id="trip-concierge-details" style="display:none;margin-top:8px">' + (events || '<div style="font-size:10px;color:#6E6B80;padding-top:6px;border-top:1px solid rgba(255,255,255,0.06)">No money activity yet.</div>') + '</div>';
 }
@@ -6906,21 +6910,66 @@ function toggleTripConciergeDetails() {
   if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
-function answerTripConcierge(kind) {
+function getRavenbotStorageKey() {
+  return 'ravenbot_chat_' + TRIP_ID + '_' + (window._ravenUserId || window._ravenFirstName || 'local');
+}
+function getRavenbotMessages() {
+  try { return JSON.parse(localStorage.getItem(getRavenbotStorageKey()) || '[]'); } catch(e) { return []; }
+}
+function setRavenbotMessages(messages) {
+  localStorage.setItem(getRavenbotStorageKey(), JSON.stringify((messages || []).slice(-80)));
+}
+function openTripRavenbot() {
+  tripChatMode = 'ravenbot';
   const panel = document.getElementById('trip-concierge-panel');
-  let summary = {};
-  try { summary = JSON.parse(panel?.dataset?.summary || '{}'); } catch(e) {}
-  let message = '';
-  if (kind === 'owes') {
-    const debtors = summary.debtors || [];
-    message = debtors.length ? debtors.slice(0, 5).map(d => d.name + ' owes $' + Number(d.amount || 0).toFixed(2)).join('\\n') : 'Everyone is settled right now.';
-  } else if (kind === 'spend') {
-    message = (summary.insights || []).find(x => x.indexOf('Biggest receipt:') === 0) || ('Total trip spend is $' + Number(summary.total_spent || 0).toFixed(2) + '.');
-  } else {
-    const debtors = summary.debtors || [];
-    message = debtors.length ? 'Sweep suggestion: collect from ' + debtors.map(d => d.name + ' ($' + Number(d.amount || 0).toFixed(2) + ')').join(', ') + '.' : 'Sweep complete: nobody owes anything right now.';
+  if (panel) panel.style.display = 'none';
+  const title = document.getElementById('chat-trip-title');
+  const sub = document.getElementById('chat-member-count');
+  if (title) title.textContent = 'Speak to RAVENbot';
+  if (sub) sub.textContent = 'Private to you';
+  const input = document.getElementById('chat-input');
+  if (input) input.placeholder = 'Ask RAVENbot about this trip...';
+  renderRavenbotMessages();
+}
+function renderRavenbotMessages() {
+  const container = document.getElementById('chat-msgs');
+  if (!container) return;
+  container.innerHTML = '';
+  const messages = getRavenbotMessages();
+  if (!messages.length) {
+    appendRavenbotMessage({ role: 'bot', text: 'I can help with balances, receipts, settlement, and anything else about this trip. This chat is private to you.', created_at: new Date().toISOString() }, false);
+    return;
   }
-  appendMsg({ id: 'concierge-' + kind + '-' + Date.now(), user_id: 'raven-concierge', sender_name: 'RAVEN Concierge', message, created_at: new Date().toISOString(), system_type: 'concierge' }, true);
+  messages.forEach(function(msg) { appendRavenbotMessage(msg, false); });
+  container.scrollTop = container.scrollHeight;
+}
+function appendRavenbotMessage(msg, persist) {
+  const container = document.getElementById('chat-msgs');
+  if (!container) return;
+  const isUser = msg.role === 'user';
+  const el = document.createElement('div');
+  el.style.cssText = 'display:flex;flex-direction:column;align-items:' + (isUser ? 'flex-end' : 'flex-start') + ';gap:3px;margin-bottom:6px';
+  el.innerHTML = (!isUser ? '<div style="font-size:10px;color:#30D158;font-weight:900;letter-spacing:0.08em;text-transform:uppercase;margin-left:4px">RAVENbot</div>' : '')
+    + '<div style="max-width:82%;padding:10px 13px;border-radius:' + (isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px') + ';background:' + (isUser ? '#0A84FF' : 'linear-gradient(135deg,rgba(124,58,237,0.18),rgba(48,209,88,0.1))') + ';border:' + (isUser ? '0' : '1px solid rgba(168,85,247,0.22)') + ';color:#F0EEF8;font-size:13px;line-height:1.5;white-space:pre-line;word-break:break-word">' + escapeHtml(msg.text || '') + '</div>';
+  container.appendChild(el);
+  if (persist !== false) {
+    const messages = getRavenbotMessages();
+    messages.push({ role: msg.role, text: msg.text || '', created_at: msg.created_at || new Date().toISOString() });
+    setRavenbotMessages(messages);
+  }
+}
+function buildRavenbotReply(question) {
+  const summary = tripRavenbotSummary || D.conciergeSummary || {};
+  const debtors = summary.debtors || [];
+  const lower = String(question || '').toLowerCase();
+  if (lower.includes('owe') || lower.includes('settle') || lower.includes('paid')) {
+    return debtors.length ? debtors.slice(0, 5).map(function(d) { return d.name + ' owes $' + Number(d.amount || 0).toFixed(2); }).join('\\n') : 'Everyone is settled right now. Outstanding balance is $0.00.';
+  }
+  if (lower.includes('receipt') || lower.includes('spend') || lower.includes('total')) {
+    const biggest = (summary.insights || []).find(function(x) { return x.indexOf('Biggest receipt:') === 0; });
+    return 'This trip has ' + (summary.receipt_count || 0) + ' receipts and $' + Number(summary.total_spent || 0).toFixed(2) + ' total spent.' + (biggest ? '\\n' + biggest : '');
+  }
+  return (summary.insights || []).join('\\n') || 'Ask me about who owes, top receipts, total spend, or settlement status.';
 }
 
 async function markRead(msgId) {
@@ -7158,6 +7207,18 @@ async function sendChat() {
   clearChatGif();
   clearChatPhoto();
 
+  if (tripChatMode === 'ravenbot') {
+    appendRavenbotMessage({ role: 'user', text: message || '[attachment]', created_at: new Date().toISOString() }, true);
+    setTimeout(function() {
+      appendRavenbotMessage({ role: 'bot', text: buildRavenbotReply(message), created_at: new Date().toISOString() }, true);
+      const c = document.getElementById('chat-msgs');
+      if (c) c.scrollTop = c.scrollHeight;
+    }, 180);
+    const c = document.getElementById('chat-msgs');
+    if (c) c.scrollTop = c.scrollHeight;
+    return;
+  }
+
   let resolvedSenderName = firstName;
   try {
     const liveUserId = window._ravenUserId || session?.user?.id || '';
@@ -7360,7 +7421,6 @@ function parseTripJsonObject(value) {
 
 function buildTripConciergePayload(trip, receipts) {
   const people = parseTripPeople(trip?.people);
-  const settled = parseTripJsonObject(trip?.settled_people);
   const normalizedReceipts = (receipts || []).map(r => ({
     id: String(r.id || ''),
     name: r.name || 'Receipt',
@@ -7370,18 +7430,27 @@ function buildTripConciergePayload(trip, receipts) {
     splits: parseTripJsonObject(r.splits),
     created_at: r.created_at || ''
   }));
+  const validReceiptIds = new Set(normalizedReceipts.map(r => String(r.id)).filter(Boolean));
+  const settledCredits = aggregateSettledCredits(trip?.settled_people, validReceiptIds);
+  const peopleByLower = {};
+  people.forEach(p => { peopleByLower[String(p || '').toLowerCase()] = p; });
+  const rawTotals = {};
+  people.forEach(p => { rawTotals[p] = 0; });
   const outstanding = {};
   people.forEach(p => { outstanding[p] = 0; });
   normalizedReceipts.forEach(r => {
     Object.entries(r.splits || {}).forEach(([person, amount]) => {
       const owed = parseFloat(amount || 0) || 0;
-      if (!owed || person === r.paid_by) return;
-      const receiptKey = (person + '::receipt::' + r.id).toLowerCase();
-      const paidForReceipt = parseFloat(settled[receiptKey] || 0) || 0;
-      const paidGeneral = parseFloat(settled[String(person).toLowerCase()] || 0) || 0;
-      const paid = Math.max(paidForReceipt, paidGeneral);
-      outstanding[person] = Math.max(0, (outstanding[person] || 0) + owed - paid);
+      if (!owed) return;
+      const personKey = peopleByLower[String(person || '').toLowerCase()] || person;
+      if (String(personKey || '').toLowerCase() === String(r.paid_by || '').toLowerCase()) return;
+      rawTotals[personKey] = (rawTotals[personKey] || 0) + owed;
     });
+  });
+  Object.entries(rawTotals).forEach(([person, raw]) => {
+    const credit = Math.min(settledCredits[String(person || '').toLowerCase()] || 0, raw);
+    const net = Math.round(Math.max(0, raw - credit) * 100) / 100;
+    outstanding[person] = net <= 0.02 ? 0 : net;
   });
   const debtors = Object.entries(outstanding)
     .filter(([, amount]) => amount > 0.01)
