@@ -3921,6 +3921,7 @@ app.get('/trip/:tripId', async (req, res) => {
     people,
     hasCoverImage: !!trip.cover_image,
     memberPayProfiles,
+    conciergeSummary: buildTripConciergePayload({ ...trip, id: tripId }, receipts || []),
     receiptsData: (receipts||[]).map(r => {
       let splitsData = {};
       try { splitsData = typeof r.splits==='string' ? JSON.parse(r.splits) : (r.splits||{}); } catch(e) {}
@@ -6813,6 +6814,7 @@ async function loadChatMsgs() {
   if (!chatDb) { await initChatDb(); }
   const container = document.getElementById('chat-msgs');
   container.innerHTML = '<div style="text-align:center;color:#6E6B80;font-size:12px;padding:30px 0">Loading...</div>';
+  renderTripConcierge(D.conciergeSummary);
   const renderFallbackMessages = async function() {
     try {
       const resp = await fetch(BACKEND + '/trip/' + TRIP_ID + '/messages?token=' + encodeURIComponent(TRIP_TOKEN));
@@ -6869,6 +6871,56 @@ async function loadChatMsgs() {
       refreshReadReceipts();
     })
     .subscribe();
+}
+
+function renderTripConcierge(summary) {
+  const panel = document.getElementById('trip-concierge-panel');
+  if (!panel || !summary || summary.success === false) return;
+  const insights = (summary.insights || []).slice(0, 3).map(function(text) {
+    return '<div style="font-size:11px;line-height:1.45;color:#D9D2F5">' + escapeHtml(text) + '</div>';
+  }).join('');
+  const events = (summary.events || []).slice(0, 3).map(function(ev) {
+    return '<div style="padding:7px 0;border-top:1px solid rgba(255,255,255,0.06)">'
+      + '<div style="font-size:11px;font-weight:800;color:#F0EEF8">' + escapeHtml(ev.title || 'Trip activity') + '</div>'
+      + '<div style="font-size:10px;color:#9896A8;margin-top:2px">' + escapeHtml(ev.detail || '') + '</div>'
+      + '</div>';
+  }).join('');
+  panel.style.display = 'block';
+  panel.dataset.summary = JSON.stringify(summary);
+  panel.innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">'
+      + '<div style="display:flex;align-items:center;gap:8px"><div style="width:24px;height:24px;border-radius:8px;background:linear-gradient(135deg,#A855F7,#30D158);display:flex;align-items:center;justify-content:center;color:#09090E;font-weight:900;font-size:13px">R</div><div><div style="font-size:12px;font-weight:900;color:#F0EEF8">RAVEN Concierge</div><div style="font-size:10px;color:#6E6B80">' + (summary.receipt_count || 0) + ' receipts - $' + Number(summary.total_spent || 0).toFixed(2) + ' spent</div></div></div>'
+      + '<button type="button" onclick="toggleTripConciergeDetails()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);border-radius:999px;color:#9896A8;font-size:10px;font-weight:800;padding:5px 8px;cursor:pointer">Details</button>'
+    + '</div>'
+    + '<div style="display:flex;flex-direction:column;gap:5px">' + insights + '</div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">'
+      + '<button type="button" data-kind="owes" onclick="answerTripConcierge(this.dataset.kind)" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#D9D2F5;border-radius:999px;padding:6px 9px;font-size:10px;font-weight:800;cursor:pointer">Who owes?</button>'
+      + '<button type="button" data-kind="spend" onclick="answerTripConcierge(this.dataset.kind)" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#D9D2F5;border-radius:999px;padding:6px 9px;font-size:10px;font-weight:800;cursor:pointer">Top spend</button>'
+      + '<button type="button" data-kind="sweep" onclick="answerTripConcierge(this.dataset.kind)" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#D9D2F5;border-radius:999px;padding:6px 9px;font-size:10px;font-weight:800;cursor:pointer">Sweep</button>'
+    + '</div>'
+    + '<div id="trip-concierge-details" style="display:none;margin-top:8px">' + (events || '<div style="font-size:10px;color:#6E6B80;padding-top:6px;border-top:1px solid rgba(255,255,255,0.06)">No money activity yet.</div>') + '</div>';
+}
+
+function toggleTripConciergeDetails() {
+  const el = document.getElementById('trip-concierge-details');
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+function answerTripConcierge(kind) {
+  const panel = document.getElementById('trip-concierge-panel');
+  let summary = {};
+  try { summary = JSON.parse(panel?.dataset?.summary || '{}'); } catch(e) {}
+  let message = '';
+  if (kind === 'owes') {
+    const debtors = summary.debtors || [];
+    message = debtors.length ? debtors.slice(0, 5).map(d => d.name + ' owes $' + Number(d.amount || 0).toFixed(2)).join('\\n') : 'Everyone is settled right now.';
+  } else if (kind === 'spend') {
+    message = (summary.insights || []).find(x => x.indexOf('Biggest receipt:') === 0) || ('Total trip spend is $' + Number(summary.total_spent || 0).toFixed(2) + '.');
+  } else {
+    const debtors = summary.debtors || [];
+    message = debtors.length ? 'Sweep suggestion: collect from ' + debtors.map(d => d.name + ' ($' + Number(d.amount || 0).toFixed(2) + ')').join(', ') + '.' : 'Sweep complete: nobody owes anything right now.';
+  }
+  appendMsg({ id: 'concierge-' + kind + '-' + Date.now(), user_id: 'raven-concierge', sender_name: 'RAVEN Concierge', message, created_at: new Date().toISOString(), system_type: 'concierge' }, true);
 }
 
 async function markRead(msgId) {
@@ -6940,13 +6992,24 @@ function appendMsg(msg, scroll) {
   if (empty) empty.remove();
   const container = document.getElementById('chat-msgs');
   if (msg.id && container.querySelector('[data-msg-id="' + String(msg.id).replace(/"/g, '\\"') + '"]')) return;
-  const isMe = msg.user_id === (window._ravenUserId || '');
+  const isConcierge = msg.user_id === 'raven-concierge' || msg.system_type === 'concierge';
+  const isMe = !isConcierge && msg.user_id === (window._ravenUserId || '');
   const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const firstName = getTripProfileDisplayName(msg.sender_name || 'Member').split(' ')[0];
   const avatarUrl = getTripProfileAvatar(msg.sender_name || '') || msg.avatar_url || '';
 
   const outer = document.createElement('div');
   outer.setAttribute('data-msg-id', msg.id || '');
+  if (isConcierge) {
+    outer.style.cssText = 'display:flex;flex-direction:column;align-items:stretch;gap:4px;margin:2px 0';
+    outer.innerHTML = '<div style="align-self:center;max-width:92%;padding:10px 12px;border-radius:14px;background:linear-gradient(135deg,rgba(124,58,237,0.18),rgba(48,209,88,0.1));border:1px solid rgba(168,85,247,0.22);color:#F0EEF8;font-size:12px;line-height:1.5;white-space:pre-line">'
+      + '<div style="font-size:10px;font-weight:900;letter-spacing:0.08em;text-transform:uppercase;color:#30D158;margin-bottom:4px">RAVEN Concierge</div>'
+      + escapeHtml(msg.message || '')
+      + '</div>';
+    container.appendChild(outer);
+    if (scroll) container.scrollTop = container.scrollHeight;
+    return;
+  }
   outer.style.cssText = 'display:flex;flex-direction:column;align-items:' + (isMe ? 'flex-end' : 'flex-start') + ';gap:2px;margin-bottom:4px';
 
   // Name label
@@ -7188,6 +7251,7 @@ initChatDb().then(async function() {
     </div>
     <button onclick="closeChat()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:50%;width:28px;height:28px;color:#9896A8;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center">x</button>
   </div>
+  <div id="trip-concierge-panel" style="display:none;padding:12px 16px;background:linear-gradient(135deg,rgba(124,58,237,0.14),rgba(48,209,88,0.06));border-bottom:1px solid rgba(255,255,255,0.07);flex-shrink:0"></div>
   <!-- Messages -->
   <div id="chat-msgs" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;min-height:0">
     <div id="chat-empty" style="text-align:center;color:#6E6B80;font-size:12px;padding:30px 0">No messages yet. Say hi!</div>
@@ -7281,6 +7345,101 @@ app.get('/trip/:tripId/messages', async (req, res) => {
     }
     res.json({ success: true, messages: messages || [] });
   } catch(err) { res.json({ success: false, messages: [], error: err.message }); }
+});
+
+function parseTripPeople(value) {
+  try { return Array.isArray(value) ? value : JSON.parse(value || '[]'); } catch(e) { return []; }
+}
+
+function parseTripJsonObject(value) {
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value || '{}') : (value || {});
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch(e) { return {}; }
+}
+
+function buildTripConciergePayload(trip, receipts) {
+  const people = parseTripPeople(trip?.people);
+  const settled = parseTripJsonObject(trip?.settled_people);
+  const normalizedReceipts = (receipts || []).map(r => ({
+    id: String(r.id || ''),
+    name: r.name || 'Receipt',
+    paid_by: r.paid_by || '',
+    added_by: r.added_by || '',
+    total: parseFloat(r.total || 0) || 0,
+    splits: parseTripJsonObject(r.splits),
+    created_at: r.created_at || ''
+  }));
+  const outstanding = {};
+  people.forEach(p => { outstanding[p] = 0; });
+  normalizedReceipts.forEach(r => {
+    Object.entries(r.splits || {}).forEach(([person, amount]) => {
+      const owed = parseFloat(amount || 0) || 0;
+      if (!owed || person === r.paid_by) return;
+      const receiptKey = (person + '::receipt::' + r.id).toLowerCase();
+      const paidForReceipt = parseFloat(settled[receiptKey] || 0) || 0;
+      const paidGeneral = parseFloat(settled[String(person).toLowerCase()] || 0) || 0;
+      const paid = Math.max(paidForReceipt, paidGeneral);
+      outstanding[person] = Math.max(0, (outstanding[person] || 0) + owed - paid);
+    });
+  });
+  const debtors = Object.entries(outstanding)
+    .filter(([, amount]) => amount > 0.01)
+    .map(([name, amount]) => ({ name, amount: Math.round(amount * 100) / 100 }))
+    .sort((a, b) => b.amount - a.amount);
+  const totalSpent = normalizedReceipts.reduce((sum, r) => sum + r.total, 0);
+  const topReceipt = [...normalizedReceipts].sort((a, b) => b.total - a.total)[0] || null;
+  const latestReceipt = [...normalizedReceipts].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))[0] || null;
+  const events = normalizedReceipts
+    .slice()
+    .reverse()
+    .slice(0, 8)
+    .map(r => {
+      const splitNames = Object.keys(r.splits || {}).filter(name => parseFloat(r.splits[name] || 0) > 0);
+      return {
+        type: 'receipt_added',
+        title: (r.added_by || r.paid_by || 'Someone') + ' added ' + r.name,
+        detail: '$' + r.total.toFixed(2) + (r.paid_by ? ' paid by ' + r.paid_by : '') + (splitNames.length ? ' - split with ' + splitNames.length + ' people' : ''),
+        created_at: r.created_at || ''
+      };
+    });
+  const insights = [];
+  if (!normalizedReceipts.length) {
+    insights.push('No receipts yet. Scan the first receipt and I will track claims, balances, and who still owes.');
+  } else if (debtors.length) {
+    const owedTotal = debtors.reduce((sum, d) => sum + d.amount, 0);
+    insights.push(debtors.length + ' people still owe $' + owedTotal.toFixed(2) + '. Top balance: ' + debtors[0].name + ' owes $' + debtors[0].amount.toFixed(2) + '.');
+  } else {
+    insights.push('All settled. This trip is clean right now.');
+  }
+  if (topReceipt) insights.push('Biggest receipt: ' + topReceipt.name + ' at $' + topReceipt.total.toFixed(2) + '.');
+  if (latestReceipt) insights.push('Latest activity: ' + latestReceipt.name + ' was added' + (latestReceipt.added_by ? ' by ' + latestReceipt.added_by : '') + '.');
+  return {
+    success: true,
+    trip_id: trip?.id || '',
+    trip_name: trip?.name || 'Trip',
+    people_count: people.length,
+    receipt_count: normalizedReceipts.length,
+    total_spent: Math.round(totalSpent * 100) / 100,
+    debtors,
+    insights,
+    events
+  };
+}
+
+app.get('/trip/:tripId/concierge', async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const token = req.query.token;
+    const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
+    if (!trip || (token && token !== trip.share_token && token !== trip.invite_token)) {
+      return res.status(403).json({ success: false, error: 'Invalid token' });
+    }
+    const { data: receipts } = await supabase.from('trip_receipts').select('*').eq('trip_id', tripId).order('created_at', { ascending: true });
+    res.json(buildTripConciergePayload(trip, receipts || []));
+  } catch(err) {
+    res.json({ success: false, error: err.message });
+  }
 });
 
 app.post('/trip/:tripId/message', async (req, res) => {
@@ -7892,6 +8051,16 @@ app.post('/trip/:tripId/receipt', async (req, res) => {
 
     const outstanding = await computeOutstanding(tripId);
     await supabase.from('trips').update({ total: outstanding !== null ? outstanding : 0, receipt_count: (all||[]).length }).eq('id', tripId);
+    try {
+      const splitCount = Object.values(splits || {}).filter(v => (parseFloat(v) || 0) > 0).length;
+      await supabase.from('trip_messages').insert({
+        trip_id: tripId,
+        user_id: 'raven-concierge',
+        sender_name: 'RAVEN Concierge',
+        message: (added_by || paid_by || 'Someone') + ' added ' + (name || 'a receipt') + ' for $' + (parseFloat(total) || 0).toFixed(2) + (paid_by ? '. Paid by ' + paid_by + '.' : '.') + (splitCount ? ' Split with ' + splitCount + ' people.' : ''),
+        created_at: new Date().toISOString()
+      });
+    } catch(e) {}
     res.json({ success: true });
   } catch(err) { console.error('Trip receipt error:', err); res.json({ success: false, error: err.message }); }
 });
