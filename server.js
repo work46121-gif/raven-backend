@@ -1312,6 +1312,9 @@ app.get('/bill/:billId', async (req, res) => {
   <meta property="og:description" content="Tap to see what you owe Â· Bill ID: ${billId}" />
   <meta property="og:image" content="https://ravensplit.com/raven-hero.png" />
   <meta property="og:url" content="${baseUrl}/bill/${billId}" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Epilogue:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;padding-bottom:120px}
