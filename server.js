@@ -1312,6 +1312,9 @@ app.get('/bill/:billId', async (req, res) => {
   <meta property="og:description" content="Tap to see what you owe Â· Bill ID: ${billId}" />
   <meta property="og:image" content="https://ravensplit.com/raven-hero.png" />
   <meta property="og:url" content="${baseUrl}/bill/${billId}" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Epilogue:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:'Epilogue',-apple-system,'Helvetica Neue',Arial,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;padding-bottom:120px}
@@ -1325,7 +1328,6 @@ app.get('/bill/:billId', async (req, res) => {
     .raven-footer{max-width:800px;margin:32px auto 0;padding:0 20px 60px;text-align:center}
     .raven-footer-inner{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:20px;text-decoration:none}
   </style>
-  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Epilogue:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
   <div class="hdr"><div class="hdr-i">
@@ -1564,6 +1566,9 @@ app.get('/bill/:billId', async (req, res) => {
   <meta property="og:description" content="Tap to claim what you ordered Â· Bill ID: ${billId}" />
   <meta property="og:image" content="https://ravensplit.com/raven-hero.png" />
   <meta property="og:url" content="${baseUrl}/bill/${billId}" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Epilogue:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:'Epilogue',-apple-system,'Helvetica Neue',Arial,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;padding-bottom:160px}
@@ -1603,7 +1608,6 @@ app.get('/bill/:billId', async (req, res) => {
     body.app-bill .sec-lbl{font-size:12px!important;letter-spacing:.16em}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
   </style>
-  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Epilogue:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body class="${isAppBillMode ? 'app-bill' : ''}">
 
@@ -9016,6 +9020,28 @@ app.post('/remind-dashboard', async (req, res) => {
   } catch(err) {
     console.error('Remind error:', err);
     res.json({ success: false, error: err.message });
+  }
+});
+
+// RAVENbot AI proxy — keeps Anthropic API key server-side
+app.post('/api/ravenbot', async (req, res) => {
+  try {
+    const { system, messages } = req.body || {};
+    if (!Array.isArray(messages) || !messages.length) {
+      return res.status(400).json({ error: 'messages required' });
+    }
+    const anthropic = getAnthropic();
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 400,
+      system: system || 'You are RAVENbot, a helpful bill-splitting assistant inside the RAVEN app.',
+      messages: messages.map(m => ({ role: m.role === 'bot' ? 'assistant' : m.role, content: String(m.content || '') }))
+    });
+    const reply = (response.content || []).map(b => b.text || '').join('').trim();
+    res.json({ reply });
+  } catch (e) {
+    console.error('RAVENbot error:', e.message);
+    res.status(500).json({ error: 'RAVENbot unavailable', reply: 'I\'m having trouble right now. Try again in a moment.' });
   }
 });
 
