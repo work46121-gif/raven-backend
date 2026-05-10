@@ -1,4 +1,4 @@
-﻿require('dotenv').config();
+require('dotenv').config();
 const express = require('express');
 const twilio = require('twilio');
 const { createClient } = require('@supabase/supabase-js');
@@ -1312,12 +1312,9 @@ app.get('/bill/:billId', async (req, res) => {
   <meta property="og:description" content="Tap to see what you owe Â· Bill ID: ${billId}" />
   <meta property="og:image" content="https://ravensplit.com/raven-hero.png" />
   <meta property="og:url" content="${baseUrl}/bill/${billId}" />
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Epilogue:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;padding-bottom:120px}
+    body{font-family:'Epilogue',-apple-system,'Helvetica Neue',Arial,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;padding-bottom:120px}
     .hdr{position:sticky;top:0;background:rgba(6,6,10,0.95);backdrop-filter:blur(20px);border-bottom:1px solid rgba(255,255,255,0.07);padding:0 20px;z-index:100}
     .hdr-i{max-width:800px;margin:0 auto;height:56px;display:flex;align-items:center;justify-content:space-between}
     .pm-row{display:flex;align-items:center;gap:14px;padding:14px 16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:12px;text-decoration:none;margin-bottom:8px;-webkit-tap-highlight-color:transparent;width:100%;cursor:pointer}
@@ -1328,6 +1325,7 @@ app.get('/bill/:billId', async (req, res) => {
     .raven-footer{max-width:800px;margin:32px auto 0;padding:0 20px 60px;text-align:center}
     .raven-footer-inner{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:20px;text-decoration:none}
   </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Epilogue:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
   <div class="hdr"><div class="hdr-i">
@@ -1566,12 +1564,9 @@ app.get('/bill/:billId', async (req, res) => {
   <meta property="og:description" content="Tap to claim what you ordered Â· Bill ID: ${billId}" />
   <meta property="og:image" content="https://ravensplit.com/raven-hero.png" />
   <meta property="og:url" content="${baseUrl}/bill/${billId}" />
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Epilogue:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;padding-bottom:160px}
+    body{font-family:'Epilogue',-apple-system,'Helvetica Neue',Arial,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;padding-bottom:160px}
     .hdr{position:sticky;top:0;background:rgba(6,6,10,0.95);backdrop-filter:blur(20px);border-bottom:1px solid rgba(255,255,255,0.07);padding:0 16px;z-index:100}
     .hdr-i{max-width:800px;margin:0 auto;height:56px;display:flex;align-items:center;justify-content:space-between;gap:10px}
     .card{background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:16px;overflow:hidden}
@@ -1608,6 +1603,7 @@ app.get('/bill/:billId', async (req, res) => {
     body.app-bill .sec-lbl{font-size:12px!important;letter-spacing:.16em}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
   </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Epilogue:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body class="${isAppBillMode ? 'app-bill' : ''}">
 
@@ -1665,7 +1661,7 @@ app.get('/bill/:billId', async (req, res) => {
 <!-- Header -->
 <div class="hdr"><div class="hdr-i">
   <div style="display:flex;align-items:center;gap:10px">
-    <div class="clean-icon"><a href="https://ravensplit.com/app.html?app=1" style="text-decoration:none;color:inherit">R</a></div>
+    <div class="clean-icon"><a href="https://ravensplit.com/dashboard.html?app=1&page=overview" style="text-decoration:none;color:inherit">R</a></div>
     <div>
       <div style="font-size:15px;font-weight:700">${bill.name}</div>
       <div style="font-size:11px;color:#6E6B80">ID: ${billId}</div>
@@ -1892,18 +1888,7 @@ function setBillCommentComposerMode() {
 }
 function getRavenCommentProfile() {
   try {
-    // Primary: localStorage (ravensplit.com domain)
-    let profile = JSON.parse(localStorage.getItem('raven_profile') || '{}');
-    // Fallback: look up avatar from server-injected participant profiles by claimed name
-    const claimedName = (function(){ try { return localStorage.getItem('raven_bill_name_' + BID) || ''; } catch(e){ return ''; } })();
-    if (claimedName && typeof BILL_PARTICIPANT_PROFILES_BY_KEY !== 'undefined') {
-      const key = billParticipantKeyClient(claimedName);
-      const participantProf = BILL_PARTICIPANT_PROFILES_BY_KEY[key];
-      if (participantProf && !profile.avatar_url && participantProf.avatar_url) {
-        profile = Object.assign({}, profile, { avatar_url: participantProf.avatar_url });
-      }
-    }
-    // If localStorage has no identity, nothing to fall back on server-side (bill is public)
+    const profile = JSON.parse(localStorage.getItem('raven_profile') || '{}');
     const ravenId = String(profile.raven_id || profile.username || profile.first_name || (profile.email || '').split('@')[0] || '').trim();
     const hasAccount = !!(profile.user_id || profile.id || profile.email || profile.first_name || profile.raven_id || profile.username);
     return {
@@ -3151,7 +3136,7 @@ app.get('/trip/:tripId', async (req, res) => {
   const { tripId } = req.params;
   const token = req.query.t;
   const isAppMode = req.query.app === '1';
-  const dashboardBackUrl = isAppMode ? 'https://ravensplit.com/app.html?app=1' : 'https://ravensplit.com/dashboard.html'; // _nc is just a cache-buster, never affects auth
+  const dashboardBackUrl = isAppMode ? 'https://ravensplit.com/dashboard.html?app=1&page=overview' : 'https://ravensplit.com/dashboard.html'; // _nc is just a cache-buster, never affects auth
   // Always serve fresh  never let Railway/proxy cache trip pages
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.setHeader('Pragma', 'no-cache');
