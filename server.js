@@ -1595,7 +1595,8 @@ app.get('/bill/:billId', async (req, res) => {
     body.app-bill .hdr-i{height:64px;max-width:560px}
     body.app-bill .sec{max-width:560px;padding:0 18px}
     body.app-bill .bill-title{font-size:clamp(30px,8vw,44px)!important;line-height:1.08!important;letter-spacing:0!important}
-    body.app-bill .bill-total{font-family:'Epilogue',-apple-system,sans-serif!important;letter-spacing:.08em;font-size:clamp(38px,10vw,58px)!important}
+    body.app-bill .bill-total{font-family:'Epilogue',-apple-system,sans-serif!important;letter-spacing:0!important;font-size:clamp(38px,10vw,58px)!important}
+    body.app-bill [style*="font-family:monospace"],body.app-bill [style*="Courier New"]{font-family:'Epilogue',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif!important;letter-spacing:0!important}
     body.app-bill .clean-icon{font-family:'Bebas Neue',Impact,sans-serif;font-size:34px;line-height:1;background:linear-gradient(135deg,#C084FC,#30D158);-webkit-background-clip:text;color:transparent}
     body.app-bill .qr-btn{font-size:13px!important;padding:10px 16px!important}
     body.app-bill .item-name-text{font-size:18px!important;line-height:1.2}
@@ -1617,9 +1618,9 @@ app.get('/bill/:billId', async (req, res) => {
     <input id="name-input" type="text" placeholder="Your name" autocomplete="name"
       style="width:100%;padding:14px 16px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:12px;color:#F0EEF8;font-size:16px;font-family:inherit;outline:none;margin-bottom:12px">
     <button class="btn-g" onclick="submitName()">Start Claiming Items</button>
-    <div style="margin-top:8px;font-size:11px;line-height:1.5;color:#6E6B80;text-align:center">New to RAVEN? <a href="https://ravensplit.com/dashboard.html" style="color:#30D158;font-weight:700;text-decoration:none">Create, split, and share your own bills for free</a>.</div>
+    <div style="margin-top:8px;font-size:11px;line-height:1.5;color:#6E6B80;text-align:center">New to RAVEN? <a href="https://ravensplit.com/dashboard.html${isAppBillMode ? '?app=1&page=overview' : ''}" style="color:#30D158;font-weight:700;text-decoration:none">Create, split, and share your own bills for free</a>.</div>
   </div>
-  <div style="max-width:800px;margin:8px auto 0;font-size:11px;line-height:1.5;color:#6E6B80;text-align:center">New to RAVEN? <a href="https://ravensplit.com/dashboard.html" style="color:#30D158;font-weight:700;text-decoration:none">Create, split, and share your own bills for free</a>.</div>
+  <div style="max-width:800px;margin:8px auto 0;font-size:11px;line-height:1.5;color:#6E6B80;text-align:center">New to RAVEN? <a href="https://ravensplit.com/dashboard.html${isAppBillMode ? '?app=1&page=overview' : ''}" style="color:#30D158;font-weight:700;text-decoration:none">Create, split, and share your own bills for free</a>.</div>
 </div>
 
 <!-- Pay modal -->
@@ -1631,7 +1632,7 @@ app.get('/bill/:billId', async (req, res) => {
       <div style="font-size:18px;font-weight:700;margin-bottom:4px">Pay <span id="pname"></span></div>
       <div style="font-size:40px;font-weight:800;color:#30D158;margin-bottom:20px" id="pamt">$0.00</div>
       <div id="pmethods" style="margin-bottom:12px"></div>
-      <button id="pmark" style="width:100%;padding:13px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:#9896A8;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:6px">âœ“ Paid via method â€º</button>
+      <button id="pmark" style="width:100%;padding:13px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:#9896A8;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:6px">Paid via method</button>
       <button onclick="closePay(true)" style="width:100%;padding:12px;background:transparent;border:none;color:#6E6B80;font-family:inherit;font-size:13px;cursor:pointer">I'll pay later</button>
     </div>
   </div>
@@ -1649,7 +1650,7 @@ app.get('/bill/:billId', async (req, res) => {
     <button onclick="showMyPayModal(parseFloat(document.getElementById('bar-amt').textContent.replace('$','')))" style="padding:14px 28px;background:#30D158;border:none;border-radius:14px;color:#000;font-weight:900;font-size:15px;cursor:pointer;font-family:inherit;flex-shrink:0">Pay Now</button>
   </div>
   <div style="max-width:800px;margin:10px auto 0">
-    <a href="https://ravensplit.com/dashboard.html" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:7px 10px;background:linear-gradient(135deg,rgba(48,209,88,0.06),rgba(124,58,237,0.06));border:1px solid rgba(48,209,88,0.12);border-radius:10px;color:#9D98AF;text-decoration:none;font-size:10px;line-height:1.3;text-align:center">
+    <a href="https://ravensplit.com/dashboard.html${isAppBillMode ? '?app=1&page=overview' : ''}" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:7px 10px;background:linear-gradient(135deg,rgba(48,209,88,0.06),rgba(124,58,237,0.06));border:1px solid rgba(48,209,88,0.12);border-radius:10px;color:#9D98AF;text-decoration:none;font-size:10px;line-height:1.3;text-align:center">
       <span style="color:#30D158;font-size:11px;flex-shrink:0">R</span>
       <span>New to RAVEN? <strong style="color:#30D158;font-weight:800">Create, split, and share your own bills for free</strong></span>
     </a>
@@ -1778,7 +1779,7 @@ ${bill.receipt_image ? `
     <div id="bill-comment-gif-preview-wrap" style="display:none;padding:10px 16px;border-bottom:1px solid rgba(255,255,255,0.07)">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
         <img id="bill-comment-gif-preview-img" style="height:80px;border-radius:10px;object-fit:cover;display:block">
-        <button id="bill-comment-gif-clear-btn" type="button" style="padding:6px 10px;background:rgba(255,68,68,0.12);border:1px solid rgba(255,68,68,0.25);border-radius:8px;color:#FF6B6B;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">âœ• Remove</button>
+        <button id="bill-comment-gif-clear-btn" type="button" style="padding:6px 10px;background:rgba(255,68,68,0.12);border:1px solid rgba(255,68,68,0.25);border-radius:8px;color:#FF6B6B;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Remove</button>
       </div>
     </div>
     <div id="bill-comment-gif-panel" style="display:none;border-bottom:1px solid rgba(255,255,255,0.07);background:#13131A">
@@ -1984,7 +1985,7 @@ function searchBillCommentGifs(q) {
             document.getElementById('bill-comment-gif-toggle-btn').style.color = '#6E6B80';
             document.getElementById('bill-comment-gif-search').value = '';
             container.innerHTML = '';
-            toast('GIF selected Ã¢Å“â€œ');
+            toast('GIF selected');
           });
           container.appendChild(img);
         });
@@ -2009,7 +2010,7 @@ async function unmarkPaidByName(name, participantId) {
     const d = await r.json();
     if (d.success) {
       _clearOptimisticPaid(name);
-      toast('â†©ï¸ Marked ' + name + ' as unpaid');
+      toast('Marked ' + name + ' as unpaid');
       _lastStateHash = '';
       refreshAll();
     } else {
@@ -2052,7 +2053,7 @@ function showIdentityChooser() {
   otherBtn.style.display = 'block';
   input.style.display = 'none';
   const submitBtn = modal.querySelector('.btn-g');
-  if (submitBtn) submitBtn.textContent = 'Start Claiming Items â†’';
+  if (submitBtn) submitBtn.textContent = 'Start Claiming Items';
   list.innerHTML = names.map(name =>
     '<button type="button" data-name="' + name.replace(/"/g, '&quot;') + '" style="width:100%;padding:12px 14px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:#F0EEF8;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;text-align:left">' + name + '</button>'
   ).join('');
@@ -2154,7 +2155,7 @@ async function autoJoin(name, silent) {
       if (!silent) document.getElementById('name-modal').style.display = 'none';
       setNameUI(myName);
       initBillCommentComposer();
-      if (d.maxReached && !silent) toast('âš ï¸ Over guest limit â€” tax/tip splits may vary');
+      if (d.maxReached && !silent) toast('Over guest limit - tax/tip splits may vary');
       _lastStateHash = ''; // force immediate re-render to show self in owes section
       refreshAll();
     } else if (d.error === 'max_reached' && !silent) {
@@ -2163,7 +2164,7 @@ async function autoJoin(name, silent) {
       const box = modal.querySelector('.name-modal-box');
       if (box) {
         box.innerHTML = '<div style="width:36px;height:4px;background:rgba(255,255,255,0.12);border-radius:2px;margin:0 auto 20px"></div>'
-          + '<div style="font-size:40px;text-align:center;margin-bottom:12px">ðŸš«</div>'
+          + '<div style="font-size:40px;text-align:center;margin-bottom:12px">!</div>'
           + '<div style="font-size:20px;font-weight:800;margin-bottom:8px;text-align:center">Table is Full</div>'
           + '<div style="font-size:14px;color:#6E6B80;margin-bottom:16px;text-align:center;line-height:1.6">This bill has reached its maximum of <strong style="color:#F0EEF8">' + (d.maxCount || '?') + ' people</strong>.<br>Ask the bill creator to start a new bill for additional guests.</div>'
           + '<div style="background:rgba(255,107,53,0.08);border:1px solid rgba(255,107,53,0.2);border-radius:10px;padding:12px 14px;font-size:12px;color:#FF9A3C;text-align:center">Tax and tip calculations are based on the number of people set when this bill was created</div>';
@@ -2176,7 +2177,7 @@ function setNameUI(name) {
   const b = document.getElementById('you-badge');
   if (b) {
     const acting = getActiveClaimName();
-    b.textContent = 'ðŸ‘¤ ' + name + (acting && acting.toLowerCase() !== String(name || '').toLowerCase() ? (' â€¢ claiming for ' + acting) : '');
+    b.textContent = name + (acting && acting.toLowerCase() !== String(name || '').toLowerCase() ? (' - claiming for ' + acting) : '');
     b.style.display = 'block';
     b.style.cursor = 'pointer';
     b.title = 'Tap to switch who you are';
@@ -2204,7 +2205,7 @@ async function toggleClaim(itemId, itemName) {
     });
     const d = await r.json();
     if (d.success) {
-      toast(isClaimed ? ('âœ“ Removed ' + itemName + ' for ' + actingName) : ('âœ“ Claimed ' + itemName + ' for ' + actingName));
+      toast(isClaimed ? ('Removed ' + itemName + ' for ' + actingName) : ('Claimed ' + itemName + ' for ' + actingName));
       _lastStateHash = ''; // force immediate re-render
       await refreshAll(); // await so UI updates before next interaction
     } else { toast('Error: ' + (d.error || 'try again')); }
@@ -2239,7 +2240,7 @@ async function renameMyBillName() {
       setNameUI(myName);
       initBillCommentComposer();
       _lastStateHash = '';
-      toast('âœ… Name updated to ' + myName);
+      toast('Name updated to ' + myName);
       await refreshAll();
     } else {
       toast(d.error || 'Could not rename');
@@ -2330,9 +2331,9 @@ function renderState(d) {
         const isSplit = claimers.length > 1;
         const nameHtml = claimers.map(c => {
           const isYou = c.toLowerCase() === myN;
-          return '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;background:' + (isYou?'rgba(48,209,88,0.18)':'rgba(255,255,255,0.08)') + ';border:1px solid ' + (isYou?'rgba(48,209,88,0.4)':'rgba(255,255,255,0.12)') + ';border-radius:20px;font-size:10px;font-weight:700;color:' + (isYou?'#30D158':'#9896A8') + '">' + (isYou?'âœ“ ':'') + c + '</span>';
+          return '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;background:' + (isYou?'rgba(48,209,88,0.18)':'rgba(255,255,255,0.08)') + ';border:1px solid ' + (isYou?'rgba(48,209,88,0.4)':'rgba(255,255,255,0.12)') + ';border-radius:20px;font-size:10px;font-weight:700;color:' + (isYou?'#30D158':'#9896A8') + '">' + (isYou?'check ':'') + c + '</span>';
         }).join('');
-        claimersEl.innerHTML = nameHtml + (isSplit ? ' <span style="font-size:10px;color:#FF9A3C;font-weight:600;margin-left:2px">Ã·' + claimers.length + ' split</span>' : '');
+        claimersEl.innerHTML = nameHtml + (isSplit ? ' <span style="font-size:10px;color:#FF9A3C;font-weight:600;margin-left:2px">' + claimers.length + '-way split</span>' : '');
       }
     }
   });
@@ -2377,7 +2378,7 @@ function renderState(d) {
           breakdown = '<div style="margin-top:10px;background:rgba(255,255,255,0.03);border-radius:10px;padding:10px 12px">'
             + myItems.map(i => {
                 const share = (i.price / i.splitWith).toFixed(2);
-                const sp = i.splitWith > 1 ? ' <span style="color:#FF9A3C;font-size:10px;font-weight:600">Ã·' + i.splitWith + '</span>' : '';
+                const sp = i.splitWith > 1 ? ' <span style="color:#FF9A3C;font-size:10px;font-weight:600">' + i.splitWith + '-way</span>' : '';
                 return '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0"><span style="font-size:12px;color:#9896A8">' + i.name + sp + '</span><span style="font-size:12px;color:#9896A8;font-family:monospace">$' + share + '</span></div>';
               }).join('')
             + (myTax > 0 ? '<div style="display:flex;justify-content:space-between;padding:3px 0;border-top:1px solid rgba(255,255,255,0.06);margin-top:4px"><span style="font-size:11px;color:#6E6B80">Tax</span><span style="font-size:11px;color:#6E6B80;font-family:monospace">$' + myTax.toFixed(2) + '</span></div>' : '')
@@ -2391,10 +2392,10 @@ function renderState(d) {
         const rowBorder = isMe ? 'border-left:3px solid #30D158;background:rgba(48,209,88,0.03);' : '';
         let statusColor = isBillPayer ? '#C084FC' : p.paid ? '#30D158' : liveAmt > 0 ? '#FF9A3C' : '#6E6B80';
         const pmMethod = p.payment_method && p.payment_method !== 'Other' ? ' via ' + p.payment_method : '';
-        let statusText = isBillPayer ? 'ðŸ’³ Paid the bill' : p.paid ? 'âœ… Paid' + pmMethod : liveAmt > 0 ? 'Owes $' + liveAmt.toFixed(2) : anySelections ? 'â³ Nothing claimed yet' : 'âœ“ All settled';
+        let statusText = isBillPayer ? 'Paid the bill' : p.paid ? 'Paid' + pmMethod : liveAmt > 0 ? 'Owes $' + liveAmt.toFixed(2) : anySelections ? 'Nothing claimed yet' : 'All settled';
         let action = '';
-        if (isBillPayer) action = '<div style="font-size:24px">ðŸ’³</div>';
-        else if (p.paid) action = '<button onclick="unmarkPaidByName(this.dataset.name, this.dataset.pid)" data-name="' + p.name.replace(/"/g,'&quot;') + '" data-pid="' + p.id + '" style="padding:9px 14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.16);border-radius:10px;color:#F0EEF8;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit;flex-shrink:0">â†© Undo</button>';
+        if (isBillPayer) action = '<div style="font-size:13px;font-weight:800;color:#C084FC">Paid</div>';
+        else if (p.paid) action = '<button onclick="unmarkPaidByName(this.dataset.name, this.dataset.pid)" data-name="' + p.name.replace(/"/g,'&quot;') + '" data-pid="' + p.id + '" style="padding:9px 14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.16);border-radius:10px;color:#F0EEF8;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit;flex-shrink:0">Undo</button>';
         else if (isMe && liveAmt > 0) action = '<button onclick="showMyPayModal(' + liveAmt.toFixed(2) + ')" style="padding:10px 16px;background:#30D158;border:none;border-radius:10px;color:#000;font-weight:800;font-size:13px;cursor:pointer;font-family:inherit;flex-shrink:0;white-space:nowrap">Pay Now</button>';
         else if (!isMe && liveAmt > 0) action = '<button onclick="showPay(this)" data-pid="' + p.id + '" data-name="' + p.name.replace(/"/g,"&quot;") + '" data-amount="' + liveAmt.toFixed(2) + '" style="padding:9px 14px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.25);border-radius:10px;color:#30D158;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit;flex-shrink:0">Pay</button>';
 
@@ -2442,7 +2443,7 @@ function renderState(d) {
 
   // â”€â”€ LIVE LABEL â”€â”€
   const lbl = document.getElementById('live-lbl');
-  if (lbl) { const t = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); lbl.textContent = 'Live Â· ' + t; }
+  if (lbl) { const t = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); lbl.textContent = 'Live - ' + t; }
 }
 
 // â”€â”€ MY PAY MODAL â”€â”€
@@ -2472,35 +2473,35 @@ function showMyPayModal(amt) {
       // Pre-select this method in the confirm button
       const pmBtn = document.getElementById('pmark');
       if (pmBtn) {
-        pmBtn.textContent = 'âœ… I paid via ' + method + ' â†’';
+        pmBtn.textContent = 'I paid via ' + method;
         pmBtn.style.background = 'rgba(48,209,88,0.12)';
         pmBtn.style.borderColor = 'rgba(48,209,88,0.4)';
         pmBtn.style.color = '#30D158';
         pmBtn.onclick = () => markPaidByName(myName, method);
       }
     });
-    el.innerHTML = '<div class="pm-icon" style="background:'+bg+'">'+icon+'</div><div class="pm-info"><b>'+title+'</b><span>'+sub+'</span></div><span style="color:#6E6B80;font-size:16px">â†’</span>';
+    el.innerHTML = '<div class="pm-icon" style="background:'+bg+'">'+icon+'</div><div class="pm-info"><b>'+title+'</b><span>'+sub+'</span></div><span style="color:#6E6B80;font-size:16px">></span>';
     mc.appendChild(el); n++;
   }
 
-  if (p.venmo) row('#008CFF','V','Venmo','@'+p.venmo.replace('@','')+' Â· $'+amtStr,'venmo://paycharge?txn=pay&recipients='+p.venmo.replace('@','')+'&amount='+amtStr+'&note=Bill+Split',null,'Venmo');
-  if (p.cashapp) { const t=p.cashapp.replace('$',''); row('#00D632','$','Cash App','$'+t+' Â· $'+amtStr,'https://cash.app/$'+t+'/'+amtStr,null,'Cash App'); }
+  if (p.venmo) row('#008CFF','V','Venmo','@'+p.venmo.replace('@','')+' - $'+amtStr,'venmo://paycharge?txn=pay&recipients='+p.venmo.replace('@','')+'&amount='+amtStr+'&note=Bill+Split',null,'Venmo');
+  if (p.cashapp) { const t=p.cashapp.replace('$',''); row('#00D632','$','Cash App','$'+t+' - $'+amtStr,'https://cash.app/$'+t+'/'+amtStr,null,'Cash App'); }
   if (p.zelle) {
     const zelleHref = buildZelleHref(p.zelle, amtStr, paymentContextName);
-    if (zelleHref) row('#6D1ED4','Z','Zelle',p.zelle + (p.zelle.includes('@') ? ' Â· opens Mail' : ' Â· opens Messages'),zelleHref,null,'Zelle');
-    else row('#6D1ED4','Z','Zelle',p.zelle+' Â· tap to copy',null,p.zelle,'Zelle');
+    if (zelleHref) row('#6D1ED4','Z','Zelle',p.zelle + (p.zelle.includes('@') ? ' - opens Mail' : ' - opens Messages'),zelleHref,null,'Zelle');
+    else row('#6D1ED4','Z','Zelle',p.zelle+' - tap to copy',null,p.zelle,'Zelle');
   }
   if (p.applepay && p.applepay.trim()) {
     const ap = p.applepay.trim();
     const appleHref = buildApplePayHref(ap, amtStr, paymentContextName);
-    if (appleHref) row('#222','Pay','Apple Pay','Opens iMessage Â· send Apple Pay manually',appleHref,null,'Apple Pay');
-    else row('#222','Pay','Apple Pay',ap+' Â· copy, then send Apple Pay manually',null,ap,'Apple Pay');
+    if (appleHref) row('#222','Pay','Apple Pay','Opens iMessage - send Apple Pay manually',appleHref,null,'Apple Pay');
+    else row('#222','Pay','Apple Pay',ap+' - copy, then send Apple Pay manually',null,ap,'Apple Pay');
   }
 
   // "Paid via method" button â€” expands to full method list
   const pmBtn = document.getElementById('pmark');
   if (pmBtn) {
-    pmBtn.textContent = 'âœ“ Paid via method â€º';
+        pmBtn.textContent = 'Paid via method';
     pmBtn.style.background = 'rgba(255,255,255,0.04)';
     pmBtn.style.borderColor = 'rgba(255,255,255,0.1)';
     pmBtn.style.color = '#9896A8';
@@ -2508,7 +2509,7 @@ function showMyPayModal(amt) {
     pmBtn.onclick = () => {
       // If already showing method list, don't re-add
       const existing = document.getElementById('method-select-list');
-      if (existing) { existing.remove(); pmBtn.textContent = 'âœ“ Paid via method â€º'; return; }
+      if (existing) { existing.remove(); pmBtn.textContent = 'Paid via method'; return; }
       const list = document.createElement('div');
       list.id = 'method-select-list';
       list.style.cssText = 'margin-top:8px;display:flex;flex-direction:column;gap:6px';
@@ -2520,7 +2521,7 @@ function showMyPayModal(amt) {
         list.appendChild(b);
       });
       pmBtn.insertAdjacentElement('afterend', list);
-      pmBtn.textContent = 'âœ“ Paid via method â–´';
+      pmBtn.textContent = 'Paid via method';
       // Scroll modal to show the list
       const sheet = document.querySelector('#pmod > div > div');
       if (sheet) { sheet.style.overflowY = 'auto'; sheet.style.maxHeight = '90vh'; setTimeout(() => list.scrollIntoView({behavior:'smooth',block:'nearest'}), 50); }
@@ -2547,7 +2548,7 @@ async function markPaidByName(name, method) {
   _setOptimisticPaid(name, method);
   _lastStateHash = '';
   renderOptimisticPaid(name, method); // instant UI update without a fetch
-  toast('âœ… ' + name + ' paid' + methodLabel + '!');
+  toast(name + ' paid' + methodLabel + '!');
 
   // DB write â€” await it before resuming polling
   const markPaidUrl = BACKEND_URL + '/bill/' + BID + '/mark-paid';
@@ -2574,7 +2575,7 @@ async function markPaidByName(name, method) {
       _lastStateHash = '';
       if (!pollTimer) pollTimer = setInterval(refreshAll, 800);
       refreshAll();
-      toast('âš ï¸ ' + (d.error || 'Could not save payment') + '. Check console.');
+      toast((d.error || 'Could not save payment') + '. Check console.');
     }
   } catch(e) {
     console.error('[markPaidByName] fetch exception:', e.name, e.message);
@@ -2582,7 +2583,7 @@ async function markPaidByName(name, method) {
     _lastStateHash = '';
     if (!pollTimer) pollTimer = setInterval(refreshAll, 800);
     refreshAll();
-    toast('âš ï¸ ' + e.message + '. Check console.');
+    toast(e.message + '. Check console.');
   }
 }
 
@@ -2596,10 +2597,10 @@ function renderOptimisticPaid(name, method) {
     if (nameEl && nameEl.textContent.trim().toLowerCase().startsWith(name.toLowerCase())) {
       // Update status text
       const statusEl = row.querySelector('[id^="pstatus-"]') || row.querySelector('[style*="font-size:12px"]');
-      if (statusEl) { statusEl.textContent = 'âœ… Paid' + methodLabel; statusEl.style.color = '#30D158'; }
+      if (statusEl) { statusEl.textContent = 'Paid' + methodLabel; statusEl.style.color = '#30D158'; }
       // Replace Pay button with checkmark
       const btn = row.querySelector('button[data-pid], button[onclick*="showPay"], button[onclick*="showMyPay"]');
-      if (btn) { const ck = document.createElement('div'); ck.textContent = 'âœ…'; ck.style.fontSize = '22px'; btn.replaceWith(ck); }
+      if (btn) { const ck = document.createElement('div'); ck.textContent = 'Paid'; ck.style.fontSize = '13px'; ck.style.fontWeight = '800'; btn.replaceWith(ck); }
     }
   });
 }
@@ -2630,21 +2631,21 @@ function showPay(btn) {
     if (href) { el.href = href; el.target = '_blank'; }
     if (copy) { el.addEventListener('click', e => { e.preventDefault(); navigator.clipboard.writeText(copy).catch(()=>{}); toast('Copied: '+copy); }); }
     el.addEventListener('click', () => setTimeout(() => markPaid(pid, name, method), 300));
-    el.innerHTML = '<div class="pm-icon" style="background:'+bg+'">'+icon+'</div><div class="pm-info"><b>'+title+'</b><span>'+sub+'</span></div><span style="color:#6E6B80;font-size:16px">â†’</span>';
+    el.innerHTML = '<div class="pm-icon" style="background:'+bg+'">'+icon+'</div><div class="pm-info"><b>'+title+'</b><span>'+sub+'</span></div><span style="color:#6E6B80;font-size:16px">></span>';
     mc.appendChild(el); n++;
   }
-  if (p.venmo) row('#008CFF','V','Venmo','@'+p.venmo.replace('@','')+' Â· $'+amt,'venmo://paycharge?txn=pay&recipients='+p.venmo.replace('@','')+'&amount='+amt+'&note=Bill',null,'Venmo');
-  if (p.cashapp) { const t=p.cashapp.replace('$',''); row('#00D632','$','Cash App','$'+t+' Â· $'+amt,'https://cash.app/$'+t+'/'+amt,null,'Cash App'); }
+  if (p.venmo) row('#008CFF','V','Venmo','@'+p.venmo.replace('@','')+' - $'+amt,'venmo://paycharge?txn=pay&recipients='+p.venmo.replace('@','')+'&amount='+amt+'&note=Bill',null,'Venmo');
+  if (p.cashapp) { const t=p.cashapp.replace('$',''); row('#00D632','$','Cash App','$'+t+' - $'+amt,'https://cash.app/$'+t+'/'+amt,null,'Cash App'); }
   if (p.zelle) {
     const zelleHref = buildZelleHref(p.zelle, amt, BILL_NAME);
-    if (zelleHref) row('#6D1ED4','Z','Zelle',p.zelle + (p.zelle.includes('@') ? ' Â· opens Mail' : ' Â· opens Messages'),zelleHref,null,'Zelle');
-    else row('#6D1ED4','Z','Zelle',p.zelle+' Â· tap to copy',null,p.zelle,'Zelle');
+    if (zelleHref) row('#6D1ED4','Z','Zelle',p.zelle + (p.zelle.includes('@') ? ' - opens Mail' : ' - opens Messages'),zelleHref,null,'Zelle');
+    else row('#6D1ED4','Z','Zelle',p.zelle+' - tap to copy',null,p.zelle,'Zelle');
   }
   if (p.applepay && p.applepay.trim()) {
     const ap = p.applepay.trim();
     const appleHref = buildApplePayHref(ap, amt, BILL_NAME || 'this bill');
-    if (appleHref) row('#222','Pay','Apple Pay','Opens iMessage Â· send Apple Pay manually',appleHref,null,'Apple Pay');
-    else row('#222','Pay','Apple Pay',ap+' Â· copy, then send Apple Pay manually',null,ap,'Apple Pay');
+    if (appleHref) row('#222','Pay','Apple Pay','Opens iMessage - send Apple Pay manually',appleHref,null,'Apple Pay');
+    else row('#222','Pay','Apple Pay',ap+' - copy, then send Apple Pay manually',null,ap,'Apple Pay');
   }
   if (n === 0) mc.innerHTML = '<p style="color:#6E6B80;text-align:center;padding:16px 0;font-size:13px">Ask ' + payeeName + ' how they would like to be paid.</p>';
   document.getElementById('pmark').onclick = () => markPaid(pid, name, 'Other');
@@ -2668,7 +2669,7 @@ async function markPaid(pid, name, method) {
     if (d.success) {
       closePay();
       const methodLabel = method && method !== 'Other' ? ' via ' + method : '';
-      toast('âœ… ' + name + ' paid' + methodLabel + '!');
+      toast(name + ' paid' + methodLabel + '!');
       // Optimistically mark as paid â€” survives the next refreshAll re-render
       _optimisticPaid[name.toLowerCase()] = { method: method || null };
       _lastStateHash = '';
@@ -2767,7 +2768,7 @@ async function deleteBillComment(commentId) {
     const d = await r.json();
     if (d.success) {
       if (editingBillCommentId && String(editingBillCommentId) === String(commentId)) cancelBillCommentEdit();
-      toast('ðŸ—‘ï¸ Comment deleted');
+      toast('Comment deleted');
       loadC();
     }
     else toast('Error: ' + (d.error || 'try again'));
@@ -2796,7 +2797,7 @@ async function postC() {
       clearBillCommentGif();
       editingBillCommentId = null;
       setBillCommentComposerMode();
-      toast(isEditing ? 'âœ… Comment updated' : 'âœ… Posted!');
+      toast(isEditing ? 'Comment updated' : 'Posted!');
       loadC();
     }
     else toast('Error: ' + (d.error || 'try again'));
@@ -2826,7 +2827,7 @@ function toast(msg, ok) {
   function makeInd() {
     ind = document.createElement('div');
     ind.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;height:0;overflow:hidden;background:rgba(12,12,18,0.97);display:flex;align-items:center;justify-content:center;transition:height 0.1s;pointer-events:none';
-    ind.innerHTML = '<div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#30D158"><span id="ptr-b-icon" style="font-size:18px;display:inline-block;transition:transform 0.2s">â†“</span><span id="ptr-b-text">Pull to refresh</span></div>';
+    ind.innerHTML = '<div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#30D158"><span id="ptr-b-icon" style="font-size:18px;display:inline-block;transition:transform 0.2s">v</span><span id="ptr-b-text">Pull to refresh</span></div>';
     document.body.appendChild(ind);
   }
   document.addEventListener('touchstart', e => { if (window.scrollY === 0) { startY = e.touches[0].clientY; pulling = true; } }, {passive:true});
@@ -2837,8 +2838,8 @@ function toast(msg, ok) {
     if (!ind) makeInd();
     ind.style.height = Math.min(dist * 0.55, 52) + 'px';
     const icon = document.getElementById('ptr-b-icon'), text = document.getElementById('ptr-b-text');
-    if (dist >= THRESH) { if(icon){icon.style.transform='rotate(180deg)';icon.textContent='â†‘';} if(text)text.textContent='Release to refresh'; }
-    else { if(icon){icon.style.transform='none';icon.textContent='â†“';} if(text)text.textContent='Pull to refresh'; }
+    if (dist >= THRESH) { if(icon){icon.style.transform='rotate(180deg)';icon.textContent='^';} if(text)text.textContent='Release to refresh'; }
+    else { if(icon){icon.style.transform='none';icon.textContent='v';} if(text)text.textContent='Pull to refresh'; }
   }, {passive:true});
   document.addEventListener('touchend', e => {
     if (!pulling) return; pulling = false;
