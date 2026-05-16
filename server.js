@@ -1659,14 +1659,16 @@ app.get('/bill/:billId', async (req, res) => {
 <!-- Header -->
 <div class="hdr"><div class="hdr-i">
   <div style="display:flex;align-items:center;gap:10px">
-    <div class="clean-icon"><a href="https://ravensplit.com/dashboard.html?app=1&page=overview" style="text-decoration:none;color:inherit">R</a></div>
+    ${isAppBillMode
+      ? `<div class="clean-icon"><a href="https://ravensplit.com/dashboard.html?app=1&page=overview" style="text-decoration:none;color:inherit">R</a></div>`
+      : `<div style="font-size:20px;font-weight:900;letter-spacing:0.1em"><a href="https://ravensplit.com/" style="text-decoration:none;color:inherit">&#129718;</a></div>`}
     <div>
       <div style="font-size:15px;font-weight:700">${bill.name}</div>
       <div style="font-size:11px;color:#6E6B80">ID: ${billId}</div>
     </div>
   </div>
   <div style="display:flex;align-items:center;gap:8px">
-    <button class="qr-btn" onclick="showQR()" style="padding:7px 14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;color:#9896A8;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">QR</button>
+    <button class="qr-btn" onclick="showQR()" style="padding:7px 14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;color:#9896A8;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">${isAppBillMode ? 'QR' : '&#128241; QR'}</button>
   </div>
 </div></div>
 
@@ -1685,7 +1687,7 @@ app.get('/bill/:billId', async (req, res) => {
     </div>
     <div class="bill-total" style="font-size:32px;font-weight:900;color:#30D158;font-family:'Courier New',monospace">$${parseFloat(bill.total||0).toFixed(2)}</div>
   </div>
-  ${paidByLower ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:10px;margin-bottom:4px"><span style="font-size:16px">Paid</span><div><div style="font-size:13px;font-weight:700;color:#C084FC">${bill.paid_by} paid the bill</div><div style="font-size:11px;color:#6E6B80">Everyone else needs to pay them back</div></div></div>` : ''}
+  ${paidByLower ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:10px;margin-bottom:4px"><span style="font-size:16px">${isAppBillMode ? 'Paid' : '&#128179;'}</span><div><div style="font-size:13px;font-weight:700;color:#C084FC">${bill.paid_by} paid the bill</div><div style="font-size:11px;color:#6E6B80">Everyone else needs to pay them back</div></div></div>` : ''}
 </div>
 
 <!-- Live Mode Banner -->
@@ -1714,7 +1716,7 @@ app.get('/bill/:billId', async (req, res) => {
 <!-- Items section (claimable) -->
 ${items.length > 0 ? `
 <div class="sec" style="margin-top:16px">
-  <div class="sec-lbl">Tap items you ordered</div>
+  <div class="sec-lbl">${isAppBillMode ? 'Tap items you ordered' : '&#128203; Tap items you ordered'}</div>
   <div class="card" id="items-list">
     ${items.map(item => `
     <div class="item-row" id="item-${item.id}" data-item-id="${item.id}" data-item-name="${(item.name||'').replace(/"/g,'&quot;')}">
@@ -1737,7 +1739,7 @@ ${items.length > 0 ? `
 
 <!-- Who owes what -->
 <div class="sec" style="margin-top:16px" id="owes-section">
-  <div class="sec-lbl">Who owes what</div>
+  <div class="sec-lbl">${isAppBillMode ? 'Who owes what' : '&#128176; Who owes what'}</div>
   <div class="card" id="owes-list">
     <div style="padding:20px;text-align:center;color:#6E6B80;font-size:13px" id="owes-loading">Loading...</div>
   </div>
@@ -1757,13 +1759,13 @@ ${items.length > 0 ? `
 <!-- Receipt image -->
 ${bill.receipt_image ? `
 <div class="sec" style="margin-top:16px">
-  <div class="sec-lbl">Receipt</div>
+  <div class="sec-lbl">${isAppBillMode ? 'Receipt' : '&#128248; Receipt'}</div>
   <img src="data:image/jpeg;base64,${bill.receipt_image}" style="width:100%;border-radius:14px;display:block">
 </div>` : ''}
 
 <!-- Comments -->
 <div class="sec" style="margin-top:24px">
-  <div class="sec-lbl">Comments</div>
+  <div class="sec-lbl">${isAppBillMode ? 'Comments' : '&#128172; Comments'}</div>
   <div id="clist" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
     <div id="no-c" style="color:#6E6B80;font-size:13px;text-align:center;padding:12px 0">No comments yet</div>
   </div>
@@ -1784,8 +1786,8 @@ ${bill.receipt_image ? `
       <div id="bill-comment-gif-results" style="display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 10px;max-height:180px;overflow-y:auto"><div style="color:#6E6B80;font-size:12px;padding:8px 0">Type to search GIFs...</div></div>
     </div>
     <div id="comment-auth-note" style="padding:10px 16px;font-size:12px;color:#6E6B80;border-bottom:1px solid rgba(255,255,255,0.07)">Comments post from your signed-in RAVEN account.</div>
-    <button id="bill-comment-gif-toggle-btn" type="button" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#6E6B80;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Add GIF</button>
-    <button id="bill-comment-post" onclick="postC()" style="width:100%;padding:13px;background:rgba(48,209,88,0.1);border:none;color:#30D158;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">Post Comment</button>
+    <button id="bill-comment-gif-toggle-btn" type="button" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#6E6B80;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">${isAppBillMode ? 'Add GIF' : '&#127917; Add GIF'}</button>
+    <button id="bill-comment-post" onclick="postC()" style="width:100%;padding:13px;background:rgba(48,209,88,0.1);border:none;color:#30D158;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">${isAppBillMode ? 'Post Comment' : '&#128172; Post Comment'}</button>
     <button id="bill-comment-cancel-edit" type="button" onclick="cancelBillCommentEdit()" style="display:none;width:100%;padding:12px 16px;background:transparent;border:none;border-top:1px solid rgba(255,255,255,0.07);color:#9896A8;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Cancel Edit</button>
   </div>
 </div>
@@ -1793,7 +1795,7 @@ ${bill.receipt_image ? `
 <!-- Footer -->
 <div style="max-width:800px;margin:32px auto 0;padding:0 16px 60px;text-align:center">
   <a href="https://ravensplit.com" style="display:inline-flex;align-items:center;gap:8px;padding:10px 18px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:20px;text-decoration:none">
-    <span style="font-size:16px;color:#30D158;font-weight:800">R</span>
+    <span style="font-size:16px">${isAppBillMode ? '<strong style="color:#30D158">R</strong>' : '&#129718;'}</span>
     <span style="font-size:12px;color:#6E6B80">Split bills free with <strong style="color:#C084FC">RAVEN</strong></span>
   </a>
 </div>
@@ -2935,8 +2937,7 @@ document.getElementById('name-input').addEventListener('keydown', e => {
     const simpleParticipants = (participants || []).length
       ? `<div style="max-width:760px;margin:20px auto 0;padding:0 20px"><div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.08);border-radius:16px;overflow:hidden">${participants.map(p => `<div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)"><span style="font-size:15px;font-weight:600;color:#F0EEF8">${esc(p?.name || 'Guest')}</span><span style="font-size:14px;color:#30D158;font-family:monospace">$${parseFloat(p?.amount || 0).toFixed(2)}</span></div>`).join('')}</div></div>`
       : '';
-    const fallbackBackUrl = isAppBillMode ? 'https://ravensplit.com/dashboard.html?app=1&page=overview' : 'https://ravensplit.com/dashboard.html';
-    return res.status(200).send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(bill.name || 'Bill')} - RAVEN</title><style>body{font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;background:#06060A;color:#F0EEF8;margin:0;padding:0 0 48px}.hdr{position:sticky;top:0;background:rgba(6,6,10,0.95);backdrop-filter:blur(16px);border-bottom:1px solid rgba(255,255,255,0.08);padding:14px 20px;display:flex;align-items:center;justify-content:space-between}.pill{font-size:11px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:999px;font-weight:700}.wrap{max-width:760px;margin:0 auto;padding:20px}.card{background:#0C0C12;border:1px solid rgba(255,255,255,0.08);border-radius:18px;padding:18px}</style></head><body><div class="hdr"><a href="${fallbackBackUrl}" style="color:#9896A8;text-decoration:none;font-size:13px;font-weight:700">← Dashboard</a><div class="pill">${esc(req.params.billId)}</div></div><div class="wrap"><div style="font-size:30px;font-weight:800;margin-bottom:8px">${esc(bill.name || 'Bill')}</div><div style="font-size:14px;color:#6E6B80;margin-bottom:18px">Fallback bill view loaded because the full page hit a temporary render issue.</div><div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:15px;color:#9896A8">Total</span><span style="font-size:26px;font-weight:800;color:#30D158;font-family:monospace">$${parseFloat(bill.total || 0).toFixed(2)}</span></div></div></div>${simpleReceipt}${simpleParticipants}</body></html>`);
+    return res.status(200).send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(bill.name || 'Bill')} - RAVEN</title><style>body{font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;background:#06060A;color:#F0EEF8;margin:0;padding:0 0 48px}.hdr{position:sticky;top:0;background:rgba(6,6,10,0.95);backdrop-filter:blur(16px);border-bottom:1px solid rgba(255,255,255,0.08);padding:14px 20px;display:flex;align-items:center;justify-content:space-between}.pill{font-size:11px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:999px;font-weight:700}.wrap{max-width:760px;margin:0 auto;padding:20px}.card{background:#0C0C12;border:1px solid rgba(255,255,255,0.08);border-radius:18px;padding:18px}</style></head><body><div class="hdr"><a href="https://ravensplit.com/dashboard.html" style="color:#9896A8;text-decoration:none;font-size:13px;font-weight:700">â† Dashboard</a><div class="pill">${esc(req.params.billId)}</div></div><div class="wrap"><div style="font-size:30px;font-weight:800;margin-bottom:8px">${esc(bill.name || 'Bill')}</div><div style="font-size:14px;color:#6E6B80;margin-bottom:18px">Fallback bill view loaded because the full page hit a temporary render issue.</div><div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:15px;color:#9896A8">Total</span><span style="font-size:26px;font-weight:800;color:#30D158;font-family:monospace">$${parseFloat(bill.total || 0).toFixed(2)}</span></div></div></div>${simpleReceipt}${simpleParticipants}</body></html>`);
   }
 });
 
