@@ -1,4 +1,4 @@
-require('dotenv').config();
+﻿require('dotenv').config();
 const express = require('express');
 const twilio = require('twilio');
 const { createClient } = require('@supabase/supabase-js');
@@ -1067,6 +1067,14 @@ app.get('/bill/:billId', async (req, res) => {
     const { billId } = req.params;
     const token = req.query.t || req.query.token;
     const isAppBillMode = req.query.app === '1';
+    const appDashboardUrl = (() => {
+      if (!isAppBillMode) return 'https://ravensplit.com/dashboard.html';
+      const params = new URLSearchParams({ app: '1', page: 'overview' });
+      if (req.query.acct) params.set('acct', String(req.query.acct));
+      if (req.query.email) params.set('acct', String(req.query.email));
+      if (req.query.name) params.set('name', String(req.query.name));
+      return 'https://ravensplit.com/dashboard.html?' + params.toString();
+    })();
     const { data: loadedBill } = await supabase.from('bills').select('*').eq('id', billId).single();
     bill = loadedBill;
     if (!bill) return res.status(404).send('<h1>Bill not found</h1>');
@@ -1618,9 +1626,9 @@ app.get('/bill/:billId', async (req, res) => {
     <input id="name-input" type="text" placeholder="Your name" autocomplete="name"
       style="width:100%;padding:14px 16px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:12px;color:#F0EEF8;font-size:16px;font-family:inherit;outline:none;margin-bottom:12px">
     <button class="btn-g" onclick="submitName()">Start Claiming Items</button>
-    <div style="margin-top:8px;font-size:11px;line-height:1.5;color:#6E6B80;text-align:center">New to RAVEN? <a href="https://ravensplit.com/dashboard.html${isAppBillMode ? '?app=1&page=overview' : ''}" style="color:#30D158;font-weight:700;text-decoration:none">Create, split, and share your own bills for free</a>.</div>
+    <div style="margin-top:8px;font-size:11px;line-height:1.5;color:#6E6B80;text-align:center">New to RAVEN? <a href="${appDashboardUrl}" style="color:#30D158;font-weight:700;text-decoration:none">Create, split, and share your own bills for free</a>.</div>
   </div>
-  <div style="max-width:800px;margin:8px auto 0;font-size:11px;line-height:1.5;color:#6E6B80;text-align:center">New to RAVEN? <a href="https://ravensplit.com/dashboard.html${isAppBillMode ? '?app=1&page=overview' : ''}" style="color:#30D158;font-weight:700;text-decoration:none">Create, split, and share your own bills for free</a>.</div>
+  <div style="max-width:800px;margin:8px auto 0;font-size:11px;line-height:1.5;color:#6E6B80;text-align:center">New to RAVEN? <a href="${appDashboardUrl}" style="color:#30D158;font-weight:700;text-decoration:none">Create, split, and share your own bills for free</a>.</div>
 </div>
 
 <!-- Pay modal -->
@@ -1650,7 +1658,7 @@ app.get('/bill/:billId', async (req, res) => {
     <button onclick="showMyPayModal(parseFloat(document.getElementById('bar-amt').textContent.replace('$','')))" style="padding:14px 28px;background:#30D158;border:none;border-radius:14px;color:#000;font-weight:900;font-size:15px;cursor:pointer;font-family:inherit;flex-shrink:0">Pay Now</button>
   </div>
   <div style="max-width:800px;margin:10px auto 0">
-    <a href="https://ravensplit.com/dashboard.html${isAppBillMode ? '?app=1&page=overview' : ''}" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:7px 10px;background:linear-gradient(135deg,rgba(48,209,88,0.06),rgba(124,58,237,0.06));border:1px solid rgba(48,209,88,0.12);border-radius:10px;color:#9D98AF;text-decoration:none;font-size:10px;line-height:1.3;text-align:center">
+    <a href="${appDashboardUrl}" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:7px 10px;background:linear-gradient(135deg,rgba(48,209,88,0.06),rgba(124,58,237,0.06));border:1px solid rgba(48,209,88,0.12);border-radius:10px;color:#9D98AF;text-decoration:none;font-size:10px;line-height:1.3;text-align:center">
       <span style="color:#30D158;font-size:11px;flex-shrink:0">R</span>
       <span>New to RAVEN? <strong style="color:#30D158;font-weight:800">Create, split, and share your own bills for free</strong></span>
     </a>
@@ -1661,7 +1669,7 @@ app.get('/bill/:billId', async (req, res) => {
 <div class="hdr"><div class="hdr-i">
   <div style="display:flex;align-items:center;gap:10px">
     ${isAppBillMode
-      ? `<div class="clean-icon"><a href="https://ravensplit.com/dashboard.html?app=1&page=overview" style="text-decoration:none;color:inherit">R</a></div>`
+      ? `<div class="clean-icon"><a href="${appDashboardUrl}" style="text-decoration:none;color:inherit">R</a></div>`
       : `<div style="font-size:20px;font-weight:900;letter-spacing:0.1em"><a href="https://ravensplit.com/" style="text-decoration:none;color:inherit">&#129718;</a></div>`}
     <div>
       <div style="font-size:15px;font-weight:700">${bill.name}</div>
@@ -3137,7 +3145,14 @@ app.get('/trip/:tripId', async (req, res) => {
   const { tripId } = req.params;
   const token = req.query.t;
   const isAppMode = req.query.app === '1';
-  const dashboardBackUrl = isAppMode ? 'https://ravensplit.com/dashboard.html?app=1&page=overview' : 'https://ravensplit.com/dashboard.html'; // _nc is just a cache-buster, never affects auth
+  const dashboardBackUrl = (() => {
+    if (!isAppMode) return 'https://ravensplit.com/dashboard.html';
+    const params = new URLSearchParams({ app: '1', page: 'overview' });
+    if (req.query.acct) params.set('acct', String(req.query.acct));
+    if (req.query.email) params.set('acct', String(req.query.email));
+    if (req.query.name) params.set('name', String(req.query.name));
+    return 'https://ravensplit.com/dashboard.html?' + params.toString();
+  })(); // _nc is just a cache-buster, never affects auth
   // Always serve fresh  never let Railway/proxy cache trip pages
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.setHeader('Pragma', 'no-cache');
