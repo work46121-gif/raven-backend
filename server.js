@@ -3468,6 +3468,13 @@ app.get('/trip/:tripId', async (req, res) => {
   const settingsDueDateHint = isRoommateHouse ? '(RAVEN uses this to nudge roommates)' : '(RAVEN sends reminders after this)';
   const addMembersTitle = isRoommateHouse ? 'Add Housemates' : 'Add Members';
   const addMembersHelp = isRoommateHouse ? 'Enter a name or <span style="color:#A855F7;font-weight:700">@ravenid</span> - using a Raven ID links their account so the house auto-appears in their roommates tab.' : 'Enter a name or <span style="color:#A855F7;font-weight:700">@ravenid</span> - using a Raven ID links their account so the trip auto-appears in their hub.';
+  const tripIconSvg = {
+    receipt: '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 3.75h10a1 1 0 0 1 1 1v15.5l-2-1.15-2 1.15-2-1.15-2 1.15-2-1.15-2 1.15V4.75a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 8h6M9 12h6M9 16h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    edit: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4.5 19.5h4.2L18.9 9.3a2.1 2.1 0 0 0 0-3l-1.2-1.2a2.1 2.1 0 0 0-3 0L4.5 15.3v4.2Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="m13.7 6.1 4.2 4.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+    camera: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8.2 6.5 9.6 4h4.8l1.4 2.5h2.7a2 2 0 0 1 2 2v8.8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V8.5a2 2 0 0 1 2-2h2.7Z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M12 16.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z" stroke="currentColor" stroke-width="1.9"/></svg>',
+    trash: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4.5 7h15M9.5 7V5.2h5V7M7.2 7l.8 12h8l.8-12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.5 11v4M13.5 11v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+    chevron: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m8 10 4 4 4-4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+  };
   const currentMembersLabel = isRoommateHouse ? 'Current Housemates' : 'Current Members';
   const saveMembersLabel = isRoommateHouse ? 'Save Housemates' : 'Save New Members';
   const inviteTitle = isRoommateHouse ? 'Invite to House' : 'Invite to Trip';
@@ -3861,7 +3868,7 @@ app.get('/trip/:tripId', async (req, res) => {
 
     const thumbHtml = r.photo_url
       ? '<img src="' + esc(r.photo_url) + '" style="width:44px;height:44px;border-radius:10px;object-fit:cover;flex-shrink:0;border:1px solid rgba(255,255,255,0.1)">'
-      : '<div style="width:44px;height:44px;border-radius:10px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.2);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0"></div>';
+      : '<div class="receipt-thumb-placeholder">' + tripIconSvg.receipt + '</div>';
     const receiptAddedByHtml = r.added_by
       ? `<div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);font-size:11px;color:#6E6B80"> ${esc(r.added_by)} added this receipt</div>`
       : '';
@@ -3877,12 +3884,12 @@ app.get('/trip/:tripId', async (req, res) => {
             ${splitEntries.length > 0 ? '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">' + splitPillsHtml + '</div>' : ''}
           </div>
         </div>
-        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;padding-top:2px">
-          <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:#30D158;letter-spacing:0.03em;line-height:1">$${total.toFixed(2)}</div>
-          <button onclick="event.stopPropagation();openEditReceipt('${esc(r.id)}')" style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.06);border:none;color:#9896A8;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px" title="Edit"></button>
-          ${!r.photo_url ? `<button onclick="event.stopPropagation();addPhotoToReceipt('${esc(r.id)}')" style="width:26px;height:26px;border-radius:50%;background:rgba(48,209,88,0.08);border:none;color:#30D158;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px" title="Add photo"></button>` : ''}
-          <button class="admin-delete-receipt-btn" data-receipt-id="${r.id}" data-receipt-name="${esc(r.name||'Receipt')}" onclick="event.stopPropagation();adminDeleteReceipt(this)" style="width:26px;height:26px;border-radius:50%;background:rgba(255,68,68,0.08);border:none;color:#FF6B6B;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px" title="Delete"></button>
-          <div id="${receiptId}-chevron" style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center;font-size:11px;color:#6E6B80;transition:transform 0.2s"></div>
+        <div class="receipt-actions">
+          <div class="receipt-row-total" style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:#30D158;letter-spacing:0.03em;line-height:1">$${total.toFixed(2)}</div>
+          <button class="receipt-icon-btn receipt-edit-btn" onclick="event.stopPropagation();openEditReceipt('${esc(r.id)}')" title="Edit receipt" aria-label="Edit receipt">${tripIconSvg.edit}</button>
+          ${!r.photo_url ? `<button class="receipt-icon-btn receipt-photo-btn" onclick="event.stopPropagation();addPhotoToReceipt('${esc(r.id)}')" title="Add receipt photo" aria-label="Add receipt photo">${tripIconSvg.camera}</button>` : ''}
+          <button class="receipt-icon-btn receipt-delete-btn admin-delete-receipt-btn" data-receipt-id="${r.id}" data-receipt-name="${esc(r.name||'Receipt')}" onclick="event.stopPropagation();adminDeleteReceipt(this)" title="Delete receipt" aria-label="Delete receipt">${tripIconSvg.trash}</button>
+          <div id="${receiptId}-chevron" class="receipt-chevron" title="Show receipt details" aria-hidden="true">${tripIconSvg.chevron}</div>
         </div>
       </div>
       <div id="${receiptId}" style="display:none;padding:0 16px 20px;margin-top:-4px">
@@ -4011,6 +4018,16 @@ input:focus,textarea:focus{border-color:var(--purple)}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:0.4}}
 .raven-home-link{position:relative;transition:filter 0.2s ease, text-shadow 0.2s ease, transform 0.2s ease}
 .raven-home-link.raven-armed{filter:drop-shadow(0 0 10px rgba(48,209,88,0.55));text-shadow:0 0 14px rgba(48,209,88,0.55);transform:scale(1.03)}
+.receipt-thumb-placeholder{width:44px;height:44px;border-radius:10px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.24);display:flex;align-items:center;justify-content:center;color:var(--green);flex-shrink:0}
+.receipt-actions{display:flex;align-items:center;gap:6px;flex-shrink:0;padding-top:2px}
+.receipt-icon-btn{width:30px;height:30px;border-radius:999px;border:1px solid transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;-webkit-tap-highlight-color:transparent;transition:transform .14s ease,background .14s ease,border-color .14s ease}
+.receipt-icon-btn:active{transform:scale(.94)}
+.receipt-icon-btn svg{display:block;pointer-events:none}
+.receipt-edit-btn{background:rgba(255,255,255,0.07);border-color:rgba(255,255,255,0.08);color:#B9B6C9}
+.receipt-photo-btn{background:rgba(48,209,88,0.11);border-color:rgba(48,209,88,0.2);color:var(--green)}
+.receipt-delete-btn{background:rgba(255,68,68,0.1);border-color:rgba(255,68,68,0.18);color:#FF6B6B}
+.receipt-chevron{width:30px;height:30px;border-radius:999px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;color:#9896A8;transition:transform 0.2s ease,background .14s ease;flex-shrink:0}
+@media(max-width:430px){.receipt-actions{gap:5px}.receipt-icon-btn,.receipt-chevron{width:28px;height:28px}.receipt-row-total{font-size:21px!important}}
 </style>
 </head>
 <body>
@@ -5804,9 +5821,9 @@ function toggleReceipt(id) {
   panel.style.display = isOpen ? 'none' : 'block';
   if (chevron) {
     chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
-    chevron.style.background = isOpen ? 'rgba(255,255,255,0.05)' : 'rgba(48,209,88,0.12)';
-    chevron.style.color = isOpen ? '#6E6B80' : '#30D158';
-    chevron.textContent = '';
+    chevron.style.background = isOpen ? 'rgba(255,255,255,0.07)' : 'rgba(48,209,88,0.12)';
+    chevron.style.color = isOpen ? '#9896A8' : '#30D158';
+    chevron.title = isOpen ? 'Show receipt details' : 'Hide receipt details';
   }
   if (!isOpen) renderPaySlots(); // fill pay buttons when expanding
 }
