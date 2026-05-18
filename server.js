@@ -1899,11 +1899,14 @@ function getRavenCommentProfile() {
   try {
     const profile = JSON.parse(localStorage.getItem('raven_profile') || '{}');
     const ravenId = String(profile.raven_id || profile.username || profile.first_name || (profile.email || '').split('@')[0] || '').trim();
+    const participantProfile = (typeof BILL_PARTICIPANT_PROFILES_BY_KEY !== 'undefined')
+      ? (BILL_PARTICIPANT_PROFILES_BY_KEY[billCommentOwnerKey(ravenId)] || BILL_PARTICIPANT_PROFILES_BY_KEY[billCommentOwnerKey(profile.first_name)] || BILL_PARTICIPANT_PROFILES_BY_KEY[billCommentOwnerKey((profile.email || '').split('@')[0])] || null)
+      : null;
     const hasAccount = !!(profile.user_id || profile.id || profile.email || profile.first_name || profile.raven_id || profile.username);
     return {
       ravenId: hasAccount && ravenId ? ravenId : '',
-      avatarUrl: String(profile.avatar_url || '').trim(),
-      firstName: String(profile.first_name || '').trim()
+      avatarUrl: String(profile.avatar_url || participantProfile?.avatar_url || '').trim(),
+      firstName: String(profile.first_name || participantProfile?.first_name || '').trim()
     };
   } catch (e) {
     return { ravenId: '', avatarUrl: '', firstName: '' };
@@ -2339,7 +2342,7 @@ function renderState(d) {
         const isSplit = claimers.length > 1;
         const nameHtml = claimers.map(c => {
           const isYou = c.toLowerCase() === myN;
-          return '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;background:' + (isYou?'rgba(48,209,88,0.18)':'rgba(255,255,255,0.08)') + ';border:1px solid ' + (isYou?'rgba(48,209,88,0.4)':'rgba(255,255,255,0.12)') + ';border-radius:20px;font-size:10px;font-weight:700;color:' + (isYou?'#30D158':'#9896A8') + '">' + (isYou?'check ':'') + c + '</span>';
+          return '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;background:' + (isYou?'rgba(48,209,88,0.18)':'rgba(255,255,255,0.08)') + ';border:1px solid ' + (isYou?'rgba(48,209,88,0.4)':'rgba(255,255,255,0.12)') + ';border-radius:20px;font-size:10px;font-weight:700;color:' + (isYou?'#30D158':'#9896A8') + '">' + c + (isYou ? ' (Paid)' : '') + '</span>';
         }).join('');
         claimersEl.innerHTML = nameHtml + (isSplit ? ' <span style="font-size:10px;color:#FF9A3C;font-weight:600;margin-left:2px">' + claimers.length + '-way split</span>' : '');
       }
@@ -4251,7 +4254,7 @@ ${coverHTML}
     <div style="width:36px;height:4px;background:rgba(255,255,255,0.15);border-radius:2px;margin:0 auto 20px"></div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
       <div style="font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:0.05em">${editReceiptTitle}</div>
-      <button onclick="closeEditReceipt()" style="background:rgba(255,255,255,0.07);border:none;color:#9896A8;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:16px"></button>
+      <button onclick="closeEditReceipt()" style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);color:#9896A8;width:32px;height:32px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center" title="Close receipt editor" aria-label="Close receipt editor"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     </div>
     <div style="display:flex;flex-direction:column;gap:16px">
       <div>
@@ -4830,6 +4833,12 @@ const SUPA_URL = 'https://ffjpzkpdumdcwnakpaje.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmanB6a3BkdW1kY3duYWtwYWplIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5ODc4OTcsImV4cCI6MjA4ODU2Mzg5N30.JtDLVu4K1TJ8emcN_mvSHBu6e0y8-jPQv-ypoc9p0RU';
 
 function applyNameAndAvatar(firstName, avatarUrl) {
+  if (!avatarUrl && firstName) {
+    try {
+      const profile = resolveTripProfile(firstName) || PAY_PROFILES[normalizeTripAlias(firstName)] || null;
+      avatarUrl = profile?.avatar_url || _memberAvatarCache[normalizeTripAlias(firstName)] || '';
+    } catch(e) {}
+  }
   if (firstName) {
     const inp = document.getElementById('comment-author');
     if (inp) {
@@ -5032,7 +5041,9 @@ function openReceiptPhoto(src, caption) {
 
   // Close button
   const closeBtn = document.createElement('button');
-  closeBtn.textContent = '';
+  closeBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>';
+  closeBtn.setAttribute('aria-label', 'Close receipt photo');
+  closeBtn.setAttribute('title', 'Close receipt photo');
   closeBtn.style.cssText = 'position:absolute;top:16px;right:16px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.15);color:#fff;width:44px;height:44px;border-radius:50%;cursor:pointer;font-size:18px;z-index:10000;display:flex;align-items:center;justify-content:center;pointer-events:auto;touch-action:manipulation';
   closeBtn.addEventListener('click', () => ov.remove());
   closeBtn.addEventListener('touchend', (e) => { e.preventDefault(); e.stopPropagation(); ov.remove(); });
