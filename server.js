@@ -89,6 +89,139 @@ function generateBillId() {
   return id;
 }
 
+function sanitizeRavenBase(base) {
+  return (String(base || '').trim().split(/\s+/)[0] || 'raven')
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '')
+    .slice(0, 16) || 'raven';
+}
+
+async function generateUniqueRavenId(base, excludeUserId) {
+  const clean = sanitizeRavenBase(base);
+  for (let i = 0; i < 40; i++) {
+    const candidate = (clean + String(Math.floor(Math.random() * 900) + 100)).slice(0, 20);
+    let query = supabase.from('profiles').select('id').eq('raven_id', candidate);
+    if (excludeUserId) query = query.neq('id', excludeUserId);
+    const { data } = await query.maybeSingle();
+    if (!data) return candidate;
+  }
+  return (clean + Date.now().toString().slice(-3)).slice(0, 20);
+}
+
+function safeAppAuthRedirect(value, fallback = 'ravensplit://auth/callback?app=1') {
+  const raw = String(value || '').trim();
+  if (/^ravensplit:\/\/auth\/(callback|reset)(\?|$)/i.test(raw)) return raw;
+  if (/^https:\/\/ravensplit\.com\/(app|dashboard)\.html/i.test(raw)) return raw;
+  return fallback;
+}
+
+function buildRavenSignupEmail({ email, actionLink }) {
+  const escapedEmail = String(email || '').replace(/[<>&"]/g, ch => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[ch]));
+  const escapedLink = String(actionLink || '').replace(/"/g, '&quot;');
+  return '<div style="margin:0;padding:0;background:#06060A;font-family:Arial,Helvetica,sans-serif;color:#F5F1FF">' +
+    '<div style="max-width:560px;margin:0 auto;padding:34px 22px">' +
+      '<div style="font-family:Arial Narrow,Arial,sans-serif;font-size:42px;font-weight:900;letter-spacing:8px;text-align:center;margin-bottom:8px">RAVEN</div>' +
+      '<div style="text-align:center;color:#9B96AD;font-size:13px;font-weight:700;letter-spacing:2px;margin-bottom:30px">AI BILL SPLITTER</div>' +
+      '<div style="background:#101018;border:1px solid rgba(255,255,255,.12);border-radius:22px;padding:30px 24px;text-align:center;box-shadow:0 24px 70px rgba(0,0,0,.45)">' +
+        '<div style="font-size:34px;margin-bottom:14px">Email</div>' +
+        '<h1 style="font-size:24px;line-height:1.25;margin:0 0 12px;color:#F5F1FF">Confirm your RAVEN account</h1>' +
+        '<p style="font-size:15px;line-height:1.7;color:#B7B1CA;margin:0 0 6px">Tap the button below to activate</p>' +
+        '<p style="font-size:16px;line-height:1.5;color:#F5F1FF;font-weight:800;margin:0 0 24px">' + escapedEmail + '</p>' +
+        '<a href="' + escapedLink + '" style="display:block;background:#30D158;color:#041208;text-decoration:none;font-size:16px;font-weight:900;border-radius:14px;padding:16px 18px;margin:0 auto 20px;max-width:320px">Confirm Email</a>' +
+        '<p style="font-size:12px;line-height:1.6;color:#777188;margin:0">If the button does not work, copy and paste this link into Safari:<br><span style="word-break:break-all;color:#AFA7C7">' + escapedLink + '</span></p>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+async function sendRavenEmail({ to, subject, html }) {
+  if (!process.env.RESEND_API_KEY) {
+    const err = new Error('RESEND_API_KEY is not configured on the backend.');
+    err.code = 'missing_resend';
+    throw err;
+  }
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${process.env.RESEND_API_KEY}`
+    },
+    body: JSON.stringify({
+      from: 'RAVEN <support@ravensplit.com>',
+      to: [to],
+      subject,
+      html
+    })
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const err = new Error(payload?.message || payload?.error || 'Email provider rejected the message.');
+    err.details = payload;
+    throw err;
+  }
+  return payload;
+}
+
+app.post('/auth/app-signup', async (req, res) => {
+  try {
+    const email = String(req.body.email || '').trim().toLowerCase();
+    const password = String(req.body.password || '');
+    const firstName = String(req.body.firstName || req.body.first_name || '').trim();
+    const redirectTo = safeAppAuthRedirect(req.body.redirectTo);
+    if (!email || !email.includes('@')) return res.status(400).json({ success: false, error: 'Enter a valid email.' });
+    if (!password || password.length < 6) return res.status(400).json({ success: false, error: 'Password must be at least 6 characters.' });
+
+    const ravenId = await generateUniqueRavenId(firstName || email.split('@')[0]);
+    const { data, error } = await supabase.auth.admin.generateLink({
+      type: 'signup',
+      email,
+      password,
+      options: {
+        redirectTo,
+        data: {
+          first_name: firstName || '',
+          raven_id: ravenId,
+          username: ravenId
+        }
+      }
+    });
+    if (error) {
+      const message = /already|registered|exists/i.test(error.message || '')
+        ? 'That email already has an account. Try signing in or use forgot password.'
+        : error.message;
+      return res.status(400).json({ success: false, error: message });
+    }
+
+    const actionLink = data?.properties?.action_link || data?.properties?.actionLink || data?.properties?.actionlink;
+    if (!actionLink) return res.status(500).json({ success: false, error: 'Could not create confirmation link.' });
+    const userId = data?.user?.id || '';
+    if (userId) {
+      await supabase.from('profiles').upsert({
+        id: userId,
+        email,
+        first_name: firstName || '',
+        raven_id: ravenId,
+        username: ravenId,
+        onboarding_complete: false,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'id' });
+    }
+
+    await sendRavenEmail({
+      to: email,
+      subject: 'Confirm your RAVEN account',
+      html: buildRavenSignupEmail({ email, actionLink })
+    });
+    res.json({ success: true, email, userId, ravenId });
+  } catch (e) {
+    console.error('app signup email error:', e);
+    res.status(500).json({
+      success: false,
+      error: e.code === 'missing_resend' ? e.message : 'Could not send confirmation email. Please try again.'
+    });
+  }
+});
+
 function normalizePhone(phone) {
   const digits = phone.replace(/\D/g, '');
   if (digits.length === 10) return `+1${digits}`;
