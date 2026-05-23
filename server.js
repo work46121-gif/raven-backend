@@ -1444,7 +1444,7 @@ app.get('/bill/:billId', async (req, res) => {
   const participantsHTML = participants.length > 0 ? `
     <div style="max-width:800px;margin:20px auto 0;padding:0 20px">
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:10px">Who owes what</div>
-      ${paidByLower ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:10px;margin-bottom:10px"><span style="font-size:18px">ðŸ’³</span><div><div style="font-size:13px;font-weight:700;color:#C084FC">${bill.paid_by} paid the bill</div><div style="font-size:11px;color:#6E6B80">Everyone else owes them their share</div></div></div>` : ''}
+      ${paidByLower ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:10px;margin-bottom:10px"><span style="font-size:18px;color:#C084FC;font-weight:800">$</span><div><div style="font-size:13px;font-weight:700;color:#C084FC">${bill.paid_by} paid the bill</div><div style="font-size:11px;color:#6E6B80">Everyone else owes them their share</div></div></div>` : ''}
       <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:16px;overflow:hidden">
         ${participants.map(p => {
           const myItems = participantItems[p.name.toLowerCase()] || [];
@@ -1453,14 +1453,14 @@ app.get('/bill/:billId', async (req, res) => {
           const isBillPayer = paidByLower && p.name.toLowerCase() === paidByLower;
           let statusEl, actionEl;
           if (isBillPayer) {
-            statusEl = `<div id="pstatus-${p.id}" style="font-size:12px;color:#C084FC;margin-top:2px">ðŸ’³ Paid the bill</div>`;
-            actionEl = `<span style="font-size:20px">ðŸ’³</span>`;
+            statusEl = `<div id="pstatus-${p.id}" style="font-size:12px;color:#C084FC;margin-top:2px">Paid the bill</div>`;
+            actionEl = `<span style="font-size:20px;color:#C084FC;font-weight:800">$</span>`;
           } else if (p.paid) {
-            statusEl = `<div id="pstatus-${p.id}" style="font-size:12px;color:#30D158;margin-top:2px">âœ… Paid</div>`;
-            actionEl = `<button onclick="unmarkPaid('${p.id}','${safeName}')" style="padding:9px 14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.16);border-radius:10px;color:#F0EEF8;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit;flex-shrink:0;margin-top:2px">â†© Undo</button>`;
+            statusEl = `<div id="pstatus-${p.id}" style="font-size:12px;color:#30D158;margin-top:2px">Paid</div>`;
+            actionEl = `<button onclick="unmarkPaid('${p.id}','${safeName}')" style="padding:9px 14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.16);border-radius:10px;color:#F0EEF8;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit;flex-shrink:0;margin-top:2px">Undo</button>`;
           } else {
             statusEl = `<div id="pstatus-${p.id}" style="font-size:12px;color:#6E6B80;margin-top:2px">Owes $${parseFloat(p.amount).toFixed(2)}</div>`;
-            actionEl = `<button onclick="showPay(this)" data-pid="${p.id}" data-name="${safeName}" data-amount="${parseFloat(p.amount).toFixed(2)}" id="paybtn-${p.id}" style="padding:9px 18px;background:#30D158;border:none;border-radius:10px;color:#000;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;flex-shrink:0;margin-top:2px">ðŸ’³ Pay</button>`;
+            actionEl = `<button onclick="showPay(this)" data-pid="${p.id}" data-name="${safeName}" data-amount="${parseFloat(p.amount).toFixed(2)}" id="paybtn-${p.id}" style="padding:9px 18px;background:#30D158;border:none;border-radius:10px;color:#000;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;flex-shrink:0;margin-top:2px">Pay</button>`;
           }
           return `<div id="prow-${p.id}" style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)">
             <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
@@ -1515,9 +1515,9 @@ app.get('/bill/:billId', async (req, res) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-  <title>ðŸª¶ ${bill.name} â€” RAVEN</title>
-  <meta property="og:title" content="ðŸª¶ ${bill.name} â€” RAVEN" />
-  <meta property="og:description" content="Tap to see what you owe Â· Bill ID: ${billId}" />
+  <title>${bill.name} - RAVEN</title>
+  <meta property="og:title" content="${bill.name} - RAVEN" />
+  <meta property="og:description" content="Tap to see what you owe - Bill ID: ${billId}" />
   <meta property="og:image" content="https://ravensplit.com/raven-hero.png" />
   <meta property="og:url" content="${baseUrl}/bill/${billId}" />
   <style>
@@ -1537,8 +1537,8 @@ app.get('/bill/:billId', async (req, res) => {
 <body>
   <div class="hdr"><div class="hdr-i">
     <div style="display:flex;align-items:center;gap:12px">
-      <button onclick="history.back()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#9896A8;padding:6px 12px;font-size:13px;cursor:pointer;font-family:inherit">â† Back</button>
-      <div style="font-size:18px;font-weight:900;letter-spacing:0.12em"><a href="https://ravensplit.com/" style="text-decoration:none;color:inherit">ðŸª¶ RAVEN</a></div>
+      <button onclick="history.back()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#9896A8;padding:6px 12px;font-size:13px;cursor:pointer;font-family:inherit">Back</button>
+      <div style="font-size:18px;font-weight:900;letter-spacing:0.12em"><a href="https://ravensplit.com/" style="text-decoration:none;color:inherit">RAVEN</a></div>
     </div>
     <div style="font-size:11px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:20px;font-weight:600">${billId}</div>
   </div></div>
@@ -1565,11 +1565,11 @@ app.get('/bill/:billId', async (req, res) => {
         <input id="cname" type="text" placeholder="Your name" style="flex:1;padding:12px 16px;background:transparent;border:none;color:#F0EEF8;font-family:inherit;font-size:14px;outline:none"/>
       </div>
       <textarea id="cbody" placeholder="Add a comment..." rows="2" style="width:100%;padding:12px 16px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.07);color:#F0EEF8;font-family:inherit;font-size:14px;outline:none;resize:none;line-height:1.5"></textarea>
-      <button onclick="postC()" style="width:100%;padding:13px;background:rgba(48,209,88,0.1);border:none;color:#30D158;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">ðŸ’¬ Post Comment</button>
+      <button onclick="postC()" style="width:100%;padding:13px;background:rgba(48,209,88,0.1);border:none;color:#30D158;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">Post Comment</button>
     </div>
   </div>
 
-  <div class="raven-footer"><a href="https://ravensplit.com" class="raven-footer-inner"><span style="font-size:16px">ðŸª¶</span><span style="font-size:12px;color:#6E6B80">Split bills free with <strong style="color:#C084FC">RAVEN</strong></span></a></div>
+  <div class="raven-footer"><a href="https://ravensplit.com" class="raven-footer-inner"><span style="font-size:12px;color:#6E6B80">Split bills free with <strong style="color:#C084FC">RAVEN</strong></span></a></div>
 
   <input type="hidden" id="pd" value="${profileB64}">
   <input type="hidden" id="paid-by-name" value="${bill.paid_by ? bill.paid_by.replace(/"/g,'&quot;') : ''}">
@@ -1582,7 +1582,7 @@ app.get('/bill/:billId', async (req, res) => {
         <div style="font-size:18px;font-weight:700;margin-bottom:4px">Pay <span id="pname"></span></div>
         <div style="font-size:40px;font-weight:800;color:#30D158;margin-bottom:20px" id="pamt">$0.00</div>
         <div id="pmethods" style="margin-bottom:12px"></div>
-        <button id="pmark" style="width:100%;padding:13px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:#9896A8;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:6px">âœ“ Paid via method â€º</button>
+        <button id="pmark" style="width:100%;padding:13px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:#9896A8;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:6px">Paid via method</button>
         <button onclick="closePay()" style="width:100%;padding:10px;background:transparent;border:none;color:#6E6B80;font-family:inherit;font-size:12px;cursor:pointer">I'll pay later</button>
       </div>
     </div>
@@ -1659,21 +1659,21 @@ app.get('/bill/:billId', async (req, res) => {
         if(href){ el.href=href; el.target='_blank'; }
         if(copy){ el.addEventListener('click',function(e){ e.preventDefault(); navigator.clipboard.writeText(copy).then(()=>toast('Copied: '+copy)).catch(()=>{}); }); }
         el.addEventListener('click', function() { setTimeout(() => markPaid(pid, name, method), 300); });
-        el.innerHTML = '<div class="pm-icon" style="background:'+bg+'">'+icon+'</div><div class="pm-info"><b>'+title+'</b><span>'+sub+'</span></div><span style="color:#6E6B80;font-size:16px">â†’</span>';
+        el.innerHTML = '<div class="pm-icon" style="background:'+bg+'">'+icon+'</div><div class="pm-info"><b>'+title+'</b><span>'+sub+'</span></div><span style="color:#6E6B80;font-size:16px">&gt;</span>';
         mc.appendChild(el); n++;
       }
-      if(p.venmo){const h='@'+p.venmo.replace('@','');row('#008CFF','V','Venmo',h+' Â· $'+amt,'venmo://paycharge?txn=pay&recipients='+p.venmo.replace('@','')+'&amount='+amt+'&note=Bill',null,'Venmo');}
-      if(p.cashapp){const t=p.cashapp.replace('$','');row('#00D632','$','Cash App','$'+t+' Â· $'+amt,'https://cash.app/$'+t+'/'+amt,null,'Cash App');}
+      if(p.venmo){const h='@'+p.venmo.replace('@','');row('#008CFF','V','Venmo',h+' - $'+amt,'venmo://paycharge?txn=pay&recipients='+p.venmo.replace('@','')+'&amount='+amt+'&note=Bill',null,'Venmo');}
+      if(p.cashapp){const t=p.cashapp.replace('$','');row('#00D632','$','Cash App','$'+t+' - $'+amt,'https://cash.app/$'+t+'/'+amt,null,'Cash App');}
       if(p.zelle){
         const zelleHref = buildZelleHref(p.zelle, amt, BILL_NAME);
-        if (zelleHref) row('#6D1ED4','Z','Zelle',p.zelle + (p.zelle.includes('@') ? ' Â· opens Mail' : ' Â· opens Messages'),zelleHref,null,'Zelle');
-        else row('#6D1ED4','Z','Zelle',p.zelle+' Â· tap to copy',null,p.zelle,'Zelle');
+        if (zelleHref) row('#6D1ED4','Z','Zelle',p.zelle + (p.zelle.includes('@') ? ' - opens Mail' : ' - opens Messages'),zelleHref,null,'Zelle');
+        else row('#6D1ED4','Z','Zelle',p.zelle+' - tap to copy',null,p.zelle,'Zelle');
       }
       if(p.applepay && p.applepay.trim()){
         const ap = p.applepay.trim();
         const appleHref = buildApplePayHref(ap, amt, BILL_NAME);
-        if (appleHref) row('#222','Pay','Apple Pay','Opens iMessage Â· send Apple Pay manually',appleHref,null,'Apple Pay');
-        else row('#222','Pay','Apple Pay',ap+' Â· copy, then send Apple Pay manually',null,ap,'Apple Pay');
+        if (appleHref) row('#222','Pay','Apple Pay','Opens iMessage - send Apple Pay manually',appleHref,null,'Apple Pay');
+        else row('#222','Pay','Apple Pay',ap+' - copy, then send Apple Pay manually',null,ap,'Apple Pay');
       }
       if(n===0){
         // No configured methods â€” build method buttons using DOM (no inline onclick strings)
@@ -1690,7 +1690,7 @@ app.get('/bill/:billId', async (req, res) => {
       }
       const pmEl = document.getElementById('pmark');
       if(pmEl) {
-        pmEl.textContent = 'âœ“ Paid via method â€º';
+        pmEl.textContent = 'Paid via method';
         pmEl.onclick = function() {
           ['Cash','Bank Transfer','Other'].forEach(function(m) {
             const b = document.createElement('button');
@@ -1709,14 +1709,14 @@ app.get('/bill/:billId', async (req, res) => {
       try {
         const r=await fetch('/bill/'+BID+'/mark-paid',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({participantId:pid, name, payment_method: method||null})});
         const d=await r.json();
-        if(d.success){ closePay(); document.getElementById('paybtn-'+pid)?.remove(); const s=document.getElementById('pstatus-'+pid); if(s) s.textContent='âœ… Paid'+(method&&method!=='Other'?' via '+method:''); toast('âœ… Marked as paid!'); }
+        if(d.success){ closePay(); document.getElementById('paybtn-'+pid)?.remove(); const s=document.getElementById('pstatus-'+pid); if(s) s.textContent='Paid'+(method&&method!=='Other'?' via '+method:''); toast('Marked as paid!'); }
       }catch(e){alert('Error. Try again.');}
     }
     async function unmarkPaid(pid, name) {
       try {
         const r=await fetch('/bill/'+BID+'/unmark-paid',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({participantId:pid, name})});
         const d=await r.json();
-        if(d.success){ toast('â†©ï¸ Marked as unpaid'); location.reload(); }
+        if(d.success){ toast('Marked as unpaid'); location.reload(); }
         else { alert('Error undoing paid status. Try again.'); }
       }catch(e){alert('Error. Try again.');}
     }
@@ -1742,10 +1742,10 @@ app.get('/bill/:billId', async (req, res) => {
       const btn=document.querySelector('[onclick="postC()"]'); if(btn){btn.textContent='Posting...';btn.disabled=true;}
       try{
         const r=await fetch('/bill/'+BID+'/comments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name||'Anonymous',body,gif_url:null})});
-        const d=await r.json(); if(d.success){document.getElementById('cbody').value='';toast('âœ… Posted!');loadC();}
+        const d=await r.json(); if(d.success){document.getElementById('cbody').value='';toast('Posted!');loadC();}
         else toast('Error: '+(d.error||'try again'));
       }catch(e){toast('Network error');}
-      finally{if(btn){btn.textContent='ðŸ’¬ Post Comment';btn.disabled=false;}}
+      finally{if(btn){btn.textContent='Post Comment';btn.disabled=false;}}
     }
     function toast(msg){
       let t=document.getElementById('_t');
@@ -1766,9 +1766,9 @@ app.get('/bill/:billId', async (req, res) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-  <title>ðŸª¶ ${bill.name} â€” RAVEN</title>
-  <meta property="og:title" content="ðŸª¶ ${bill.name} â€” Pick your items" />
-  <meta property="og:description" content="Tap to claim what you ordered Â· Bill ID: ${billId}" />
+  <title>${bill.name} - RAVEN</title>
+  <meta property="og:title" content="${bill.name} - Pick your items" />
+  <meta property="og:description" content="Tap to claim what you ordered - Bill ID: ${billId}" />
   <meta property="og:image" content="https://ravensplit.com/raven-hero.png" />
   <meta property="og:url" content="${baseUrl}/bill/${billId}" />
   <style>
@@ -2712,7 +2712,7 @@ function showMyPayModal(amt) {
   // "Paid via method" button â€” expands to full method list
   const pmBtn = document.getElementById('pmark');
   if (pmBtn) {
-        pmBtn.textContent = 'Paid via method';
+    pmBtn.textContent = 'Paid via method';
     pmBtn.style.background = 'rgba(255,255,255,0.04)';
     pmBtn.style.borderColor = 'rgba(255,255,255,0.1)';
     pmBtn.style.color = '#9896A8';
