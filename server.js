@@ -172,6 +172,38 @@ app.post('/auth/app-signup', async (req, res) => {
     if (!password || password.length < 6) return res.status(400).json({ success: false, error: 'Password must be at least 6 characters.' });
 
     const ravenId = await generateUniqueRavenId(firstName || email.split('@')[0]);
+    if (!process.env.RESEND_API_KEY) {
+      const { data: created, error: createError } = await supabase.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: {
+          first_name: firstName || '',
+          raven_id: ravenId,
+          username: ravenId
+        }
+      });
+      if (createError) {
+        const message = /already|registered|exists/i.test(createError.message || '')
+          ? 'That email already has an account. Try signing in or use forgot password.'
+          : createError.message;
+        return res.status(400).json({ success: false, error: message });
+      }
+      const userId = created?.user?.id || '';
+      if (userId) {
+        await supabase.from('profiles').upsert({
+          id: userId,
+          email,
+          first_name: firstName || '',
+          raven_id: ravenId,
+          username: ravenId,
+          onboarding_complete: false,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'id' });
+      }
+      return res.json({ success: true, email, userId, ravenId, confirmed: true, emailSent: false });
+    }
+
     const { data, error } = await supabase.auth.admin.generateLink({
       type: 'signup',
       email,
@@ -212,7 +244,7 @@ app.post('/auth/app-signup', async (req, res) => {
       subject: 'Confirm your RAVEN account',
       html: buildRavenSignupEmail({ email, actionLink })
     });
-    res.json({ success: true, email, userId, ravenId });
+    res.json({ success: true, email, userId, ravenId, confirmed: false, emailSent: true });
   } catch (e) {
     console.error('app signup email error:', e);
     res.status(500).json({
