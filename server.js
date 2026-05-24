@@ -172,20 +172,40 @@ app.post('/auth/app-signup', async (req, res) => {
     if (!password || password.length < 6) return res.status(400).json({ success: false, error: 'Password must be at least 6 characters.' });
 
     const ravenId = await generateUniqueRavenId(firstName || email.split('@')[0]);
-    let existingUser = null;
-    try {
-      const { data: existing } = await supabase.auth.admin.getUserByEmail(email);
-      existingUser = existing?.user || null;
-    } catch(e) {
-      existingUser = null;
+    async function findSignupAuthUser(targetEmail) {
+      const wanted = String(targetEmail || '').trim().toLowerCase();
+      if (!wanted) return null;
+      try {
+        if (supabase.auth.admin.getUserByEmail) {
+          const { data: existing } = await supabase.auth.admin.getUserByEmail(wanted);
+          if (existing?.user) return existing.user;
+        }
+      } catch(e) {}
+      try {
+        for (let page = 1; page <= 4; page++) {
+          const { data } = await supabase.auth.admin.listUsers({ page, perPage: 1000 });
+          const users = data?.users || [];
+          const found = users.find(user => String(user.email || '').toLowerCase() === wanted);
+          if (found) return found;
+          if (users.length < 1000) break;
+        }
+      } catch(e) {}
+      return null;
     }
+    async function deletePendingSignupUser(user) {
+      if (!user) return false;
+      if (user.email_confirmed_at || user.confirmed_at) throw new Error('That email already has an account. Try signing in or use forgot password.');
+      try { await supabase.from('profiles').delete().eq('id', user.id); } catch(e) {}
+      const { error: deleteError } = await supabase.auth.admin.deleteUser(user.id);
+      if (deleteError) throw new Error('Could not refresh that pending account. Please try again.');
+      return true;
+    }
+    let existingUser = await findSignupAuthUser(email);
     if (existingUser) {
       if (existingUser.email_confirmed_at || existingUser.confirmed_at) {
         return res.status(400).json({ success: false, error: 'That email already has an account. Try signing in or use forgot password.' });
       }
-      try { await supabase.from('profiles').delete().eq('id', existingUser.id); } catch(e) {}
-      const { error: deleteError } = await supabase.auth.admin.deleteUser(existingUser.id);
-      if (deleteError) return res.status(400).json({ success: false, error: 'Could not refresh that pending account. Please try again.' });
+      await deletePendingSignupUser(existingUser);
     }
 
     if (!process.env.RESEND_API_KEY) {
@@ -195,7 +215,7 @@ app.post('/auth/app-signup', async (req, res) => {
       });
     }
 
-    const { data, error } = await supabase.auth.admin.generateLink({
+    let { data, error } = await supabase.auth.admin.generateLink({
       type: 'signup',
       email,
       password,
@@ -209,10 +229,33 @@ app.post('/auth/app-signup', async (req, res) => {
       }
     });
     if (error) {
-      const message = /already|registered|exists/i.test(error.message || '')
-        ? 'That email already has an account. Try signing in or use forgot password.'
-        : error.message;
-      return res.status(400).json({ success: false, error: message });
+      if (/already|registered|exists/i.test(error.message || '')) {
+        const stale = await findSignupAuthUser(email);
+        if (stale && !(stale.email_confirmed_at || stale.confirmed_at)) {
+          await deletePendingSignupUser(stale);
+          const retry = await supabase.auth.admin.generateLink({
+            type: 'signup',
+            email,
+            password,
+            options: {
+              redirectTo,
+              data: {
+                first_name: firstName || '',
+                raven_id: ravenId,
+                username: ravenId
+              }
+            }
+          });
+          data = retry.data;
+          error = retry.error;
+        }
+      }
+      if (error) {
+        const message = /already|registered|exists/i.test(error.message || '')
+          ? 'That email already has an account. Try signing in or use forgot password.'
+          : error.message;
+        return res.status(400).json({ success: false, error: message });
+      }
     }
 
     const actionLink = data?.properties?.action_link || data?.properties?.actionLink || data?.properties?.actionlink;
