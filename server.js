@@ -134,6 +134,19 @@ function buildRavenSignupEmail({ email, actionLink }) {
   '</div>';
 }
 
+function buildRavenResetEmail({ email, actionLink }) {
+  const safeEmail = String(email || '').replace(/[<>&"]/g, c => ({ '<':'&lt;', '>':'&gt;', '&':'&amp;', '"':'&quot;' }[c]));
+  return '<div style="margin:0;padding:0;background:#07070C;color:#F5F1FF;font-family:Inter,Arial,sans-serif">'
+    + '<div style="max-width:560px;margin:0 auto;padding:32px 22px">'
+    + '<div style="font-size:34px;font-weight:900;letter-spacing:0.18em;margin-bottom:20px">RAVEN</div>'
+    + '<div style="background:#101018;border:1px solid rgba(168,85,247,0.25);border-radius:20px;padding:28px">'
+    + '<h1 style="font-size:24px;line-height:1.25;margin:0 0 12px;color:#F5F1FF">Reset your RAVEN password</h1>'
+    + '<p style="font-size:15px;line-height:1.6;color:#B8B2C8;margin:0 0 22px">Use this secure link to set a new password for <strong style="color:#F5F1FF">' + safeEmail + '</strong>.</p>'
+    + '<a href="' + actionLink + '" style="display:block;text-align:center;background:#30D158;color:#050507;text-decoration:none;font-weight:900;font-size:16px;border-radius:14px;padding:16px 18px">Reset Password</a>'
+    + '<p style="font-size:12px;line-height:1.5;color:#7D778F;margin:22px 0 0">If you did not request this, you can ignore this email.</p>'
+    + '</div></div></div>';
+}
+
 async function sendRavenEmail({ to, subject, html }) {
   if (!process.env.RESEND_API_KEY) {
     const err = new Error('RESEND_API_KEY is not configured on the backend.');
@@ -285,6 +298,34 @@ app.post('/auth/app-signup', async (req, res) => {
       success: false,
       error: e.code === 'missing_resend' ? e.message : 'Could not send confirmation email. Please try again.'
     });
+  }
+});
+
+app.post('/auth/app-reset', async (req, res) => {
+  try {
+    const email = String(req.body.email || '').trim().toLowerCase();
+    const redirectTo = safeAppAuthRedirect(req.body.redirectTo || 'ravensplit://auth/reset?app=1&reset=1');
+    if (!email || !email.includes('@')) return res.status(400).json({ success: false, error: 'Enter a valid email.' });
+    if (!process.env.RESEND_API_KEY) {
+      return res.status(500).json({ success: false, error: 'Password reset email service is not configured. Add RESEND_API_KEY on the backend.' });
+    }
+    const { data, error } = await supabase.auth.admin.generateLink({
+      type: 'recovery',
+      email,
+      options: { redirectTo }
+    });
+    if (error) return res.status(400).json({ success: false, error: error.message || 'Could not create reset link.' });
+    const actionLink = data?.properties?.action_link || data?.properties?.actionLink || data?.properties?.actionlink;
+    if (!actionLink) return res.status(500).json({ success: false, error: 'Could not create reset link.' });
+    await sendRavenEmail({
+      to: email,
+      subject: 'Reset your RAVEN password',
+      html: buildRavenResetEmail({ email, actionLink })
+    });
+    res.json({ success: true, emailSent: true });
+  } catch(e) {
+    console.error('app reset email error:', e);
+    res.status(500).json({ success: false, error: e.code === 'missing_resend' ? e.message : 'Could not send reset email. Please try again.' });
   }
 });
 
