@@ -183,60 +183,16 @@ app.post('/auth/app-signup', async (req, res) => {
       if (existingUser.email_confirmed_at || existingUser.confirmed_at) {
         return res.status(400).json({ success: false, error: 'That email already has an account. Try signing in or use forgot password.' });
       }
-      const userId = existingUser.id;
-      const { error: updateError } = await supabase.auth.admin.updateUserById(userId, {
-        password,
-        email_confirm: true,
-        user_metadata: {
-          ...(existingUser.user_metadata || {}),
-          first_name: firstName || existingUser.user_metadata?.first_name || '',
-          raven_id: existingUser.user_metadata?.raven_id || ravenId,
-          username: existingUser.user_metadata?.username || existingUser.user_metadata?.raven_id || ravenId
-        }
-      });
-      if (updateError) return res.status(400).json({ success: false, error: updateError.message });
-      await supabase.from('profiles').upsert({
-        id: userId,
-        email,
-        first_name: firstName || existingUser.user_metadata?.first_name || '',
-        raven_id: existingUser.user_metadata?.raven_id || ravenId,
-        username: existingUser.user_metadata?.username || existingUser.user_metadata?.raven_id || ravenId,
-        onboarding_complete: false,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'id' });
-      return res.json({ success: true, email, userId, ravenId, confirmed: true, emailSent: false, recovered: true });
+      try { await supabase.from('profiles').delete().eq('id', existingUser.id); } catch(e) {}
+      const { error: deleteError } = await supabase.auth.admin.deleteUser(existingUser.id);
+      if (deleteError) return res.status(400).json({ success: false, error: 'Could not refresh that pending account. Please try again.' });
     }
 
     if (!process.env.RESEND_API_KEY) {
-      const { data: created, error: createError } = await supabase.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-        user_metadata: {
-          first_name: firstName || '',
-          raven_id: ravenId,
-          username: ravenId
-        }
+      return res.status(500).json({
+        success: false,
+        error: 'Confirmation email service is not configured. Add RESEND_API_KEY on the backend before app signup can send email.'
       });
-      if (createError) {
-        const message = /already|registered|exists/i.test(createError.message || '')
-          ? 'That email already has an account. Try signing in or use forgot password.'
-          : createError.message;
-        return res.status(400).json({ success: false, error: message });
-      }
-      const userId = created?.user?.id || '';
-      if (userId) {
-        await supabase.from('profiles').upsert({
-          id: userId,
-          email,
-          first_name: firstName || '',
-          raven_id: ravenId,
-          username: ravenId,
-          onboarding_complete: false,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'id' });
-      }
-      return res.json({ success: true, email, userId, ravenId, confirmed: true, emailSent: false });
     }
 
     const { data, error } = await supabase.auth.admin.generateLink({
