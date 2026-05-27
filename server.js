@@ -209,7 +209,7 @@ app.post('/auth/app-signup', async (req, res) => {
       if (!user) return false;
       if (user.email_confirmed_at || user.confirmed_at) throw new Error('That email already has an account. Try signing in or use forgot password.');
       try { await supabase.from('profiles').delete().eq('id', user.id); } catch(e) {}
-      const { error: deleteError } = await supabase.auth.admin.deleteUser(user.id);
+      const { error: deleteError } = await supabase.auth.admin.deleteUser(user.id, false);
       if (deleteError) throw new Error('Could not refresh that pending account. Please try again.');
       return true;
     }
@@ -1309,7 +1309,7 @@ app.get('/bill/:billId', async (req, res) => {
     const isAppBillMode = req.query.app === '1';
     const appDashboardUrl = (() => {
       if (!isAppBillMode) return 'https://ravensplit.com/dashboard.html';
-      const params = new URLSearchParams({ app: '1', page: 'overview' });
+      const params = new URLSearchParams({ app: '1', page: 'overview', source: 'bill' });
       if (req.query.acct) params.set('acct', String(req.query.acct));
       if (req.query.email) params.set('acct', String(req.query.email));
       if (req.query.name) params.set('name', String(req.query.name));
@@ -3390,7 +3390,7 @@ app.get('/trip/:tripId', async (req, res) => {
   const isAppMode = req.query.app === '1';
   const dashboardBackUrl = (() => {
     if (!isAppMode) return 'https://ravensplit.com/dashboard.html';
-    const params = new URLSearchParams({ app: '1', page: 'overview' });
+    const params = new URLSearchParams({ app: '1', page: 'overview', source: 'trip' });
     if (req.query.acct) params.set('acct', String(req.query.acct));
     if (req.query.email) params.set('acct', String(req.query.email));
     if (req.query.name) params.set('name', String(req.query.name));
