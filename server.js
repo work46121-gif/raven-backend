@@ -1851,6 +1851,38 @@ app.get('/bill/:billId', async (req, res) => {
     body.app-bill .sec-lbl{font-size:12px!important;letter-spacing:.16em}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
   </style>
+  <script>
+    (function(){
+      try {
+        var params = new URLSearchParams(window.location.search || '');
+        var isApp = params.get('app') === '1' || localStorage.getItem('raven_native_app') === '1';
+        if (!isApp) return;
+        localStorage.setItem('raven_native_app', '1');
+        document.addEventListener('DOMContentLoaded', function(){
+          document.body.classList.add('app-bill');
+          var dash = new URL('https://ravensplit.com/dashboard.html');
+          dash.searchParams.set('app', '1');
+          dash.searchParams.set('page', 'overview');
+          dash.searchParams.set('source', 'bill');
+          var acct = localStorage.getItem('raven_app_dashboard_email') || '';
+          try {
+            var prof = JSON.parse(localStorage.getItem('raven_profile') || '{}');
+            if (!acct && prof.email) acct = prof.email;
+            if (prof.first_name) dash.searchParams.set('name', prof.first_name);
+          } catch(e) {}
+          if (acct && acct.indexOf('@') > 0) dash.searchParams.set('acct', acct);
+          document.querySelectorAll('a[href*="dashboard.html"]').forEach(function(link){
+            link.setAttribute('href', dash.toString());
+          });
+          document.querySelectorAll('button').forEach(function(btn){
+            if ((btn.textContent || '').trim().toLowerCase() === 'back') {
+              btn.onclick = function(){ window.location.href = dash.toString(); };
+            }
+          });
+        });
+      } catch(e) {}
+    })();
+  </script>
 </head>
 <body class="${isAppBillMode ? 'app-bill' : ''}">
 
