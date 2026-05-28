@@ -115,6 +115,12 @@ function safeAppAuthRedirect(value, fallback = 'ravensplit://auth/callback?app=1
   return fallback;
 }
 
+function safeAppSignupRedirect(value) {
+  const raw = String(value || '').trim();
+  if (/^https:\/\/ravensplit\.com\/(app|dashboard)\.html/i.test(raw)) return raw;
+  return 'https://ravensplit.com/app.html?app=1';
+}
+
 function buildRavenSignupEmail({ email, actionLink }) {
   const escapedEmail = String(email || '').replace(/[<>&"]/g, ch => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[ch]));
   const escapedLink = String(actionLink || '').replace(/"/g, '&quot;');
@@ -180,7 +186,7 @@ app.post('/auth/app-signup', async (req, res) => {
     const email = String(req.body.email || '').trim().toLowerCase();
     const password = String(req.body.password || '');
     const firstName = String(req.body.firstName || req.body.first_name || '').trim();
-    const redirectTo = safeAppAuthRedirect(req.body.redirectTo);
+    const redirectTo = safeAppSignupRedirect(req.body.redirectTo);
     if (!email || !email.includes('@')) return res.status(400).json({ success: false, error: 'Enter a valid email.' });
     if (!password || password.length < 6) return res.status(400).json({ success: false, error: 'Password must be at least 6 characters.' });
 
@@ -195,7 +201,7 @@ app.post('/auth/app-signup', async (req, res) => {
         }
       } catch(e) {}
       try {
-        for (let page = 1; page <= 4; page++) {
+        for (let page = 1; page <= 25; page++) {
           const { data } = await supabase.auth.admin.listUsers({ page, perPage: 1000 });
           const users = data?.users || [];
           const found = users.find(user => String(user.email || '').toLowerCase() === wanted);
@@ -220,6 +226,7 @@ app.post('/auth/app-signup', async (req, res) => {
       }
       await deletePendingSignupUser(existingUser);
     }
+    try { await supabase.from('profiles').delete().eq('email', email); } catch(e) {}
 
     if (!process.env.RESEND_API_KEY) {
       return res.status(500).json({
