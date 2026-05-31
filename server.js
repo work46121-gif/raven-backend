@@ -211,9 +211,19 @@ app.post('/auth/app-signup', async (req, res) => {
       } catch(e) {}
       return null;
     }
-    async function deletePendingSignupUser(user) {
+    async function getSignupProfile(user) {
+      if (!user?.id) return null;
+      try {
+        const { data } = await supabase.from('profiles').select('id,onboarding_complete,email').eq('id', user.id).maybeSingle();
+        return data || null;
+      } catch(e) {
+        return null;
+      }
+    }
+    async function deletePendingSignupUser(user, options = {}) {
       if (!user) return false;
-      if (user.email_confirmed_at || user.confirmed_at) throw new Error('That email already has an account. Try signing in or use forgot password.');
+      const confirmed = !!(user.email_confirmed_at || user.confirmed_at);
+      if (confirmed && !options.allowConfirmedStale) throw new Error('That email already has an account. Try signing in or use forgot password.');
       try { await supabase.from('profiles').delete().eq('id', user.id); } catch(e) {}
       const { error: deleteError } = await supabase.auth.admin.deleteUser(user.id, false);
       if (deleteError) throw new Error('Could not refresh that pending account. Please try again.');
@@ -221,10 +231,12 @@ app.post('/auth/app-signup', async (req, res) => {
     }
     let existingUser = await findSignupAuthUser(email);
     if (existingUser) {
-      if (existingUser.email_confirmed_at || existingUser.confirmed_at) {
+      const existingProfile = await getSignupProfile(existingUser);
+      const confirmed = !!(existingUser.email_confirmed_at || existingUser.confirmed_at);
+      if (confirmed && existingProfile?.onboarding_complete) {
         return res.status(400).json({ success: false, error: 'That email already has an account. Try signing in or use forgot password.' });
       }
-      await deletePendingSignupUser(existingUser);
+      await deletePendingSignupUser(existingUser, { allowConfirmedStale: !existingProfile || !existingProfile.onboarding_complete });
     }
     try { await supabase.from('profiles').delete().eq('email', email); } catch(e) {}
 
@@ -1314,7 +1326,7 @@ app.get('/bill/:billId', async (req, res) => {
     const { billId } = req.params;
     const token = req.query.t || req.query.token;
     const isAppBillMode = req.query.app === '1';
-    const appDashboardUrl = (() => {
+    let appDashboardUrl = (() => {
       if (!isAppBillMode) return 'https://ravensplit.com/dashboard.html';
       const params = new URLSearchParams({ app: '1', page: 'overview', source: 'bill' });
       if (req.query.acct) params.set('acct', String(req.query.acct));
@@ -1325,6 +1337,11 @@ app.get('/bill/:billId', async (req, res) => {
     const { data: loadedBill } = await supabase.from('bills').select('*').eq('id', billId).single();
     bill = loadedBill;
     if (!bill) return res.status(404).send('<h1>Bill not found</h1>');
+    if (isAppBillMode && !req.query.acct && !req.query.email && bill.creator_phone && String(bill.creator_phone).includes('@')) {
+      const params = new URLSearchParams({ app: '1', page: 'overview', source: 'bill', acct: String(bill.creator_phone) });
+      if (req.query.name) params.set('name', String(req.query.name));
+      appDashboardUrl = 'https://ravensplit.com/dashboard.html?' + params.toString();
+    }
     if (bill.status === 'deleted') return res.status(410).send(renderInactiveBillPage());
     if (bill.share_token && token !== bill.share_token) {
       return res.status(403).send('<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RAVEN</title><style>body{font-family:Helvetica,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px}</style></head><body><div style="max-width:360px"><div style="font-size:48px;margin-bottom:20px">ðŸ”’</div><h2>Private Bill</h2><p style="color:#6E6B80;margin-top:10px">Ask the bill creator to share the correct link.</p></div></body></html>');
@@ -3427,7 +3444,7 @@ app.get('/trip/:tripId', async (req, res) => {
   const { tripId } = req.params;
   const token = req.query.t;
   const isAppMode = req.query.app === '1';
-  const dashboardBackUrl = (() => {
+  let dashboardBackUrl = (() => {
     if (!isAppMode) return 'https://ravensplit.com/dashboard.html';
     const params = new URLSearchParams({ app: '1', page: 'overview', source: 'trip' });
     if (req.query.acct) params.set('acct', String(req.query.acct));
@@ -3441,6 +3458,14 @@ app.get('/trip/:tripId', async (req, res) => {
 
   const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
   if (!trip) return res.status(404).send('<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center}</style></head><body><div><div style="font-size:52px"></div><h2>Trip Not Found</h2></div></body></html>');
+  if (isAppMode && !req.query.acct && !req.query.email) {
+    const ownerEmail = String(trip.creator_email || trip.owner_email || trip.email || '').trim();
+    if (ownerEmail.includes('@')) {
+      const params = new URLSearchParams({ app: '1', page: 'overview', source: 'trip', acct: ownerEmail });
+      if (req.query.name) params.set('name', String(req.query.name));
+      dashboardBackUrl = 'https://ravensplit.com/dashboard.html?' + params.toString();
+    }
+  }
 
   let inviteToken = trip.invite_token;
   if (!inviteToken) {
