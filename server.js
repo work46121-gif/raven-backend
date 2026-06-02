@@ -7974,13 +7974,51 @@ app.post('/trip/:tripId/toggle-admin', async (req, res) => {
 app.post('/trip/:tripId/remove-member', async (req, res) => {
   try {
     const { tripId } = req.params;
-    const { token, name } = req.body;
+    const { token, name, email, user_email, raven_id } = req.body;
     const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
     if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
+    const targetName = String(name || '').trim();
+    const targetEmail = String(email || user_email || '').trim().toLowerCase();
+    const targetRavenId = String(raven_id || '').trim().replace(/^@/, '').toLowerCase();
     const people = (Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people || '[]'))
-      .filter(p => p.toLowerCase() !== (name||'').toLowerCase());
-    await supabase.from('trips').update({ people: JSON.stringify(people) }).eq('id', tripId);
-    res.json({ success: true, people });
+      .filter(p => p.toLowerCase() !== targetName.toLowerCase());
+
+    let memberEmails = [];
+    try { memberEmails = Array.isArray(trip.member_emails) ? trip.member_emails : JSON.parse(trip.member_emails || '[]'); } catch(e) {}
+    const emailsToRemove = new Set();
+    if (targetEmail) emailsToRemove.add(targetEmail);
+    if (targetName || targetRavenId) {
+      try {
+        let query = supabase.from('profiles').select('email,first_name,last_name,raven_id');
+        if (targetRavenId) {
+          query = query.eq('raven_id', targetRavenId);
+        } else {
+          query = query.or(`first_name.ilike.${targetName},last_name.ilike.${targetName},raven_id.ilike.${targetName.replace(/^@/, '')}`);
+        }
+        const { data: profiles } = await query;
+        (profiles || []).forEach(profile => {
+          const profileName = [profile.first_name, profile.last_name].filter(Boolean).join(' ').trim();
+          const profileFirst = String(profile.first_name || '').trim();
+          const profileRaven = String(profile.raven_id || '').trim().replace(/^@/, '');
+          const matchesName = targetName && (
+            profileName.toLowerCase() === targetName.toLowerCase() ||
+            profileFirst.toLowerCase() === targetName.toLowerCase() ||
+            profileRaven.toLowerCase() === targetName.replace(/^@/, '').toLowerCase()
+          );
+          if ((targetRavenId || matchesName) && profile.email) emailsToRemove.add(String(profile.email).trim().toLowerCase());
+        });
+      } catch(e) {}
+    }
+    if (emailsToRemove.size) {
+      memberEmails = memberEmails.filter(memberEmail => !emailsToRemove.has(String(memberEmail || '').trim().toLowerCase()));
+      try { await supabase.from('trip_members').delete().eq('trip_id', tripId).in('user_email', [...emailsToRemove]); } catch(e) {}
+    }
+
+    await supabase.from('trips').update({
+      people: JSON.stringify(people),
+      member_emails: JSON.stringify(memberEmails)
+    }).eq('id', tripId);
+    res.json({ success: true, people, member_emails: memberEmails });
   } catch(err) { res.json({ success: false, error: err.message }); }
 });
 
