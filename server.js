@@ -1,4 +1,4 @@
-﻿require('dotenv').config();
+require('dotenv').config();
 const express = require('express');
 const twilio = require('twilio');
 const { createClient } = require('@supabase/supabase-js');
@@ -3444,6 +3444,7 @@ app.get('/trip/:tripId', async (req, res) => {
   const { tripId } = req.params;
   const token = req.query.t;
   const isAppMode = req.query.app === '1';
+  const isEmbedded = req.query.embedded === '1'; // opened in dashboard iframe — hide built-in header
   let dashboardBackUrl = (() => {
     if (!isAppMode) return 'https://ravensplit.com/dashboard.html';
     const params = new URLSearchParams({ app: '1', page: 'overview', source: 'trip' });
@@ -4342,7 +4343,7 @@ input:focus,textarea:focus{border-color:var(--purple)}
 <!-- All page data  safely JSON-encoded, never interpolated into JS -->
 <script id="page-data" type="application/json">${pageData.replace(/<\/script>/gi, '<\\/script>')}</script>
 
-<div class="hdr"><div class="hdr-inner">
+<div class="hdr" ${isEmbedded ? 'style="display:none"' : ''}><div class="hdr-inner">
   <a href="${dashboardBackUrl}" style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;text-decoration:none;color:#9896A8;font-size:13px;font-weight:600;transition:all 0.15s" onmouseover="this.style.color='#F0EEF8';this.style.borderColor='rgba(255,255,255,0.25)'" onmouseout="this.style.color='#9896A8';this.style.borderColor='rgba(255,255,255,0.1)'">Dashboard</a>
   <a href="${dashboardBackUrl}" id="raven-home-link" class="raven-home-link" style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:0.15em;text-decoration:none;color:#F0EEF8">RAVEN</a>
   <div style="font-size:10px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:12px;font-weight:600">${esc(tripId)}</div>
