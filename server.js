@@ -1,4 +1,4 @@
-﻿require('dotenv').config();
+require('dotenv').config();
 const express = require('express');
 const twilio = require('twilio');
 const { createClient } = require('@supabase/supabase-js');
@@ -7876,13 +7876,11 @@ app.post('/trip/:tripId/message', async (req, res) => {
     }
     let resolvedName = String(sender_name || '').trim() || 'Member';
     let resolvedAvatar = avatar_url || null;
-    let resolvedRavenId = null;
     if (user_id) {
       try {
         const { data: profile } = await supabase.from('profiles').select('first_name,avatar_url,raven_id').eq('id', user_id).maybeSingle();
         if (profile?.first_name) resolvedName = profile.first_name;
         if (profile?.avatar_url) resolvedAvatar = profile.avatar_url;
-        if (profile?.raven_id) resolvedRavenId = profile.raven_id;
       } catch(e) {}
     }
     const row = {
@@ -7890,7 +7888,6 @@ app.post('/trip/:tripId/message', async (req, res) => {
       user_id: user_id || null,
       sender_name: resolvedName,
       avatar_url: resolvedAvatar,
-      raven_id: resolvedRavenId,
       message: String(message || '').trim(),
       gif_url: gif_url || null,
       photo_url: photo_url || null,
