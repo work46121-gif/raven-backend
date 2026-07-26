@@ -7876,11 +7876,13 @@ app.post('/trip/:tripId/message', async (req, res) => {
     }
     let resolvedName = String(sender_name || '').trim() || 'Member';
     let resolvedAvatar = avatar_url || null;
+    let resolvedRavenId = null;
     if (user_id) {
       try {
         const { data: profile } = await supabase.from('profiles').select('first_name,avatar_url,raven_id').eq('id', user_id).maybeSingle();
         if (profile?.first_name) resolvedName = profile.first_name;
         if (profile?.avatar_url) resolvedAvatar = profile.avatar_url;
+        if (profile?.raven_id) resolvedRavenId = profile.raven_id;
       } catch(e) {}
     }
     const row = {
@@ -7888,6 +7890,7 @@ app.post('/trip/:tripId/message', async (req, res) => {
       user_id: user_id || null,
       sender_name: resolvedName,
       avatar_url: resolvedAvatar,
+      raven_id: resolvedRavenId,
       message: String(message || '').trim(),
       gif_url: gif_url || null,
       photo_url: photo_url || null,
@@ -9323,6 +9326,53 @@ RECONCILIATION PASS:
   } catch(err) {
     console.error('Scan top-level error:', err.status, err.message);
     res.json({ success: false, error: err.message || 'Scan failed' });
+  }
+});
+
+// â”€â”€ RAVEN LIFESTYLE â€” freeform AI coaching toward a 90+ Raven Score â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+app.post('/api/lifestyle-coach', async (req, res) => {
+  try {
+    const {
+      month, income, billsTotal, investTotal,
+      spending, timeliness, investing, overall,
+      billCount, lateOrOverdueCount, paycheckCount, investmentCount
+    } = req.body || {};
+
+    const fmt = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const pct = (n) => (n === null || n === undefined) ? 'not yet scored' : Math.round(n) + '/100';
+
+    const summary = `Month: ${month || 'current month'}
+Income logged: ${fmt(income)} (from ${paycheckCount || 0} paycheck entries)
+Bills logged: ${fmt(billsTotal)} (${billCount || 0} bills, ${lateOrOverdueCount || 0} paid late or currently overdue)
+Invested: ${fmt(investTotal)} (from ${investmentCount || 0} entries)
+Spending sub-score: ${pct(spending)} (target: bills under ~60% of income, worth 40% of overall)
+Timeliness sub-score: ${pct(timeliness)} (target: all bills paid on/before due date, worth 35% of overall)
+Investing sub-score: ${pct(investing)} (target: invest 15% of income, worth 25% of overall)
+Overall Raven Score: ${(overall === null || overall === undefined) ? 'not yet scored' : overall + '/100'} (90+ earns a monthly medal)`;
+
+    const prompt = `You are the Raven Score coach inside RAVEN, a bill-splitting and money app. A user wants specific, encouraging, concrete coaching on how to raise their Raven Score to 90+ this month.
+
+Here is their data for this month:
+${summary}
+
+Write 2-4 short paragraphs of freeform coaching as plain text (no markdown headers, no bullet lists). Be specific with dollar amounts and percentages where the data supports it. Prioritize whichever one or two levers would move their score the most. If they're already at or above 90, congratulate them and give one tip for staying there. If there's no data yet, gently prompt them to log a paycheck, bill, or investment. Weave the numbers naturally into advice rather than repeating them back as a list. Do not give generic financial disclaimers or suggest consulting a financial advisor. Keep the tone warm and motivating, like a coach, not a lecture.`;
+
+    const message = await getAnthropic().messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 500,
+      messages: [{ role: 'user', content: prompt }]
+    });
+
+    const textBlock = message.content.find(b => b.type === 'text');
+    const coaching = (textBlock && textBlock.text || '').trim();
+    if (!coaching) return res.json({ success: false, error: 'AI returned empty response' });
+
+    return res.json({ success: true, coaching });
+  } catch (err) {
+    console.error('lifestyle-coach error:', err.status, err.message);
+    if (err.status === 401) return res.json({ success: false, error: 'API key invalid â€” check ANTHROPIC_API_KEY in Railway' });
+    if (err.status === 429) return res.json({ success: false, error: 'Rate limited â€” try again in a moment' });
+    return res.json({ success: false, error: 'AI unavailable: ' + (err.message || 'unknown') });
   }
 });
 
