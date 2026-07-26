@@ -9329,53 +9329,6 @@ RECONCILIATION PASS:
   }
 });
 
-// â”€â”€ RAVEN LIFESTYLE â€” freeform AI coaching toward a 90+ Raven Score â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-app.post('/api/lifestyle-coach', async (req, res) => {
-  try {
-    const {
-      month, income, billsTotal, investTotal,
-      spending, timeliness, investing, overall,
-      billCount, lateOrOverdueCount, paycheckCount, investmentCount
-    } = req.body || {};
-
-    const fmt = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const pct = (n) => (n === null || n === undefined) ? 'not yet scored' : Math.round(n) + '/100';
-
-    const summary = `Month: ${month || 'current month'}
-Income logged: ${fmt(income)} (from ${paycheckCount || 0} paycheck entries)
-Bills logged: ${fmt(billsTotal)} (${billCount || 0} bills, ${lateOrOverdueCount || 0} paid late or currently overdue)
-Invested: ${fmt(investTotal)} (from ${investmentCount || 0} entries)
-Spending sub-score: ${pct(spending)} (target: bills under ~60% of income, worth 40% of overall)
-Timeliness sub-score: ${pct(timeliness)} (target: all bills paid on/before due date, worth 35% of overall)
-Investing sub-score: ${pct(investing)} (target: invest 15% of income, worth 25% of overall)
-Overall Raven Score: ${(overall === null || overall === undefined) ? 'not yet scored' : overall + '/100'} (90+ earns a monthly medal)`;
-
-    const prompt = `You are the Raven Score coach inside RAVEN, a bill-splitting and money app. A user wants specific, encouraging, concrete coaching on how to raise their Raven Score to 90+ this month.
-
-Here is their data for this month:
-${summary}
-
-Write 2-4 short paragraphs of freeform coaching as plain text (no markdown headers, no bullet lists). Be specific with dollar amounts and percentages where the data supports it. Prioritize whichever one or two levers would move their score the most. If they're already at or above 90, congratulate them and give one tip for staying there. If there's no data yet, gently prompt them to log a paycheck, bill, or investment. Weave the numbers naturally into advice rather than repeating them back as a list. Do not give generic financial disclaimers or suggest consulting a financial advisor. Keep the tone warm and motivating, like a coach, not a lecture.`;
-
-    const message = await getAnthropic().messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 500,
-      messages: [{ role: 'user', content: prompt }]
-    });
-
-    const textBlock = message.content.find(b => b.type === 'text');
-    const coaching = (textBlock && textBlock.text || '').trim();
-    if (!coaching) return res.json({ success: false, error: 'AI returned empty response' });
-
-    return res.json({ success: true, coaching });
-  } catch (err) {
-    console.error('lifestyle-coach error:', err.status, err.message);
-    if (err.status === 401) return res.json({ success: false, error: 'API key invalid â€” check ANTHROPIC_API_KEY in Railway' });
-    if (err.status === 429) return res.json({ success: false, error: 'Rate limited â€” try again in a moment' });
-    return res.json({ success: false, error: 'AI unavailable: ' + (err.message || 'unknown') });
-  }
-});
-
 // â”€â”€ REMIND UNPAID â€” send email reminders to participants who haven't paid â”€â”€â”€â”€â”€â”€
 app.post('/remind-dashboard', async (req, res) => {
   try {
@@ -9485,6 +9438,78 @@ app.post('/waitlist', async (req, res) => {
   } catch(err) {
     console.error('Waitlist error:', err);
     res.json({ success: true });
+  }
+});
+
+// â”€â”€â”€ RAVEN LIFESTYLE: AI COACH (server-side rate-limited) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Run once in the Supabase SQL editor before this route works:
+//
+//   create table if not exists coach_usage (
+//     user_id uuid not null references auth.users(id) on delete cascade,
+//     day date not null default current_date,
+//     count int not null default 0,
+//     primary key (user_id, day)
+//   );
+//   alter table coach_usage enable row level security;
+//
+//   create or replace function increment_coach_usage(p_user_id uuid, p_limit int)
+//   returns int language plpgsql security definer as $$
+//   declare new_count int;
+//   begin
+//     insert into coach_usage (user_id, day, count) values (p_user_id, current_date, 1)
+//     on conflict (user_id, day) do update set count = coach_usage.count + 1
+//     where coach_usage.count < p_limit
+//     returning count into new_count;
+//     return new_count; -- null if already at/over the daily limit
+//   end;
+//   $$;
+//   revoke all on function increment_coach_usage(uuid, int) from public, anon, authenticated;
+//
+// The row lock Postgres takes during that upsert is what actually enforces the
+// limit â€” two simultaneous requests from the same user can't both slip through.
+const COACH_DAILY_LIMIT = 2; // keep in sync with the client-side display copy
+app.post('/lifestyle-coach', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.replace(/^Bearer\s+/i, '');
+    if (!token) return res.status(401).json({ error: 'missing_auth' });
+
+    const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+    if (userErr || !userData?.user) return res.status(401).json({ error: 'invalid_auth' });
+    const userId = userData.user.id;
+
+    // Atomically check-and-increment today's usage. This is the real limit â€”
+    // it lives in Postgres, not in the client's localStorage counter.
+    const { data: newCount, error: rpcErr } = await supabase.rpc('increment_coach_usage', {
+      p_user_id: userId,
+      p_limit: COACH_DAILY_LIMIT
+    });
+    if (rpcErr) {
+      console.error('coach_usage rpc error:', rpcErr);
+      return res.status(500).json({ error: 'usage_check_failed' });
+    }
+    if (newCount === null) {
+      return res.status(429).json({ error: 'rate_limited' });
+    }
+
+    const { income, billsTotal, investTotal, spending, timeliness, investing, overall, investTargetPct } = req.body || {};
+    const prompt = `You are a terse, encouraging financial coach inside RAVEN's Lifestyle "Raven Score" feature.
+This month so far: income $${income || 0}, bills $${billsTotal || 0}, invested $${investTotal || 0}
+(target ${investTargetPct || 15}% of income). Sub-scores (0-100): spending ${spending ?? 'n/a'},
+timeliness ${timeliness ?? 'n/a'}, investing ${investing ?? 'n/a'}. Overall score: ${overall ?? 'n/a'}.
+In 3-5 short sentences, say what's working, what's at risk, and one concrete action for the rest
+of the month. Plain conversational text â€” no headers, no bullet points, no markdown.`;
+
+    const message = await getAnthropic().messages.create({
+      model: 'claude-haiku-4-5-20251001', // cheap/fast â€” this is a short coaching note, not a research task
+      max_tokens: 300,
+      messages: [{ role: 'user', content: prompt }]
+    });
+    const text = (message.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+    res.json({ message: text || 'No coaching note this time â€” check back next time you log activity.' });
+  } catch (err) {
+    console.error('lifestyle-coach error:', err);
+    res.status(502).json({ error: 'model_call_failed' });
   }
 });
 
