@@ -7323,6 +7323,35 @@ function buildRavenbotReply(question) {
   }
   return (summary.insights || []).join('\\n') || 'Ask me about who owes, top receipts, total spend, or settlement status.';
 }
+async function askRavenbot(userText) {
+  const container = document.getElementById('chat-msgs');
+  const typingEl = document.createElement('div');
+  typingEl.id = 'ravenbot-typing';
+  typingEl.style.cssText = 'display:flex;flex-direction:column;align-items:flex-start;gap:3px;margin-bottom:6px';
+  typingEl.innerHTML = '<div style="font-size:10px;color:#30D158;font-weight:900;letter-spacing:0.08em;text-transform:uppercase;margin-left:4px">RAVENbot</div><div style="max-width:82%;padding:10px 13px;border-radius:16px 16px 16px 4px;background:linear-gradient(135deg,rgba(124,58,237,0.18),rgba(48,209,88,0.1));border:1px solid rgba(168,85,247,0.22);color:#9896A8;font-size:13px">Thinking...</div>';
+  if (container) { container.appendChild(typingEl); container.scrollTop = container.scrollHeight; }
+
+  const history = getRavenbotMessages().slice(0, -1).slice(-16).map(function(m) {
+    return { role: m.role === 'user' ? 'user' : 'assistant', text: m.text || '' };
+  });
+
+  let reply = null;
+  try {
+    const resp = await fetch(BACKEND + '/trip/' + TRIP_ID + '/ravenbot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: TRIP_TOKEN, message: userText, history: history })
+    });
+    const payload = await resp.json();
+    if (payload && payload.success && payload.reply) reply = payload.reply;
+  } catch (e) {}
+
+  const typingNow = document.getElementById('ravenbot-typing');
+  if (typingNow) typingNow.remove();
+  appendRavenbotMessage({ role: 'bot', text: reply || buildRavenbotReply(userText), created_at: new Date().toISOString() }, true);
+  const c = document.getElementById('chat-msgs');
+  if (c) c.scrollTop = c.scrollHeight;
+}
 
 async function markRead(msgId) {
   if (!chatDb || !window._ravenUserId || !window._ravenFirstName) return;
@@ -7560,14 +7589,11 @@ async function sendChat() {
   clearChatPhoto();
 
   if (tripChatMode === 'ravenbot') {
-    appendRavenbotMessage({ role: 'user', text: message || '[attachment]', created_at: new Date().toISOString() }, true);
-    setTimeout(function() {
-      appendRavenbotMessage({ role: 'bot', text: buildRavenbotReply(message), created_at: new Date().toISOString() }, true);
-      const c = document.getElementById('chat-msgs');
-      if (c) c.scrollTop = c.scrollHeight;
-    }, 180);
+    const ravenbotText = message || '[attachment]';
+    appendRavenbotMessage({ role: 'user', text: ravenbotText, created_at: new Date().toISOString() }, true);
     const c = document.getElementById('chat-msgs');
     if (c) c.scrollTop = c.scrollHeight;
+    askRavenbot(ravenbotText);
     return;
   }
 
@@ -7860,6 +7886,150 @@ app.get('/trip/:tripId/concierge', async (req, res) => {
     res.json(buildTripConciergePayload(trip, receipts || []));
   } catch(err) {
     res.json({ success: false, error: err.message });
+  }
+});
+
+// ─── RAVENBOT TRIP CHAT ─────────────────────────────────────────
+app.post('/trip/:tripId/ravenbot', async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const { token, message, history } = req.body || {};
+    if (!String(message || '').trim()) return res.json({ success: false, error: 'Empty message' });
+
+    const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
+    if (!trip || (trip.share_token !== token && trip.invite_token !== token)) {
+      return res.json({ success: false, error: 'Invalid token' });
+    }
+
+    const { data: receipts } = await supabase.from('trip_receipts').select('*').eq('trip_id', tripId).order('created_at', { ascending: true });
+    const summary = buildTripConciergePayload(trip, receipts || []);
+
+    const contextLines = [
+      'Trip name: ' + summary.trip_name,
+      'People on trip: ' + summary.people_count,
+      'Receipts logged: ' + summary.receipt_count,
+      'Total spent: $' + summary.total_spent.toFixed(2),
+      summary.debtors.length
+        ? 'Who owes money: ' + summary.debtors.map(function(d) { return d.name + ' owes $' + d.amount.toFixed(2); }).join(', ')
+        : 'Who owes money: nobody, everyone is settled',
+      'Notes: ' + summary.insights.join(' ')
+    ].join('\n');
+
+    const systemPrompt = 'You are RAVENbot, a friendly, concise assistant inside the RAVEN bill-splitting app. '
+      + 'You are chatting privately with one member about a specific trip. Only use the trip data given to you below - '
+      + 'never invent balances, names, or amounts that are not listed. Keep answers short (2-4 sentences), use plain language, '
+      + 'and format money as $X.XX. If asked something unrelated to this trip or the app, gently steer back to what you can help with.\n\n'
+      + 'Current trip data:\n' + contextLines;
+
+    const historyMessages = Array.isArray(history) ? history.slice(-16).map(function(m) {
+      return { role: m.role === 'user' ? 'user' : 'assistant', content: String(m.text || '').slice(0, 2000) };
+    }).filter(function(m) { return m.content; }) : [];
+
+    const messages = historyMessages.concat([{ role: 'user', content: String(message).slice(0, 2000) }]);
+
+    const completion = await getAnthropic().messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 400,
+      system: systemPrompt,
+      messages: messages
+    });
+
+    const reply = (completion.content || [])
+      .filter(function(block) { return block.type === 'text'; })
+      .map(function(block) { return block.text; })
+      .join('\n')
+      .trim();
+
+    if (!reply) return res.json({ success: false, error: 'No reply generated' });
+    res.json({ success: true, reply: reply });
+  } catch (err) {
+    console.error('[ravenbot] EXCEPTION:', err.message, err.stack);
+    res.json({ success: false, error: err.message || 'RAVENbot is unavailable right now' });
+  }
+});
+
+// ─── LIFESTYLE AI COACH ─────────────────────────────────────────
+// In-memory per-day rate limit (resets on server restart / redeploy — a real
+// safeguard for now, but if you want it to survive restarts, move this to a
+// Supabase table keyed by user_id/day and increment it atomically instead.
+const LIFESTYLE_COACH_DAILY_LIMIT = 2;
+const lifestyleCoachUsage = new Map(); // key -> { date, count }
+function lifestyleCoachAllow(key) {
+  const today = new Date().toISOString().slice(0, 10);
+  const entry = lifestyleCoachUsage.get(key);
+  if (!entry || entry.date !== today) {
+    lifestyleCoachUsage.set(key, { date: today, count: 1 });
+    return true;
+  }
+  if (entry.count >= LIFESTYLE_COACH_DAILY_LIMIT) return false;
+  entry.count += 1;
+  return true;
+}
+app.post('/api/lifestyle-coach', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const income = Number(body.income) || 0;
+    const billsTotal = Number(body.billsTotal) || 0;
+    const investTotal = Number(body.investTotal) || 0;
+    const spending = body.spending === null || body.spending === undefined ? null : Number(body.spending);
+    const timeliness = body.timeliness === null || body.timeliness === undefined ? null : Number(body.timeliness);
+    const investing = body.investing === null || body.investing === undefined ? null : Number(body.investing);
+    const overall = body.overall === null || body.overall === undefined ? null : Number(body.overall);
+    const investTargetPct = Number(body.investTargetPct) || 15;
+
+    if (!income && !billsTotal && !investTotal) {
+      return res.json({ success: false, error: 'No activity logged yet this month' });
+    }
+
+    // Identify the caller for rate limiting: prefer a verified Supabase user, fall back to IP.
+    let rateKey = req.ip || 'anon';
+    const authHeader = req.headers.authorization || '';
+    if (authHeader.startsWith('Bearer ')) {
+      try {
+        const { data } = await supabase.auth.getUser(authHeader.slice(7));
+        if (data && data.user && data.user.id) rateKey = 'user:' + data.user.id;
+      } catch (e) {}
+    }
+    if (!lifestyleCoachAllow(rateKey)) {
+      return res.status(429).json({ success: false, error: 'Daily coaching limit reached' });
+    }
+
+    const fmt = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const statLines = [
+      'Income this month: ' + fmt(income),
+      'Bills this month: ' + fmt(billsTotal),
+      'Invested this month: ' + fmt(investTotal) + ' (target is ' + investTargetPct + '% of income)',
+      spending !== null ? 'Spending discipline score: ' + Math.round(spending) + '/100' : null,
+      timeliness !== null ? 'Bill timeliness score: ' + Math.round(timeliness) + '/100' : null,
+      investing !== null ? 'Investing consistency score: ' + Math.round(investing) + '/100' : null,
+      overall !== null ? 'Overall Raven Score: ' + overall + '/100' : null,
+      body.billCount !== undefined ? 'Bills logged: ' + body.billCount : null,
+      body.lateOrOverdueCount !== undefined ? 'Late or overdue bills: ' + body.lateOrOverdueCount : null
+    ].filter(Boolean).join('\n');
+
+    const systemPrompt = 'You are the Raven AI Coach inside the RAVEN bill-splitting app\'s personal money tracker. '
+      + 'Give one short, specific, encouraging-but-honest piece of coaching (3-5 sentences) based only on the numbers given below. '
+      + 'Do not invent numbers that are not provided. Do not give generic financial advice disclaimers. Talk directly to the user as "you." '
+      + 'Format money as $X.XX.\n\nThis month\'s numbers:\n' + statLines;
+
+    const completion = await getAnthropic().messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 300,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: 'Give me my coaching for this month.' }]
+    });
+
+    const coaching = (completion.content || [])
+      .filter(function (block) { return block.type === 'text'; })
+      .map(function (block) { return block.text; })
+      .join('\n')
+      .trim();
+
+    if (!coaching) return res.json({ success: false, error: 'No coaching generated' });
+    res.json({ success: true, coaching: coaching, message: coaching });
+  } catch (err) {
+    console.error('[lifestyle-coach] EXCEPTION:', err.message, err.stack);
+    res.json({ success: false, error: err.message || 'Coach is unavailable right now' });
   }
 });
 
@@ -9438,78 +9608,6 @@ app.post('/waitlist', async (req, res) => {
   } catch(err) {
     console.error('Waitlist error:', err);
     res.json({ success: true });
-  }
-});
-
-// â”€â”€â”€ RAVEN LIFESTYLE: AI COACH (server-side rate-limited) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Run once in the Supabase SQL editor before this route works:
-//
-//   create table if not exists coach_usage (
-//     user_id uuid not null references auth.users(id) on delete cascade,
-//     day date not null default current_date,
-//     count int not null default 0,
-//     primary key (user_id, day)
-//   );
-//   alter table coach_usage enable row level security;
-//
-//   create or replace function increment_coach_usage(p_user_id uuid, p_limit int)
-//   returns int language plpgsql security definer as $$
-//   declare new_count int;
-//   begin
-//     insert into coach_usage (user_id, day, count) values (p_user_id, current_date, 1)
-//     on conflict (user_id, day) do update set count = coach_usage.count + 1
-//     where coach_usage.count < p_limit
-//     returning count into new_count;
-//     return new_count; -- null if already at/over the daily limit
-//   end;
-//   $$;
-//   revoke all on function increment_coach_usage(uuid, int) from public, anon, authenticated;
-//
-// The row lock Postgres takes during that upsert is what actually enforces the
-// limit â€” two simultaneous requests from the same user can't both slip through.
-const COACH_DAILY_LIMIT = 2; // keep in sync with the client-side display copy
-app.post('/lifestyle-coach', async (req, res) => {
-  try {
-    const authHeader = req.headers.authorization || '';
-    const token = authHeader.replace(/^Bearer\s+/i, '');
-    if (!token) return res.status(401).json({ error: 'missing_auth' });
-
-    const { data: userData, error: userErr } = await supabase.auth.getUser(token);
-    if (userErr || !userData?.user) return res.status(401).json({ error: 'invalid_auth' });
-    const userId = userData.user.id;
-
-    // Atomically check-and-increment today's usage. This is the real limit â€”
-    // it lives in Postgres, not in the client's localStorage counter.
-    const { data: newCount, error: rpcErr } = await supabase.rpc('increment_coach_usage', {
-      p_user_id: userId,
-      p_limit: COACH_DAILY_LIMIT
-    });
-    if (rpcErr) {
-      console.error('coach_usage rpc error:', rpcErr);
-      return res.status(500).json({ error: 'usage_check_failed' });
-    }
-    if (newCount === null) {
-      return res.status(429).json({ error: 'rate_limited' });
-    }
-
-    const { income, billsTotal, investTotal, spending, timeliness, investing, overall, investTargetPct } = req.body || {};
-    const prompt = `You are a terse, encouraging financial coach inside RAVEN's Lifestyle "Raven Score" feature.
-This month so far: income $${income || 0}, bills $${billsTotal || 0}, invested $${investTotal || 0}
-(target ${investTargetPct || 15}% of income). Sub-scores (0-100): spending ${spending ?? 'n/a'},
-timeliness ${timeliness ?? 'n/a'}, investing ${investing ?? 'n/a'}. Overall score: ${overall ?? 'n/a'}.
-In 3-5 short sentences, say what's working, what's at risk, and one concrete action for the rest
-of the month. Plain conversational text â€” no headers, no bullet points, no markdown.`;
-
-    const message = await getAnthropic().messages.create({
-      model: 'claude-haiku-4-5-20251001', // cheap/fast â€” this is a short coaching note, not a research task
-      max_tokens: 300,
-      messages: [{ role: 'user', content: prompt }]
-    });
-    const text = (message.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
-    res.json({ message: text || 'No coaching note this time â€” check back next time you log activity.' });
-  } catch (err) {
-    console.error('lifestyle-coach error:', err);
-    res.status(502).json({ error: 'model_call_failed' });
   }
 });
 
