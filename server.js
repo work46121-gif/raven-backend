@@ -1965,7 +1965,7 @@ app.get('/bill/:billId', async (req, res) => {
 <div class="hdr"><div class="hdr-i">
   <div style="display:flex;align-items:center;gap:10px">
     ${isAppBillMode
-      ? `<div class="clean-icon"><a href="${appDashboardUrl}" style="text-decoration:none;color:inherit">R</a></div>`
+      ? `<div class="clean-icon"><a href="${appDashboardUrl}" onclick="return ravenSoftBackBill(event)" style="text-decoration:none;color:inherit">R</a></div><script>function ravenSoftBackBill(e){try{if(window.history.length>1){e.preventDefault();window.history.back();return false;}}catch(err){}return true;}</script>`
       : `<div style="font-size:20px;font-weight:900;letter-spacing:0.1em"><a href="https://ravensplit.com/" style="text-decoration:none;color:inherit">&#129718;</a></div>`}
     <div>
       <div style="font-size:15px;font-weight:700">${bill.name}</div>
@@ -4334,8 +4334,18 @@ input:focus,textarea:focus{border-color:var(--purple)}
 <script id="page-data" type="application/json">${pageData.replace(/<\/script>/gi, '<\\/script>')}</script>
 
 <div class="hdr"><div class="hdr-inner">
-  <a href="${dashboardBackUrl}" style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;text-decoration:none;color:#9896A8;font-size:13px;font-weight:600;transition:all 0.15s" onmouseover="this.style.color='#F0EEF8';this.style.borderColor='rgba(255,255,255,0.25)'" onmouseout="this.style.color='#9896A8';this.style.borderColor='rgba(255,255,255,0.1)'">Dashboard</a>
-  <a href="${dashboardBackUrl}" id="raven-home-link" class="raven-home-link" style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:0.15em;text-decoration:none;color:#F0EEF8">RAVEN</a>
+  <a href="${dashboardBackUrl}" onclick="return ravenSoftBack(event)" style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;text-decoration:none;color:#9896A8;font-size:13px;font-weight:600;transition:all 0.15s" onmouseover="this.style.color='#F0EEF8';this.style.borderColor='rgba(255,255,255,0.25)'" onmouseout="this.style.color='#9896A8';this.style.borderColor='rgba(255,255,255,0.1)'">Dashboard</a>
+  <a href="${dashboardBackUrl}" onclick="return ravenSoftBack(event)" id="raven-home-link" class="raven-home-link" style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:0.15em;text-decoration:none;color:#F0EEF8">RAVEN</a>
+  <script>
+    // Go back in the existing webview history instead of forcing a hard reload of
+    // dashboard.html — a hard reload re-runs the whole auth bootstrap and used to look like a sign-out.
+    function ravenSoftBack(e) {
+      try {
+        if (window.history.length > 1) { e.preventDefault(); window.history.back(); return false; }
+      } catch(err) {}
+      return true;
+    }
+  </script>
   <div style="font-size:10px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:12px;font-weight:600">${esc(tripId)}</div>
 </div></div>
 
@@ -7976,6 +7986,12 @@ app.post('/api/lifestyle-coach', async (req, res) => {
     const investing = body.investing === null || body.investing === undefined ? null : Number(body.investing);
     const overall = body.overall === null || body.overall === undefined ? null : Number(body.overall);
     const investTargetPct = Number(body.investTargetPct) || 15;
+    // Goal — persists on the user's account until they change it; purely descriptive input here.
+    const goalInterests = Array.isArray(body.goalInterests) ? body.goalInterests.filter(v => typeof v === 'string').slice(0, 3) : [];
+    const goalNote = typeof body.goalNote === 'string' ? body.goalNote.slice(0, 300) : '';
+    const hasRetirement = !!body.hasRetirement;
+    // Discretionary bill categories flagged client-side (e.g. { "Date Night": 120, "Shopping": 60 })
+    const discretionary = (body.discretionary && typeof body.discretionary === 'object') ? body.discretionary : {};
 
     if (!income && !billsTotal && !investTotal) {
       return res.json({ success: false, error: 'No activity logged yet this month' });
@@ -7995,6 +8011,13 @@ app.post('/api/lifestyle-coach', async (req, res) => {
     }
 
     const fmt = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const goalLabelMap = { 'real-estate': 'Real Estate', 'stocks': 'Stocks', 'both': 'A Balance Of Both' };
+    const goalLabel = goalInterests.map(g => goalLabelMap[g] || g).join(' + ');
+
+    // Compute the real spending-discipline cap from the same formula the app's score uses,
+    // so any dollar figure the model states is grounded in fact, not invented.
+    const spendCap64 = income > 0 ? income * 0.64 : null;
+
     const statLines = [
       'Income this month: ' + fmt(income),
       'Bills this month: ' + fmt(billsTotal),
@@ -8004,17 +8027,33 @@ app.post('/api/lifestyle-coach', async (req, res) => {
       investing !== null ? 'Investing consistency score: ' + Math.round(investing) + '/100' : null,
       overall !== null ? 'Overall Raven Score: ' + overall + '/100' : null,
       body.billCount !== undefined ? 'Bills logged: ' + body.billCount : null,
-      body.lateOrOverdueCount !== undefined ? 'Late or overdue bills: ' + body.lateOrOverdueCount : null
+      body.lateOrOverdueCount !== undefined ? 'Late or overdue bills: ' + body.lateOrOverdueCount : null,
+      spendCap64 !== null ? 'To keep the Spending score above 90, bills need to stay under ' + fmt(spendCap64) + ' (64% of income) this month.' : null,
+      goalLabel ? 'User\'s stated goal: ' + goalLabel + (goalNote ? ' — note from user: "' + goalNote + '"' : '') : null,
+      hasRetirement ? 'User logged a retirement contribution this month.' : null,
+      Object.keys(discretionary).length > 0
+        ? 'Discretionary bill categories this month: ' + Object.entries(discretionary).map(([k, v]) => k + ' ' + fmt(v)).join(', ')
+        : null
     ].filter(Boolean).join('\n');
 
+    const extraInstructions = [
+      hasRetirement || goalLabel
+        ? 'The user is investing or has a stated goal. If it fits naturally, name 3-5 well-known, low-cost, diversified index funds or ETFs (by ticker) as general starting points to research — lean toward real-estate/REIT funds if the goal favors real estate, broad-market/international funds if it favors stocks, or a mix if both. Explicitly frame this as general educational information, not personalized financial advice, and note you are not a financial advisor — one short sentence is enough, do not repeat this disclaimer more than once.'
+        : null,
+      Object.keys(discretionary).length > 0
+        ? 'At least one discretionary category (like dining or shopping) was logged. Call out one of them by name and its current amount, and suggest a specific dollar figure to keep it fixed around so total bills stay under the 64%-of-income cap given above and Spending stays above 90. Use the real numbers given — do not invent figures.'
+        : null
+    ].filter(Boolean).join(' ');
+
     const systemPrompt = 'You are the Raven AI Coach inside the RAVEN bill-splitting app\'s personal money tracker. '
-      + 'Give one short, specific, encouraging-but-honest piece of coaching (3-5 sentences) based only on the numbers given below. '
-      + 'Do not invent numbers that are not provided. Do not give generic financial advice disclaimers. Talk directly to the user as "you." '
+      + 'Give one short, specific, encouraging-but-honest piece of coaching (4-7 sentences) based only on the numbers given below. '
+      + 'Do not invent numbers that are not provided. Talk directly to the user as "you," in a warm, personable tone — like a sharp friend who\'s good with money, not a corporate advisor. '
+      + (extraInstructions ? extraInstructions + ' ' : '')
       + 'Format money as $X.XX.\n\nThis month\'s numbers:\n' + statLines;
 
     const completion = await getAnthropic().messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 300,
+      max_tokens: 400,
       system: systemPrompt,
       messages: [{ role: 'user', content: 'Give me my coaching for this month.' }]
     });
