@@ -8099,13 +8099,24 @@ app.post('/trip/:tripId/message', async (req, res) => {
       user_id: user_id || null,
       sender_name: resolvedName,
       avatar_url: resolvedAvatar,
-      raven_id: resolvedRavenId,
       message: String(message || '').trim(),
       gif_url: gif_url || null,
       photo_url: photo_url || null,
       created_at: new Date().toISOString()
     };
-    const { data: inserted, error } = await supabase.from('trip_messages').insert(row).select('*').single();
+    // trip_messages doesn't have a raven_id column in this DB — only include it if a
+    // future migration adds one, and fall back cleanly if that insert attempt fails.
+    let inserted = null, error = null;
+    if (resolvedRavenId) {
+      const attempt = await supabase.from('trip_messages').insert({ ...row, raven_id: resolvedRavenId }).select('*').single();
+      if (!attempt.error) { inserted = attempt.data; }
+      else { error = attempt.error; }
+    }
+    if (!inserted) {
+      const attempt2 = await supabase.from('trip_messages').insert(row).select('*').single();
+      inserted = attempt2.data;
+      error = attempt2.error || null;
+    }
     if (error) return res.json({ success: false, error: error.message });
     res.json({ success: true, message: inserted || row });
   } catch(err) {
