@@ -355,6 +355,34 @@ function normalizePhone(phone) {
   return `+${digits}`;
 }
 
+// ── ACCOUNT: DELETE (full account deletion, required by App Store 5.1.1(v)) ──
+app.post('/account/delete', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const accessToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+    if (!accessToken) return res.status(401).json({ success: false, error: 'Not signed in.' });
+
+    // Validate the token and resolve the user it belongs to — never trust a
+    // client-supplied user id for a destructive action like this.
+    const { data: userData, error: userError } = await supabase.auth.getUser(accessToken);
+    const user = userData?.user;
+    if (userError || !user) return res.status(401).json({ success: false, error: 'Your session has expired. Please sign in again and retry.' });
+
+    const userId = user.id;
+
+    // Best-effort cleanup of app data before removing the auth user.
+    try { await supabase.from('profiles').delete().eq('id', userId); } catch(e) { console.warn('profile cleanup failed:', e?.message); }
+
+    const { error: deleteError } = await supabase.auth.admin.deleteUser(userId);
+    if (deleteError) throw new Error(deleteError.message || 'Could not delete account.');
+
+    res.json({ success: true });
+  } catch(e) {
+    console.error('account delete error:', e);
+    res.status(500).json({ success: false, error: e.message || 'Could not delete your account. Please try again.' });
+  }
+});
+
 function parseMentions(text) {
   const matches = text.match(/@[\w]+/g) || [];
   return matches.map(m => m.replace('@', '').trim());
@@ -1965,7 +1993,7 @@ app.get('/bill/:billId', async (req, res) => {
 <div class="hdr"><div class="hdr-i">
   <div style="display:flex;align-items:center;gap:10px">
     ${isAppBillMode
-      ? `<div class="clean-icon"><a href="${appDashboardUrl}" onclick="return ravenSoftBackBill(event)" style="text-decoration:none;color:inherit">R</a></div><script>function ravenSoftBackBill(e){try{if(window.history.length>1){e.preventDefault();window.history.back();return false;}}catch(err){}return true;}</script>`
+      ? `<div class="clean-icon"><a href="${appDashboardUrl}" style="text-decoration:none;color:inherit">R</a></div>`
       : `<div style="font-size:20px;font-weight:900;letter-spacing:0.1em"><a href="https://ravensplit.com/" style="text-decoration:none;color:inherit">&#129718;</a></div>`}
     <div>
       <div style="font-size:15px;font-weight:700">${bill.name}</div>
@@ -4334,18 +4362,8 @@ input:focus,textarea:focus{border-color:var(--purple)}
 <script id="page-data" type="application/json">${pageData.replace(/<\/script>/gi, '<\\/script>')}</script>
 
 <div class="hdr"><div class="hdr-inner">
-  <a href="${dashboardBackUrl}" onclick="return ravenSoftBack(event)" style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;text-decoration:none;color:#9896A8;font-size:13px;font-weight:600;transition:all 0.15s" onmouseover="this.style.color='#F0EEF8';this.style.borderColor='rgba(255,255,255,0.25)'" onmouseout="this.style.color='#9896A8';this.style.borderColor='rgba(255,255,255,0.1)'">Dashboard</a>
-  <a href="${dashboardBackUrl}" onclick="return ravenSoftBack(event)" id="raven-home-link" class="raven-home-link" style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:0.15em;text-decoration:none;color:#F0EEF8">RAVEN</a>
-  <script>
-    // Go back in the existing webview history instead of forcing a hard reload of
-    // dashboard.html — a hard reload re-runs the whole auth bootstrap and used to look like a sign-out.
-    function ravenSoftBack(e) {
-      try {
-        if (window.history.length > 1) { e.preventDefault(); window.history.back(); return false; }
-      } catch(err) {}
-      return true;
-    }
-  </script>
+  <a href="${dashboardBackUrl}" style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;text-decoration:none;color:#9896A8;font-size:13px;font-weight:600;transition:all 0.15s" onmouseover="this.style.color='#F0EEF8';this.style.borderColor='rgba(255,255,255,0.25)'" onmouseout="this.style.color='#9896A8';this.style.borderColor='rgba(255,255,255,0.1)'">Dashboard</a>
+  <a href="${dashboardBackUrl}" id="raven-home-link" class="raven-home-link" style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:0.15em;text-decoration:none;color:#F0EEF8">RAVEN</a>
   <div style="font-size:10px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:12px;font-weight:600">${esc(tripId)}</div>
 </div></div>
 
@@ -7333,35 +7351,6 @@ function buildRavenbotReply(question) {
   }
   return (summary.insights || []).join('\\n') || 'Ask me about who owes, top receipts, total spend, or settlement status.';
 }
-async function askRavenbot(userText) {
-  const container = document.getElementById('chat-msgs');
-  const typingEl = document.createElement('div');
-  typingEl.id = 'ravenbot-typing';
-  typingEl.style.cssText = 'display:flex;flex-direction:column;align-items:flex-start;gap:3px;margin-bottom:6px';
-  typingEl.innerHTML = '<div style="font-size:10px;color:#30D158;font-weight:900;letter-spacing:0.08em;text-transform:uppercase;margin-left:4px">RAVENbot</div><div style="max-width:82%;padding:10px 13px;border-radius:16px 16px 16px 4px;background:linear-gradient(135deg,rgba(124,58,237,0.18),rgba(48,209,88,0.1));border:1px solid rgba(168,85,247,0.22);color:#9896A8;font-size:13px">Thinking...</div>';
-  if (container) { container.appendChild(typingEl); container.scrollTop = container.scrollHeight; }
-
-  const history = getRavenbotMessages().slice(0, -1).slice(-16).map(function(m) {
-    return { role: m.role === 'user' ? 'user' : 'assistant', text: m.text || '' };
-  });
-
-  let reply = null;
-  try {
-    const resp = await fetch(BACKEND + '/trip/' + TRIP_ID + '/ravenbot', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: TRIP_TOKEN, message: userText, history: history })
-    });
-    const payload = await resp.json();
-    if (payload && payload.success && payload.reply) reply = payload.reply;
-  } catch (e) {}
-
-  const typingNow = document.getElementById('ravenbot-typing');
-  if (typingNow) typingNow.remove();
-  appendRavenbotMessage({ role: 'bot', text: reply || buildRavenbotReply(userText), created_at: new Date().toISOString() }, true);
-  const c = document.getElementById('chat-msgs');
-  if (c) c.scrollTop = c.scrollHeight;
-}
 
 async function markRead(msgId) {
   if (!chatDb || !window._ravenUserId || !window._ravenFirstName) return;
@@ -7599,11 +7588,14 @@ async function sendChat() {
   clearChatPhoto();
 
   if (tripChatMode === 'ravenbot') {
-    const ravenbotText = message || '[attachment]';
-    appendRavenbotMessage({ role: 'user', text: ravenbotText, created_at: new Date().toISOString() }, true);
+    appendRavenbotMessage({ role: 'user', text: message || '[attachment]', created_at: new Date().toISOString() }, true);
+    setTimeout(function() {
+      appendRavenbotMessage({ role: 'bot', text: buildRavenbotReply(message), created_at: new Date().toISOString() }, true);
+      const c = document.getElementById('chat-msgs');
+      if (c) c.scrollTop = c.scrollHeight;
+    }, 180);
     const c = document.getElementById('chat-msgs');
     if (c) c.scrollTop = c.scrollHeight;
-    askRavenbot(ravenbotText);
     return;
   }
 
@@ -7899,179 +7891,6 @@ app.get('/trip/:tripId/concierge', async (req, res) => {
   }
 });
 
-// ─── RAVENBOT TRIP CHAT ─────────────────────────────────────────
-app.post('/trip/:tripId/ravenbot', async (req, res) => {
-  try {
-    const { tripId } = req.params;
-    const { token, message, history } = req.body || {};
-    if (!String(message || '').trim()) return res.json({ success: false, error: 'Empty message' });
-
-    const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
-    if (!trip || (trip.share_token !== token && trip.invite_token !== token)) {
-      return res.json({ success: false, error: 'Invalid token' });
-    }
-
-    const { data: receipts } = await supabase.from('trip_receipts').select('*').eq('trip_id', tripId).order('created_at', { ascending: true });
-    const summary = buildTripConciergePayload(trip, receipts || []);
-
-    const contextLines = [
-      'Trip name: ' + summary.trip_name,
-      'People on trip: ' + summary.people_count,
-      'Receipts logged: ' + summary.receipt_count,
-      'Total spent: $' + summary.total_spent.toFixed(2),
-      summary.debtors.length
-        ? 'Who owes money: ' + summary.debtors.map(function(d) { return d.name + ' owes $' + d.amount.toFixed(2); }).join(', ')
-        : 'Who owes money: nobody, everyone is settled',
-      'Notes: ' + summary.insights.join(' ')
-    ].join('\n');
-
-    const systemPrompt = 'You are RAVENbot, a friendly, concise assistant inside the RAVEN bill-splitting app. '
-      + 'You are chatting privately with one member about a specific trip. Only use the trip data given to you below - '
-      + 'never invent balances, names, or amounts that are not listed. Keep answers short (2-4 sentences), use plain language, '
-      + 'and format money as $X.XX. If asked something unrelated to this trip or the app, gently steer back to what you can help with.\n\n'
-      + 'Current trip data:\n' + contextLines;
-
-    const historyMessages = Array.isArray(history) ? history.slice(-16).map(function(m) {
-      return { role: m.role === 'user' ? 'user' : 'assistant', content: String(m.text || '').slice(0, 2000) };
-    }).filter(function(m) { return m.content; }) : [];
-
-    const messages = historyMessages.concat([{ role: 'user', content: String(message).slice(0, 2000) }]);
-
-    const completion = await getAnthropic().messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 400,
-      system: systemPrompt,
-      messages: messages
-    });
-
-    const reply = (completion.content || [])
-      .filter(function(block) { return block.type === 'text'; })
-      .map(function(block) { return block.text; })
-      .join('\n')
-      .trim();
-
-    if (!reply) return res.json({ success: false, error: 'No reply generated' });
-    res.json({ success: true, reply: reply });
-  } catch (err) {
-    console.error('[ravenbot] EXCEPTION:', err.message, err.stack);
-    res.json({ success: false, error: err.message || 'RAVENbot is unavailable right now' });
-  }
-});
-
-// ─── LIFESTYLE AI COACH ─────────────────────────────────────────
-// In-memory per-day rate limit (resets on server restart / redeploy — a real
-// safeguard for now, but if you want it to survive restarts, move this to a
-// Supabase table keyed by user_id/day and increment it atomically instead.
-const LIFESTYLE_COACH_DAILY_LIMIT = 2;
-const lifestyleCoachUsage = new Map(); // key -> { date, count }
-function lifestyleCoachAllow(key) {
-  const today = new Date().toISOString().slice(0, 10);
-  const entry = lifestyleCoachUsage.get(key);
-  if (!entry || entry.date !== today) {
-    lifestyleCoachUsage.set(key, { date: today, count: 1 });
-    return true;
-  }
-  if (entry.count >= LIFESTYLE_COACH_DAILY_LIMIT) return false;
-  entry.count += 1;
-  return true;
-}
-app.post('/api/lifestyle-coach', async (req, res) => {
-  try {
-    const body = req.body || {};
-    const income = Number(body.income) || 0;
-    const billsTotal = Number(body.billsTotal) || 0;
-    const investTotal = Number(body.investTotal) || 0;
-    const spending = body.spending === null || body.spending === undefined ? null : Number(body.spending);
-    const timeliness = body.timeliness === null || body.timeliness === undefined ? null : Number(body.timeliness);
-    const investing = body.investing === null || body.investing === undefined ? null : Number(body.investing);
-    const overall = body.overall === null || body.overall === undefined ? null : Number(body.overall);
-    const investTargetPct = Number(body.investTargetPct) || 15;
-    // Goal — persists on the user's account until they change it; purely descriptive input here.
-    const goalInterests = Array.isArray(body.goalInterests) ? body.goalInterests.filter(v => typeof v === 'string').slice(0, 3) : [];
-    const goalNote = typeof body.goalNote === 'string' ? body.goalNote.slice(0, 300) : '';
-    const hasRetirement = !!body.hasRetirement;
-    // Discretionary bill categories flagged client-side (e.g. { "Date Night": 120, "Shopping": 60 })
-    const discretionary = (body.discretionary && typeof body.discretionary === 'object') ? body.discretionary : {};
-
-    if (!income && !billsTotal && !investTotal) {
-      return res.json({ success: false, error: 'No activity logged yet this month' });
-    }
-
-    // Identify the caller for rate limiting: prefer a verified Supabase user, fall back to IP.
-    let rateKey = req.ip || 'anon';
-    const authHeader = req.headers.authorization || '';
-    if (authHeader.startsWith('Bearer ')) {
-      try {
-        const { data } = await supabase.auth.getUser(authHeader.slice(7));
-        if (data && data.user && data.user.id) rateKey = 'user:' + data.user.id;
-      } catch (e) {}
-    }
-    if (!lifestyleCoachAllow(rateKey)) {
-      return res.status(429).json({ success: false, error: 'Daily coaching limit reached' });
-    }
-
-    const fmt = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const goalLabelMap = { 'real-estate': 'Real Estate', 'stocks': 'Stocks', 'both': 'A Balance Of Both' };
-    const goalLabel = goalInterests.map(g => goalLabelMap[g] || g).join(' + ');
-
-    // Compute the real spending-discipline cap from the same formula the app's score uses,
-    // so any dollar figure the model states is grounded in fact, not invented.
-    const spendCap64 = income > 0 ? income * 0.64 : null;
-
-    const statLines = [
-      'Income this month: ' + fmt(income),
-      'Bills this month: ' + fmt(billsTotal),
-      'Invested this month: ' + fmt(investTotal) + ' (target is ' + investTargetPct + '% of income)',
-      spending !== null ? 'Spending discipline score: ' + Math.round(spending) + '/100' : null,
-      timeliness !== null ? 'Bill timeliness score: ' + Math.round(timeliness) + '/100' : null,
-      investing !== null ? 'Investing consistency score: ' + Math.round(investing) + '/100' : null,
-      overall !== null ? 'Overall Raven Score: ' + overall + '/100' : null,
-      body.billCount !== undefined ? 'Bills logged: ' + body.billCount : null,
-      body.lateOrOverdueCount !== undefined ? 'Late or overdue bills: ' + body.lateOrOverdueCount : null,
-      spendCap64 !== null ? 'To keep the Spending score above 90, bills need to stay under ' + fmt(spendCap64) + ' (64% of income) this month.' : null,
-      goalLabel ? 'User\'s stated goal: ' + goalLabel + (goalNote ? ' — note from user: "' + goalNote + '"' : '') : null,
-      hasRetirement ? 'User logged a retirement contribution this month.' : null,
-      Object.keys(discretionary).length > 0
-        ? 'Discretionary bill categories this month: ' + Object.entries(discretionary).map(([k, v]) => k + ' ' + fmt(v)).join(', ')
-        : null
-    ].filter(Boolean).join('\n');
-
-    const extraInstructions = [
-      hasRetirement || goalLabel
-        ? 'The user is investing or has a stated goal. If it fits naturally, name 3-5 well-known, low-cost, diversified index funds or ETFs (by ticker) as general starting points to research — lean toward real-estate/REIT funds if the goal favors real estate, broad-market/international funds if it favors stocks, or a mix if both. Explicitly frame this as general educational information, not personalized financial advice, and note you are not a financial advisor — one short sentence is enough, do not repeat this disclaimer more than once.'
-        : null,
-      Object.keys(discretionary).length > 0
-        ? 'At least one discretionary category (like dining or shopping) was logged. Call out one of them by name and its current amount, and suggest a specific dollar figure to keep it fixed around so total bills stay under the 64%-of-income cap given above and Spending stays above 90. Use the real numbers given — do not invent figures.'
-        : null
-    ].filter(Boolean).join(' ');
-
-    const systemPrompt = 'You are the Raven AI Coach inside the RAVEN bill-splitting app\'s personal money tracker. '
-      + 'Give one short, specific, encouraging-but-honest piece of coaching (4-7 sentences) based only on the numbers given below. '
-      + 'Do not invent numbers that are not provided. Talk directly to the user as "you," in a warm, personable tone — like a sharp friend who\'s good with money, not a corporate advisor. '
-      + (extraInstructions ? extraInstructions + ' ' : '')
-      + 'Format money as $X.XX.\n\nThis month\'s numbers:\n' + statLines;
-
-    const completion = await getAnthropic().messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 400,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: 'Give me my coaching for this month.' }]
-    });
-
-    const coaching = (completion.content || [])
-      .filter(function (block) { return block.type === 'text'; })
-      .map(function (block) { return block.text; })
-      .join('\n')
-      .trim();
-
-    if (!coaching) return res.json({ success: false, error: 'No coaching generated' });
-    res.json({ success: true, coaching: coaching, message: coaching });
-  } catch (err) {
-    console.error('[lifestyle-coach] EXCEPTION:', err.message, err.stack);
-    res.json({ success: false, error: err.message || 'Coach is unavailable right now' });
-  }
-});
-
 app.post('/trip/:tripId/message', async (req, res) => {
   try {
     const { tripId } = req.params;
@@ -8099,24 +7918,13 @@ app.post('/trip/:tripId/message', async (req, res) => {
       user_id: user_id || null,
       sender_name: resolvedName,
       avatar_url: resolvedAvatar,
+      raven_id: resolvedRavenId,
       message: String(message || '').trim(),
       gif_url: gif_url || null,
       photo_url: photo_url || null,
       created_at: new Date().toISOString()
     };
-    // trip_messages doesn't have a raven_id column in this DB — only include it if a
-    // future migration adds one, and fall back cleanly if that insert attempt fails.
-    let inserted = null, error = null;
-    if (resolvedRavenId) {
-      const attempt = await supabase.from('trip_messages').insert({ ...row, raven_id: resolvedRavenId }).select('*').single();
-      if (!attempt.error) { inserted = attempt.data; }
-      else { error = attempt.error; }
-    }
-    if (!inserted) {
-      const attempt2 = await supabase.from('trip_messages').insert(row).select('*').single();
-      inserted = attempt2.data;
-      error = attempt2.error || null;
-    }
+    const { data: inserted, error } = await supabase.from('trip_messages').insert(row).select('*').single();
     if (error) return res.json({ success: false, error: error.message });
     res.json({ success: true, message: inserted || row });
   } catch(err) {
@@ -9704,4 +9512,3 @@ app.listen(PORT, async () => {
     await supabase.rpc('exec_sql', { sql: "ALTER TABLE trip_comments ADD COLUMN IF NOT EXISTS user_id TEXT" });
   } catch(e) {}
 });
-
