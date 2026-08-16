@@ -2674,8 +2674,6 @@ function renderState(d) {
   const tax = parseFloat(bill.tax || 0);
   const tip = parseFloat(bill.tip || 0);
   const billSubtotal = items.reduce((s, i) => s + parseFloat(i.price || 0), 0);
-  const taxPct = billSubtotal > 0 ? (tax / billSubtotal * 100) : 0;
-  const tipPct = billSubtotal > 0 ? (tip / billSubtotal * 100) : 0;
 
   // Build selection map: itemId -> [names] (preserving case)
   const selMap = {};
@@ -2764,8 +2762,8 @@ function renderState(d) {
                 const sp = i.splitWith > 1 ? ' <span style="color:#FF9A3C;font-size:10px;font-weight:600">' + i.splitWith + '-way</span>' : '';
                 return '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0"><span style="font-size:12px;color:#9896A8">' + i.name + sp + '</span><span style="font-size:12px;color:#9896A8;font-family:monospace">$' + share + '</span></div>';
               }).join('')
-            + (myTax > 0 ? '<div style="display:flex;justify-content:space-between;padding:3px 0;border-top:1px solid rgba(255,255,255,0.06);margin-top:4px"><span style="font-size:11px;color:#6E6B80">Tax <span style="color:#4E4B5A">(' + taxPct.toFixed(1) + '% of bill)</span></span><span style="font-size:11px;color:#6E6B80;font-family:monospace">$' + myTax.toFixed(2) + '</span></div>' : '')
-            + (myTip > 0 ? '<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6E6B80">Tip <span style="color:#4E4B5A">(' + tipPct.toFixed(1) + '% of bill)</span></span><span style="font-size:11px;color:#6E6B80;font-family:monospace">$' + myTip.toFixed(2) + '</span></div>' : '')
+            + (myTax > 0 ? '<div style="display:flex;justify-content:space-between;padding:3px 0;border-top:1px solid rgba(255,255,255,0.06);margin-top:4px"><span style="font-size:11px;color:#6E6B80">Tax</span><span style="font-size:11px;color:#6E6B80;font-family:monospace">$' + myTax.toFixed(2) + '</span></div>' : '')
+            + (myTip > 0 ? '<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6E6B80">Tip</span><span style="font-size:11px;color:#6E6B80;font-family:monospace">$' + myTip.toFixed(2) + '</span></div>' : '')
             + '<div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:6px;padding-top:6px;display:flex;justify-content:space-between"><span style="font-size:12px;font-weight:700;color:#F0EEF8">' + breakdownLabel + '</span><span style="font-size:13px;font-weight:800;color:#30D158;font-family:monospace">$' + breakdownTotal.toFixed(2) + '</span></div>'
             + '</div>';
         } else if (!isBillPayer && anySelections && myItems.length === 0) {
