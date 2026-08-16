@@ -1886,6 +1886,9 @@ app.get('/bill/:billId', async (req, res) => {
     .item-row{display:flex;align-items:center;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05);gap:12px;cursor:pointer;transition:background 0.15s;-webkit-tap-highlight-color:transparent}
     .item-row:last-child{border-bottom:none}
     .item-row:active{background:rgba(255,255,255,0.04)}
+    #items-list.locked .item-row{cursor:default}
+    #items-list.locked .item-row:active{background:transparent}
+    #items-edit-toggle-btn.active{background:rgba(48,209,88,0.14);border-color:rgba(48,209,88,0.4);color:#30D158}
     .item-check{width:24px;height:24px;border-radius:6px;border:2px solid rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all 0.2s;font-size:14px}
     .item-check.claimed{background:#30D158;border-color:#30D158;color:#000}
     .item-check.others{background:rgba(48,209,88,0.12);border-color:rgba(48,209,88,0.4)}
@@ -2061,8 +2064,15 @@ app.get('/bill/:billId', async (req, res) => {
 <!-- Items section (claimable) -->
 ${items.length > 0 ? `
 <div class="sec" style="margin-top:16px">
-  <div class="sec-lbl">${isAppBillMode ? 'Tap items you ordered' : '&#128203; Tap items you ordered'}</div>
-  <div class="card" id="items-list">
+  <div class="sec-lbl" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+    <span>${isAppBillMode ? 'Tap items you ordered' : '&#128203; Tap items you ordered'}</span>
+    <button id="items-edit-toggle-btn" type="button" onclick="toggleItemsEditMode()" style="padding:6px 12px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);border-radius:20px;color:#9896A8;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:5px;flex-shrink:0">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      Edit
+    </button>
+  </div>
+  <div id="items-edit-hint" style="display:none;margin-bottom:8px;padding:8px 12px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.22);border-radius:10px;font-size:11px;color:#30D158;font-weight:600">Edit mode on — tap an item to claim or unclaim it. Tap "Done" when you're finished.</div>
+  <div class="card locked" id="items-list">
     ${items.map(item => `
     <div class="item-row" id="item-${item.id}" data-item-id="${item.id}" data-item-name="${(item.name||'').replace(/"/g,'&quot;')}">
       <div class="item-check" id="check-${item.id}"></div>
@@ -2074,9 +2084,16 @@ ${items.length > 0 ? `
     </div>`).join('')}
   </div>
   ${bill.tax || bill.tip ? `
-  <div style="margin-top:8px;padding:10px 14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;display:flex;gap:16px">
-    ${bill.tax ? `<span style="font-size:12px;color:#6E6B80">Tax <strong style="color:#9896A8">$${parseFloat(bill.tax).toFixed(2)}</strong></span>` : ''}
-    ${bill.tip ? `<span style="font-size:12px;color:#6E6B80">Tip <strong style="color:#9896A8">$${parseFloat(bill.tip).toFixed(2)}</strong></span>` : ''}
+  <div style="margin-top:8px;padding:10px 14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;display:flex;gap:16px;flex-wrap:wrap">
+    ${(() => {
+      const _sub = items.reduce((s, i) => s + parseFloat(i.price || 0), 0);
+      const _tax = parseFloat(bill.tax || 0);
+      const _tip = parseFloat(bill.tip || 0);
+      const _taxPct = _sub > 0 ? (_tax / _sub * 100) : 0;
+      const _tipPct = _sub > 0 ? (_tip / _sub * 100) : 0;
+      return (_tax ? '<span style="font-size:12px;color:#6E6B80">Tax <strong style="color:#9896A8">$' + _tax.toFixed(2) + '</strong> <span style="color:#6E6B80">(' + _taxPct.toFixed(1) + '% of subtotal)</span></span>' : '')
+        + (_tip ? '<span style="font-size:12px;color:#6E6B80">Tip <strong style="color:#9896A8">$' + _tip.toFixed(2) + '</strong> <span style="color:#6E6B80">(' + _tipPct.toFixed(1) + '% of subtotal)</span></span>' : '');
+    })()}
     <span style="font-size:12px;color:#6E6B80">Split proportionally by order</span>
   </div>` : ''}
 </div>
@@ -2203,6 +2220,23 @@ if (!myName) {
 }
 let pollTimer = null;
 let lastState = null;
+// Items must be explicitly unlocked via the Edit button before a tap can
+// claim/unclaim an item — prevents accidental changes from a stray tap.
+let itemsEditMode = false;
+function toggleItemsEditMode() {
+  itemsEditMode = !itemsEditMode;
+  const list = document.getElementById('items-list');
+  const btn = document.getElementById('items-edit-toggle-btn');
+  const hint = document.getElementById('items-edit-hint');
+  if (list) list.classList.toggle('locked', !itemsEditMode);
+  if (hint) hint.style.display = itemsEditMode ? 'block' : 'none';
+  if (btn) {
+    btn.classList.toggle('active', itemsEditMode);
+    btn.innerHTML = itemsEditMode
+      ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>Done'
+      : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Edit';
+  }
+}
 // Optimistic paid state â€” keeps UI showing paid while DB write is in flight
 let _optimisticPaid = {};
 let billCommentGifUrl = null, billCommentGifTimer = null, billCommentGifPanelOpen = false;
@@ -2640,6 +2674,8 @@ function renderState(d) {
   const tax = parseFloat(bill.tax || 0);
   const tip = parseFloat(bill.tip || 0);
   const billSubtotal = items.reduce((s, i) => s + parseFloat(i.price || 0), 0);
+  const taxPct = billSubtotal > 0 ? (tax / billSubtotal * 100) : 0;
+  const tipPct = billSubtotal > 0 ? (tip / billSubtotal * 100) : 0;
 
   // Build selection map: itemId -> [names] (preserving case)
   const selMap = {};
@@ -2728,8 +2764,8 @@ function renderState(d) {
                 const sp = i.splitWith > 1 ? ' <span style="color:#FF9A3C;font-size:10px;font-weight:600">' + i.splitWith + '-way</span>' : '';
                 return '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0"><span style="font-size:12px;color:#9896A8">' + i.name + sp + '</span><span style="font-size:12px;color:#9896A8;font-family:monospace">$' + share + '</span></div>';
               }).join('')
-            + (myTax > 0 ? '<div style="display:flex;justify-content:space-between;padding:3px 0;border-top:1px solid rgba(255,255,255,0.06);margin-top:4px"><span style="font-size:11px;color:#6E6B80">Tax</span><span style="font-size:11px;color:#6E6B80;font-family:monospace">$' + myTax.toFixed(2) + '</span></div>' : '')
-            + (myTip > 0 ? '<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6E6B80">Tip</span><span style="font-size:11px;color:#6E6B80;font-family:monospace">$' + myTip.toFixed(2) + '</span></div>' : '')
+            + (myTax > 0 ? '<div style="display:flex;justify-content:space-between;padding:3px 0;border-top:1px solid rgba(255,255,255,0.06);margin-top:4px"><span style="font-size:11px;color:#6E6B80">Tax <span style="color:#4E4B5A">(' + taxPct.toFixed(1) + '% of bill)</span></span><span style="font-size:11px;color:#6E6B80;font-family:monospace">$' + myTax.toFixed(2) + '</span></div>' : '')
+            + (myTip > 0 ? '<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6E6B80">Tip <span style="color:#4E4B5A">(' + tipPct.toFixed(1) + '% of bill)</span></span><span style="font-size:11px;color:#6E6B80;font-family:monospace">$' + myTip.toFixed(2) + '</span></div>' : '')
             + '<div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:6px;padding-top:6px;display:flex;justify-content:space-between"><span style="font-size:12px;font-weight:700;color:#F0EEF8">' + breakdownLabel + '</span><span style="font-size:13px;font-weight:800;color:#30D158;font-family:monospace">$' + breakdownTotal.toFixed(2) + '</span></div>'
             + '</div>';
         } else if (!isBillPayer && anySelections && myItems.length === 0) {
@@ -3216,6 +3252,7 @@ document.getElementById('bill-comment-gif-search')?.addEventListener('input', fu
   let _didTouch = false;
 
   function fireClaim(itemId, itemName) {
+    if (!itemsEditMode) { toast('Tap Edit to change your items', false); return; }
     const now = Date.now();
     if (now - _lastClaimTime < 600) return; // debounce: ignore within 600ms
     _lastClaimTime = now;
