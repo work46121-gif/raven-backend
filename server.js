@@ -1741,10 +1741,71 @@ app.get('/bill/:billId', async (req, res) => {
         if (bodyEl) { bodyEl.disabled = false; bodyEl.placeholder = 'Add a comment...'; bodyEl.style.opacity = '1'; }
         if (noteEl) noteEl.textContent = 'Posting as @' + identity + ' from this RAVEN account.';
         if (btnEl) { btnEl.disabled = false; btnEl.style.opacity = '1'; btnEl.textContent = 'Post Comment'; }
-      } else {
-        if (bodyEl) { bodyEl.disabled = true; bodyEl.placeholder = 'Create a RAVEN account to comment'; bodyEl.style.opacity = '0.6'; }
-        if (noteEl) noteEl.innerHTML = 'Create a <a href="https://ravensplit.com/dashboard.html" style="color:#30D158;text-decoration:none;font-weight:700">RAVEN account</a> to comment.';
-        if (btnEl) { btnEl.disabled = true; btnEl.style.opacity = '0.55'; btnEl.textContent = 'RAVEN account required'; }
+        return;
+      }
+      // No cached identity — this page never loads Supabase itself, so a
+      // signed-in user landing here directly (rather than via dashboard.html
+      // first) can have a stale/empty raven_profile cache. Before telling
+      // them to create an account, check for a real live session.
+      if (bodyEl) { bodyEl.disabled = true; bodyEl.placeholder = 'Checking sign-in status...'; bodyEl.style.opacity = '0.6'; }
+      if (noteEl) noteEl.textContent = 'Checking sign-in status...';
+      if (btnEl) { btnEl.disabled = true; btnEl.style.opacity = '0.55'; btnEl.textContent = 'Checking...'; }
+      resolveLiveCommentIdentity().then(liveIdentity => {
+        if (liveIdentity) {
+          if (nameEl) nameEl.value = '@' + liveIdentity;
+          if (bodyEl) { bodyEl.disabled = false; bodyEl.placeholder = 'Add a comment...'; bodyEl.style.opacity = '1'; }
+          if (noteEl) noteEl.textContent = 'Posting as @' + liveIdentity + ' from this RAVEN account.';
+          if (btnEl) { btnEl.disabled = false; btnEl.style.opacity = '1'; btnEl.textContent = 'Post Comment'; }
+        } else {
+          if (nameEl) nameEl.value = 'Create a RAVEN account';
+          if (bodyEl) { bodyEl.disabled = true; bodyEl.placeholder = 'Create a RAVEN account to comment'; bodyEl.style.opacity = '0.6'; }
+          if (noteEl) noteEl.innerHTML = 'Create a <a href="https://ravensplit.com/dashboard.html" style="color:#30D158;text-decoration:none;font-weight:700">RAVEN account</a> to comment.';
+          if (btnEl) { btnEl.disabled = true; btnEl.style.opacity = '0.55'; btnEl.textContent = 'RAVEN account required'; }
+        }
+      });
+    }
+    // Falls back to a live Supabase session check when raven_profile isn't
+    // cached yet. Also writes the result back to raven_profile so subsequent
+    // pages in this session don't need to repeat the check.
+    async function resolveLiveCommentIdentity(){
+      try {
+        if (!window.supabase || !window.supabase.createClient) {
+          await new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+            s.onload = resolve; s.onerror = reject;
+            document.head.appendChild(s);
+          });
+        }
+        const liveDb = window.supabase.createClient(
+          'https://ffjpzkpdumdcwnakpaje.supabase.co',
+          'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmanB6a3BkdW1kY3duYWtwYWplIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5ODc4OTcsImV4cCI6MjA4ODU2Mzg5N30.JtDLVu4K1TJ8emcN_mvSHBu6e0y8-jPQv-ypoc9p0RU'
+        );
+        const { data: sessData } = await liveDb.auth.getSession();
+        const user = sessData?.session?.user;
+        if (!user) return '';
+        let profile = null;
+        try {
+          const { data } = await liveDb.from('profiles').select('raven_id,username,first_name,email,onboarding_complete').eq('id', user.id).maybeSingle();
+          profile = data;
+        } catch(e) {}
+        if (!profile?.onboarding_complete) return '';
+        const identity = String(profile.raven_id || profile.username || profile.first_name || (profile.email || user.email || '').split('@')[0] || '').trim();
+        if (identity) {
+          try {
+            localStorage.setItem('raven_profile', JSON.stringify({
+              user_id: user.id,
+              email: profile.email || user.email || '',
+              first_name: profile.first_name || '',
+              raven_id: profile.raven_id || '',
+              username: profile.username || profile.raven_id || '',
+              onboarding_complete: true
+            }));
+          } catch(e) {}
+        }
+        return identity;
+      } catch(e) {
+        return '';
       }
     }
     initBillCommentComposer();
@@ -2712,7 +2773,8 @@ function renderState(d) {
         const isSplit = claimers.length > 1;
         const nameHtml = claimers.map(c => {
           const isYou = c.toLowerCase() === myN;
-          return '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;background:' + (isYou?'rgba(48,209,88,0.18)':'rgba(255,255,255,0.08)') + ';border:1px solid ' + (isYou?'rgba(48,209,88,0.4)':'rgba(255,255,255,0.12)') + ';border-radius:20px;font-size:10px;font-weight:700;color:' + (isYou?'#30D158':'#9896A8') + '">' + c + (isYou ? ' (Paid)' : '') + '</span>';
+          const isPayer = paidByLower && c.toLowerCase() === paidByLower;
+          return '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;background:' + (isYou?'rgba(48,209,88,0.18)':'rgba(255,255,255,0.08)') + ';border:1px solid ' + (isYou?'rgba(48,209,88,0.4)':'rgba(255,255,255,0.12)') + ';border-radius:20px;font-size:10px;font-weight:700;color:' + (isYou?'#30D158':'#9896A8') + '">' + c + (isPayer ? ' (Paid)' : '') + '</span>';
         }).join('');
         claimersEl.innerHTML = nameHtml + (isSplit ? ' <span style="font-size:10px;color:#FF9A3C;font-weight:600;margin-left:2px">' + claimers.length + '-way split</span>' : '');
       }
