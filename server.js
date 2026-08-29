@@ -4919,22 +4919,36 @@ if (DUE_DATE) { const dd = document.getElementById('settings-due-date'); if (dd)
 if (END_DATE) { const ed = document.getElementById('settings-end-date'); if (ed) ed.value = END_DATE; }
 // Wire up inline due date edit/add buttons
 document.addEventListener('DOMContentLoaded', () => {
-  const editBtn = document.getElementById('edit-due-date-btn');
-  const addBtn  = document.getElementById('add-due-date-btn');
-  if (editBtn) editBtn.addEventListener('click', () => openModal('settings-modal'));
-  if (addBtn)  addBtn.addEventListener('click',  () => openModal('settings-modal'));
-  initTripReminderUI();
+  // Comments must load regardless of what else in this handler does — fire
+  // it first and independently of anything below, so a throw anywhere else
+  // in this callback (which previously halted execution before this line
+  // was ever reached) can no longer leave "Loading comments..." stuck
+  // forever.
+  setTimeout(() => { loadTripComments(); }, 120);
+
+  try {
+    const editBtn = document.getElementById('edit-due-date-btn');
+    const addBtn  = document.getElementById('add-due-date-btn');
+    if (editBtn) editBtn.addEventListener('click', () => openModal('settings-modal'));
+    if (addBtn)  addBtn.addEventListener('click',  () => openModal('settings-modal'));
+  } catch(e) { console.error('Due date buttons error:', e); }
+
+  try {
+    initTripReminderUI();
+  } catch(e) { console.error('Trip reminder UI error:', e); }
 
   // Show admin delete buttons if admin
-  IS_ADMIN = checkIsAdmin();
-  if (IS_ADMIN) {
-    document.querySelectorAll('.admin-delete-receipt-btn').forEach(btn => {
-      btn.style.display = 'flex';
-    });
-    document.querySelectorAll('.admin-only-btn').forEach(btn => {
-      btn.style.display = 'inline-flex';
-    });
-  }
+  try {
+    IS_ADMIN = checkIsAdmin();
+    if (IS_ADMIN) {
+      document.querySelectorAll('.admin-delete-receipt-btn').forEach(btn => {
+        btn.style.display = 'flex';
+      });
+      document.querySelectorAll('.admin-only-btn').forEach(btn => {
+        btn.style.display = 'inline-flex';
+      });
+    }
+  } catch(e) { console.error('Admin check error:', e); }
 
   // Build saved receipts photo gallery  runs after DOM ready so it works on mobile too
   const deferTripEnhancement = window.requestIdleCallback
@@ -4948,7 +4962,6 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   //  REALTIME  Supabase live sync so all members see changes instantly 
-  setTimeout(() => { loadTripComments(); }, 120);
   const _tripId = ${JSON.stringify(tripId)};
   const _tripToken = ${JSON.stringify(trip.share_token || '')};
   let _realtimeDb = null;
@@ -5237,7 +5250,13 @@ async function loadTripComments(force) {
     if (loading) loading.style.display = 'block';
   }
   try {
-    const r = await fetch(BACKEND + '/trip/' + TRIP_ID + '/comments?token=' + encodeURIComponent(TRIP_TOKEN));
+    // A hard timeout on the fetch itself — a stalled network request (not
+    // just a thrown error) shouldn't be able to leave "Loading comments..."
+    // stuck forever either.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const r = await fetch(BACKEND + '/trip/' + TRIP_ID + '/comments?token=' + encodeURIComponent(TRIP_TOKEN), { signal: controller.signal });
+    clearTimeout(timeoutId);
     const d = await r.json();
     renderTripComments((d && d.success === false) ? [] : (d.comments || []));
     tripCommentsLoaded = true;
