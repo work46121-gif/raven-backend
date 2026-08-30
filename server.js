@@ -7460,7 +7460,7 @@ function requestRavenAiConsent() {
       modal.innerHTML =
         '<div style="max-width:380px;background:#111;border:1px solid #2a2a35;border-radius:16px;padding:24px">' +
           '<div style="font-size:17px;font-weight:800;margin-bottom:10px;color:#fff">Allow AI features?</div>' +
-          '<div style="font-size:13px;color:#9896A8;line-height:1.6;margin-bottom:20px">RAVEN uses Anthropic\'s Claude AI to read your receipt photos (Receipt Scan) and to answer your questions (RAVENbot). Only the receipt image or the message you type is sent to Anthropic - nothing else. You can change this anytime in Settings.</div>' +
+          '<div style="font-size:13px;color:#9896A8;line-height:1.6;margin-bottom:20px">RAVEN uses Anthropic&rsquo;s Claude AI to read your receipt photos (Receipt Scan) and to answer your questions (RAVENbot). Only the receipt image or the message you type is sent to Anthropic - nothing else. You can change this anytime in Settings.</div>' +
           '<div style="display:flex;gap:10px">' +
             '<button id="ai-consent-deny" style="flex:1;padding:12px;background:transparent;border:1px solid #333;border-radius:10px;color:#9896A8;font-weight:700;cursor:pointer">Not Now</button>' +
             '<button id="ai-consent-allow" style="flex:1;padding:12px;background:#30D158;border:none;border-radius:10px;color:#06060A;font-weight:800;cursor:pointer">Allow</button>' +
