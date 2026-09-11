@@ -6,6 +6,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const fetch = require('node-fetch');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 // Sentry â€” backend error monitoring
 // Run: npm install @sentry/node
@@ -29,7 +30,7 @@ const app = express();
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Raven-Bill-Token');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
@@ -81,6 +82,40 @@ function generateShareToken() {
   for (let i = 0; i < 16; i++) token += chars[Math.floor(Math.random() * chars.length)];
   return token;
 }
+
+// A view token deliberately cannot be used as the normal bill share token. The
+// dashboard derives it from the existing high-entropy share token, while a
+// recipient only receives this one-way value in their read-only link.
+function getBillViewOnlyToken(shareToken) {
+  return crypto.createHash('sha256')
+    .update('raven:view-only:v1:' + String(shareToken || ''))
+    .digest('hex');
+}
+
+function billViewTokenMatches(value, shareToken) {
+  const expected = getBillViewOnlyToken(shareToken);
+  const received = String(value || '');
+  if (received.length !== expected.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(received), Buffer.from(expected));
+}
+
+// Bill mutations are allowed only from the regular shared bill link. A
+// view-only URL never contains this token, so it cannot be turned into an
+// edit link by calling an API endpoint directly.
+app.use('/bill/:billId', async (req, res, next) => {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next();
+  try {
+    const { data: bill } = await supabase.from('bills').select('share_token,status').eq('id', req.params.billId).maybeSingle();
+    if (!bill || bill.status === 'deleted') return res.status(404).json({ success: false, error: 'Bill is no longer active' });
+    const token = req.get('x-raven-bill-token') || req.body?.token || req.query.t || req.query.token;
+    if (bill.share_token && token !== bill.share_token) {
+      return res.status(403).json({ success: false, error: 'This link is view-only.' });
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 
 function generateBillId() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -1109,6 +1144,30 @@ function renderInactiveBillPage() {
   return '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RAVEN</title><style>body{font-family:Helvetica,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px}a{color:#30D158;text-decoration:none;font-weight:700}</style></head><body><div style="max-width:360px"><div style="font-size:48px;margin-bottom:20px">ðŸ§¾</div><h2>Bill Is No Longer Active</h2><p style="color:#6E6B80;margin-top:10px;line-height:1.6">This bill was deleted or is no longer available from its shared link.</p><div style="margin-top:18px"><a href="https://ravensplit.com/dashboard.html">Go back to RAVEN</a></div></div></body></html>';
 }
 
+function escapeBillViewHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function renderViewOnlyBillPage({ billId, bill, items, participants }) {
+  const name = escapeBillViewHtml(bill.name || 'Bill');
+  const people = participants || [];
+  const itemRows = (items || []).map(item =>
+    '<div class="row"><span>' + escapeBillViewHtml(item.name || 'Item') + '</span><strong>$' + Number(item.price || 0).toFixed(2) + '</strong></div>'
+  ).join('');
+  const peopleRows = people.map(person =>
+    '<div class="row"><span>' + escapeBillViewHtml(person.name || 'Participant') + '</span><strong class="' + (person.paid ? 'paid' : 'owed') + '">' + (person.paid ? 'Paid' : '$' + Number(person.amount || 0).toFixed(2) + ' owed') + '</strong></div>'
+  ).join('');
+  const receipt = bill.receipt_image
+    ? '<section><div class="label">Receipt</div><img class="receipt" src="data:image/jpeg;base64,' + bill.receipt_image + '" alt="Receipt for ' + name + '"></section>'
+    : '';
+  return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><title>' + name + ' · RAVEN</title><style>*{box-sizing:border-box}body{margin:0;background:#06060A;color:#F0EEF8;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:20px 16px 60px}.shell{max-width:680px;margin:auto}.top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;border-bottom:1px solid rgba(255,255,255,.1);padding:10px 0 18px}.brand{font-weight:900;letter-spacing:.14em;color:#C084FC;font-size:14px}.readonly{font-size:12px;color:#A78BFA;background:rgba(124,58,237,.14);border:1px solid rgba(168,85,247,.32);padding:6px 9px;border-radius:999px;white-space:nowrap}.title{font-size:30px;font-weight:800;margin:28px 0 5px}.total{font-size:40px;font-weight:900;color:#30D158;margin:0}.sub{font-size:14px;color:#9896A8;margin-top:6px}.notice{margin:22px 0;background:rgba(124,58,237,.1);border:1px solid rgba(168,85,247,.26);border-radius:14px;padding:13px 15px;font-size:14px;color:#D8CCF4;line-height:1.45}.label{font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#9896A8;margin:25px 0 9px}.card{border:1px solid rgba(255,255,255,.09);background:#0C0C12;border-radius:14px;overflow:hidden}.row{display:flex;justify-content:space-between;gap:16px;padding:14px 15px;border-bottom:1px solid rgba(255,255,255,.06);font-size:15px}.row:last-child{border-bottom:0}.row span{min-width:0;overflow-wrap:anywhere}.row strong{white-space:nowrap}.paid{color:#30D158}.owed{color:#FFB04A}.receipt{width:100%;display:block;border-radius:14px;border:1px solid rgba(255,255,255,.09)}.footer{text-align:center;color:#6E6B80;font-size:12px;margin-top:34px}</style></head><body><main class="shell"><header class="top"><div class="brand">RAVEN</div><div class="readonly">View only</div></header><h1 class="title">' + name + '</h1><p class="total">$' + Number(bill.total || 0).toFixed(2) + '</p><div class="sub">Bill ID: ' + escapeBillViewHtml(billId) + ' · ' + people.length + ' people</div><div class="notice">This is a view-only bill link. Details can be reviewed here, but payments, claims, edits, and comments are disabled.</div>' + receipt + (itemRows ? '<section><div class="label">Items</div><div class="card">' + itemRows + '</div></section>' : '') + '<section><div class="label">Who owes what</div><div class="card">' + (peopleRows || '<div class="row"><span>No participants yet</span></div>') + '</div></section><div class="footer">Shared with RAVEN</div></main></body></html>';
+}
+
 app.get('/bill/:billId/state', async (req, res) => {
   try {
     const { billId } = req.params;
@@ -1365,6 +1424,7 @@ app.get('/bill/:billId', async (req, res) => {
   try {
     const { billId } = req.params;
     const token = req.query.t || req.query.token;
+    const viewToken = req.query.view;
     const isAppBillMode = req.query.app === '1';
     let appDashboardUrl = (() => {
       if (!isAppBillMode) return 'https://ravensplit.com/dashboard.html';
@@ -1383,7 +1443,9 @@ app.get('/bill/:billId', async (req, res) => {
       appDashboardUrl = 'https://ravensplit.com/dashboard.html?' + params.toString();
     }
     if (bill.status === 'deleted') return res.status(410).send(renderInactiveBillPage());
-    if (bill.share_token && token !== bill.share_token) {
+    const hasEditAccess = !bill.share_token || token === bill.share_token;
+    const isViewOnly = !!bill.share_token && !hasEditAccess && billViewTokenMatches(viewToken, bill.share_token);
+    if (!hasEditAccess && !isViewOnly) {
       return res.status(403).send('<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RAVEN</title><style>body{font-family:Helvetica,sans-serif;background:#06060A;color:#F0EEF8;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px}</style></head><body><div style="max-width:360px"><div style="font-size:48px;margin-bottom:20px">ðŸ”’</div><h2>Private Bill</h2><p style="color:#6E6B80;margin-top:10px">Ask the bill creator to share the correct link.</p></div></body></html>');
     }
 
@@ -1395,6 +1457,13 @@ app.get('/bill/:billId', async (req, res) => {
     items = itemsRes.data || [];
     selections = selectionsRes.data || [];
     participants = participantsRes.data || [];
+
+    // A separate view token renders a deliberately static page. It has no
+    // forms, action controls, or client mutation code, so the shared link is
+    // safe to pass around for review without giving bill-editing access.
+    if (isViewOnly) {
+      return res.send(renderViewOnlyBillPage({ billId, bill, items, participants }));
+    }
 
   // Flush any ghost participants (QR joiners with item_selections but no participant row)
   {
@@ -1694,6 +1763,18 @@ app.get('/bill/:billId', async (req, res) => {
 
   <script>
     const BID = ${JSON.stringify(billId)};
+    const BILL_TOKEN = ${JSON.stringify(bill.share_token || '')};
+    const ravenBillFetch = window.fetch.bind(window);
+    window.fetch = function(input, init) {
+      const method = String(init?.method || 'GET').toUpperCase();
+      const requestUrl = typeof input === 'string' ? input : input?.url;
+      if (BILL_TOKEN && method !== 'GET' && method !== 'HEAD' && requestUrl && new URL(requestUrl, window.location.href).pathname.startsWith('/bill/' + BID + '/')) {
+        const headers = new Headers(init?.headers || {});
+        headers.set('x-raven-bill-token', BILL_TOKEN);
+        init = { ...(init || {}), headers };
+      }
+      return ravenBillFetch(input, init);
+    };
     const BILL_NAME = ${JSON.stringify(bill.name || 'this bill')};
     let selectedGif = null;
     function buildRavenPaymentMessage(amount, contextName, methodLabel) {
@@ -2231,6 +2312,17 @@ const BILL_TOKEN = ${JSON.stringify(bill.share_token || '')};
 const BILL_URL = ${JSON.stringify(billUrl)};
 const BILL_NAME = ${JSON.stringify(bill.name || 'this bill')};
 const BACKEND_URL = ${JSON.stringify(baseUrl)};
+const ravenBillFetch = window.fetch.bind(window);
+window.fetch = function(input, init) {
+  const method = String(init?.method || 'GET').toUpperCase();
+  const requestUrl = typeof input === 'string' ? input : input?.url;
+  if (BILL_TOKEN && method !== 'GET' && method !== 'HEAD' && requestUrl && new URL(requestUrl, window.location.href).pathname.startsWith('/bill/' + BID + '/')) {
+    const headers = new Headers(init?.headers || {});
+    headers.set('x-raven-bill-token', BILL_TOKEN);
+    init = { ...(init || {}), headers };
+  }
+  return ravenBillFetch(input, init);
+};
 const INITIAL_PARTICIPANT_NAMES = ${JSON.stringify((participants || []).map(p => p.name).filter(Boolean))};
 const BILL_PARTICIPANT_PROFILES_BY_KEY = ${JSON.stringify(participantProfilesByKey || {})};
 function normalizeBillParticipantNameClient(name) {
