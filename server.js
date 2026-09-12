@@ -112,6 +112,8 @@ async function requireRavenAdmin(req, res, next) {
   }
 }
 
+require('./raven-chat-routes')(app, supabase, getAuthenticatedRavenUser);
+
 async function provisionCreatorWelcome(user) {
   const createdAt = Date.parse(user?.created_at || '');
   if (!user?.id || !Number.isFinite(createdAt) || createdAt < RAVEN_CREATOR_WELCOME_CUTOFF) {
