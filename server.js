@@ -29,7 +29,7 @@ const app = express();
 
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Raven-Bill-Token');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
@@ -59,6 +59,111 @@ const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
 );
+
+// Owner-only administration is verified by the signed-in Supabase user on
+// every request. The client never receives a privileged key or a bypass.
+const RAVEN_ADMIN_EMAIL = 'meladnaibee@aol.com';
+const RAVEN_CREATOR_WELCOME_CUTOFF = Date.parse('2026-09-12T04:47:00.000Z');
+const RAVEN_CREATOR_WELCOME_BODY = "Welcome to RAVEN — I'm Mel, the creator. I'm excited you're joining us! If you have a unique request or anything I can help with, just message me here.";
+
+function normalizeRavenId(value) {
+  return String(value || '').trim().replace(/^@/, '').toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
+}
+
+function toAdminProfile(profile) {
+  if (!profile) return null;
+  return {
+    id: profile.id,
+    email: profile.email || '',
+    first_name: profile.first_name || '',
+    last_name: profile.last_name || '',
+    raven_id: profile.raven_id || profile.username || '',
+    phone: profile.phone || '',
+    venmo: profile.venmo || '',
+    cashapp: profile.cashapp || '',
+    zelle: profile.zelle || '',
+    applepay: profile.applepay || '',
+    avatar_url: profile.avatar_url || '',
+    onboarding_complete: !!profile.onboarding_complete,
+    updated_at: profile.updated_at || null
+  };
+}
+
+async function getAuthenticatedRavenUser(req) {
+  const authHeader = req.headers.authorization || '';
+  if (!authHeader.startsWith('Bearer ')) return null;
+  const { data, error } = await supabase.auth.getUser(authHeader.slice(7));
+  if (error || !data?.user?.id) return null;
+  return data.user;
+}
+
+async function requireRavenAdmin(req, res, next) {
+  try {
+    const user = await getAuthenticatedRavenUser(req);
+    if (!user) return res.status(401).json({ success: false, error: 'Sign in is required.' });
+    if (String(user.email || '').trim().toLowerCase() !== RAVEN_ADMIN_EMAIL) {
+      return res.status(403).json({ success: false, error: 'This account does not have RAVEN admin access.' });
+    }
+    req.ravenAdmin = user;
+    next();
+  } catch (error) {
+    console.error('[admin] authorization failed:', error.message);
+    res.status(401).json({ success: false, error: 'Could not verify admin access.' });
+  }
+}
+
+async function provisionCreatorWelcome(user) {
+  const createdAt = Date.parse(user?.created_at || '');
+  if (!user?.id || !Number.isFinite(createdAt) || createdAt < RAVEN_CREATOR_WELCOME_CUTOFF) {
+    return { provisioned: false, reason: 'not-a-new-account' };
+  }
+  if (String(user.email || '').trim().toLowerCase() === RAVEN_ADMIN_EMAIL) {
+    return { provisioned: false, reason: 'creator-account' };
+  }
+
+  const { data: creator, error: creatorError } = await supabase
+    .from('profiles')
+    .select('id,raven_id,email')
+    .eq('email', RAVEN_ADMIN_EMAIL)
+    .maybeSingle();
+  if (creatorError || !creator?.id || creator.id === user.id) {
+    return { provisioned: false, reason: 'creator-profile-unavailable' };
+  }
+
+  const friendships = [
+    { user_id: creator.id, friend_id: user.id, status: 'accepted' },
+    { user_id: user.id, friend_id: creator.id, status: 'accepted' }
+  ];
+  const { error: friendshipError } = await supabase
+    .from('raven_friends')
+    .upsert(friendships, { onConflict: 'user_id,friend_id' });
+  if (friendshipError) console.error('[welcome] friendship provisioning:', friendshipError.message);
+
+  let messageSent = false;
+  try {
+    const { data: existingMessage } = await supabase
+      .from('direct_messages')
+      .select('id')
+      .eq('sender_id', creator.id)
+      .eq('receiver_id', user.id)
+      .eq('body', RAVEN_CREATOR_WELCOME_BODY)
+      .limit(1)
+      .maybeSingle();
+    if (!existingMessage) {
+      const { error: messageError } = await supabase.from('direct_messages').insert({
+        sender_id: creator.id,
+        receiver_id: user.id,
+        body: RAVEN_CREATOR_WELCOME_BODY
+      });
+      if (messageError) console.error('[welcome] direct message provisioning:', messageError.message);
+      else messageSent = true;
+    }
+  } catch (error) {
+    console.error('[welcome] direct message provisioning:', error.message);
+  }
+
+  return { provisioned: !friendshipError, messageSent };
+}
 
 function getAnthropic() {
   return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -338,6 +443,10 @@ app.post('/auth/app-signup', async (req, res) => {
         onboarding_complete: false,
         updated_at: new Date().toISOString()
       }, { onConflict: 'id' });
+      // Native signups are created here, so provision the creator connection
+      // immediately as well as through the authenticated welcome fallback.
+      try { await provisionCreatorWelcome(data?.user || { id: userId, email, created_at: new Date().toISOString() }); }
+      catch (welcomeError) { console.error('[welcome] native signup:', welcomeError.message); }
     }
 
     await sendRavenEmail({
@@ -750,6 +859,139 @@ async function handleBills(fromPhone) {
 function handleHelp() {
   return `ðŸª¶ RAVEN Commands\n\nADD Jake 3477887944\nCONTACTS\nREMOVE Jake\n\nSPLIT $120 Dinner @Jake @Mia\nPAID B7K2 Jake\nREMIND B7K2\nSTATUS B7K2\nBILLS\n\nðŸ“¸ Send a receipt photo to split by item!\n\nRequest Automatically Via Every Network ðŸª¶`;
 }
+
+// ─── PRIVATE ADMIN WORKSPACE ───────────────────────────────────────────────
+// These endpoints deliberately use the service client only after
+// requireRavenAdmin verifies the caller's real Supabase session and exact email.
+app.get('/admin/me', requireRavenAdmin, (req, res) => {
+  res.json({ success: true, isAdmin: true, email: RAVEN_ADMIN_EMAIL });
+});
+
+app.get('/admin/profile/:ravenId', requireRavenAdmin, async (req, res) => {
+  try {
+    const ravenId = normalizeRavenId(req.params.ravenId);
+    if (!ravenId) return res.status(400).json({ success: false, error: 'Enter a valid RAVEN ID.' });
+
+    const { data: rawProfile, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('raven_id', ravenId)
+      .maybeSingle();
+    if (profileError) throw profileError;
+    if (!rawProfile?.id) return res.status(404).json({ success: false, error: '@' + ravenId + ' was not found.' });
+    const profile = toAdminProfile(rawProfile);
+
+    const [createdBillsResult, participantResult, friendshipsResult, messagesResult] = await Promise.all([
+      supabase.from('bills').select('id,name,total,status,created_at,creator_phone').eq('creator_phone', profile.email).neq('status', 'deleted').order('created_at', { ascending: false }).limit(100),
+      supabase.from('participants').select('bill_id,amount,paid').in('phone', [profile.email, profile.phone].filter(Boolean)).limit(200),
+      supabase.from('raven_friends').select('user_id,friend_id,status').or('user_id.eq.' + profile.id + ',friend_id.eq.' + profile.id).eq('status', 'accepted').limit(200),
+      supabase.from('direct_messages').select('id,sender_id,receiver_id,body,created_at,read_at').or('sender_id.eq.' + profile.id + ',receiver_id.eq.' + profile.id).order('created_at', { ascending: false }).limit(40)
+    ]);
+
+    const createdBills = createdBillsResult.data || [];
+    const participantRows = participantResult.data || [];
+    const participantBillIds = [...new Set(participantRows.map(row => row.bill_id).filter(Boolean))];
+    let participantBills = [];
+    if (participantBillIds.length) {
+      const { data } = await supabase.from('bills').select('id,name,total,status,created_at,creator_phone').in('id', participantBillIds).neq('status', 'deleted').order('created_at', { ascending: false });
+      participantBills = data || [];
+    }
+    const billMap = new Map();
+    [...createdBills, ...participantBills].forEach(bill => billMap.set(bill.id, bill));
+    const bills = [...billMap.values()].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))).slice(0, 100);
+
+    const friendRows = friendshipsResult.data || [];
+    const friendIds = [...new Set(friendRows.map(row => row.user_id === profile.id ? row.friend_id : row.user_id).filter(Boolean))];
+    let friends = [];
+    if (friendIds.length) {
+      const { data } = await supabase.from('profiles').select('id,first_name,last_name,raven_id,avatar_url').in('id', friendIds).limit(200);
+      friends = data || [];
+    }
+
+    const participantByBill = new Map();
+    participantRows.forEach(row => {
+      if (!participantByBill.has(row.bill_id)) participantByBill.set(row.bill_id, row);
+    });
+    const totalOwed = participantRows.filter(row => !row.paid).reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    const activeBills = bills.filter(bill => bill.status === 'active').length;
+    const settledBills = bills.filter(bill => bill.status === 'completed' || bill.status === 'settled').length;
+    const messages = (messagesResult.data || []).map(message => ({
+      id: message.id,
+      direction: message.sender_id === profile.id ? 'sent' : 'received',
+      body: message.body || '',
+      created_at: message.created_at || null,
+      read_at: message.read_at || null
+    }));
+
+    res.json({
+      success: true,
+      profile,
+      snapshot: {
+        stats: { activeBills, totalOwed, settledBills, friendCount: friends.length, messageCount: messages.length },
+        bills: bills.map(bill => ({ ...bill, participant: participantByBill.get(bill.id) || null })),
+        friends,
+        messages
+      }
+    });
+  } catch (error) {
+    console.error('[admin] profile snapshot:', error.message);
+    res.status(500).json({ success: false, error: 'Could not load that account snapshot.' });
+  }
+});
+
+app.patch('/admin/profile/:ravenId', requireRavenAdmin, async (req, res) => {
+  try {
+    const ravenId = normalizeRavenId(req.params.ravenId);
+    if (!ravenId) return res.status(400).json({ success: false, error: 'Enter a valid RAVEN ID.' });
+    const { data: target, error: targetError } = await supabase.from('profiles').select('id,raven_id').eq('raven_id', ravenId).maybeSingle();
+    if (targetError) throw targetError;
+    if (!target?.id) return res.status(404).json({ success: false, error: '@' + ravenId + ' was not found.' });
+
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const updates = {};
+    ['first_name', 'last_name', 'phone', 'venmo', 'cashapp', 'zelle', 'applepay'].forEach(field => {
+      if (Object.prototype.hasOwnProperty.call(body, field) && typeof body[field] === 'string') {
+        updates[field] = body[field].trim().slice(0, 120);
+      }
+    });
+    if (Object.prototype.hasOwnProperty.call(body, 'raven_id')) {
+      const nextRavenId = normalizeRavenId(body.raven_id);
+      if (!/^[a-z0-9_]{3,20}$/.test(nextRavenId)) {
+        return res.status(400).json({ success: false, error: 'RAVEN IDs must be 3–20 letters, numbers, or underscores.' });
+      }
+      if (nextRavenId !== ravenId) {
+        const { data: conflict } = await supabase.from('profiles').select('id').eq('raven_id', nextRavenId).neq('id', target.id).maybeSingle();
+        if (conflict) return res.status(409).json({ success: false, error: '@' + nextRavenId + ' is already taken.' });
+      }
+      updates.raven_id = nextRavenId;
+      updates.username = nextRavenId;
+    }
+    if (!Object.keys(updates).length) return res.status(400).json({ success: false, error: 'No editable profile fields were supplied.' });
+
+    updates.updated_at = new Date().toISOString();
+    const { data: updated, error: updateError } = await supabase.from('profiles').update(updates).eq('id', target.id).select('*').single();
+    if (updateError) throw updateError;
+    console.log('[admin] profile updated by', req.ravenAdmin.id, 'for', target.id, 'fields:', Object.keys(updates).filter(field => field !== 'updated_at').join(','));
+    res.json({ success: true, profile: toAdminProfile(updated) });
+  } catch (error) {
+    console.error('[admin] profile update:', error.message);
+    res.status(500).json({ success: false, error: 'Could not save that profile.' });
+  }
+});
+
+// Called after a newly created account has a real authenticated session. The
+// cutoff keeps this rollout forward-only; existing accounts are never enrolled.
+app.post('/account/welcome', async (req, res) => {
+  try {
+    const user = await getAuthenticatedRavenUser(req);
+    if (!user) return res.status(401).json({ success: false, error: 'Sign in is required.' });
+    const result = await provisionCreatorWelcome(user);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('[welcome] account provisioning:', error.message);
+    res.status(500).json({ success: false, error: 'Could not finish the welcome setup.' });
+  }
+});
 
 // ─── ACCOUNT DELETION (App Store guideline 5.1.1(v)) ───────────────────────
 // Requires the signed-in user's Supabase access token in the Authorization
