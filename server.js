@@ -1567,10 +1567,17 @@ app.patch('/bill/:billId/participants/:participantId/raven-id', async (req, res)
       return res.status(403).json({ success: false, error: 'Only the bill creator can assign accounts.' });
     }
     const ravenId = String(req.body?.raven_id || '').trim().replace(/^@/, '').toLowerCase();
-    if (!/^[a-z0-9_]{3,20}$/.test(ravenId)) return res.status(400).json({ success: false, error: 'Enter a valid exact Raven ID.' });
+    if (!/^[a-z0-9_]{1,20}$/.test(ravenId)) return res.status(400).json({ success: false, error: 'Enter a valid exact Raven ID.' });
     const { data: profile, error: profileError } = await supabase.from('profiles').select('id,email,raven_id').eq('raven_id', ravenId).maybeSingle();
     if (profileError) throw profileError;
     if (!profile?.email) return res.status(404).json({ success: false, error: 'Raven ID not found.' });
+    if (profile.id !== user.id) {
+      const { data: friendships, error: friendshipError } = await supabase.from('raven_friends')
+        .select('user_id,friend_id').eq('status', 'accepted')
+        .or('and(user_id.eq.' + user.id + ',friend_id.eq.' + profile.id + '),and(user_id.eq.' + profile.id + ',friend_id.eq.' + user.id + ')');
+      if (friendshipError) throw friendshipError;
+      if (!friendships?.length) return res.status(403).json({ success: false, error: 'You must be Raven friends before assigning this account. Send a friend request and wait for acceptance.' });
+    }
     const { data: participant, error: participantError } = await supabase.from('participants').select('id,phone').eq('id', req.params.participantId).eq('bill_id', bill.id).maybeSingle();
     if (participantError) throw participantError;
     if (!participant) return res.status(404).json({ success: false, error: 'Participant not found.' });
