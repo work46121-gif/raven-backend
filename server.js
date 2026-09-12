@@ -1533,6 +1533,42 @@ app.post('/bill/:billId/unclaim', async (req, res) => {
 });
 
 // â”€â”€ BILL: ADD self as participant (for name entry) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Explicit assignment: only the bill creator or verified owner-admin may move a link.
+app.patch('/bill/:billId/participants/:participantId/raven-id', async (req, res) => {
+  try {
+    const user = await getAuthenticatedRavenUser(req);
+    if (!user) return res.status(401).json({ success: false, error: 'Sign in required.' });
+    const { data: bill, error: billError } = await supabase.from('bills').select('id,creator_phone,status').eq('id', req.params.billId).maybeSingle();
+    if (billError) throw billError;
+    if (!bill || bill.status === 'deleted') return res.status(404).json({ success: false, error: 'Bill not found.' });
+    const email = String(user.email || '').toLowerCase();
+    if (!email || (email !== RAVEN_ADMIN_EMAIL && email !== String(bill.creator_phone || '').toLowerCase())) {
+      return res.status(403).json({ success: false, error: 'Only the bill creator can assign accounts.' });
+    }
+    const ravenId = String(req.body?.raven_id || '').trim().replace(/^@/, '').toLowerCase();
+    if (!/^[a-z0-9_]{3,20}$/.test(ravenId)) return res.status(400).json({ success: false, error: 'Enter a valid exact Raven ID.' });
+    const { data: profile, error: profileError } = await supabase.from('profiles').select('id,email,raven_id').eq('raven_id', ravenId).maybeSingle();
+    if (profileError) throw profileError;
+    if (!profile?.email) return res.status(404).json({ success: false, error: 'Raven ID not found.' });
+    const { data: participant, error: participantError } = await supabase.from('participants').select('id,phone').eq('id', req.params.participantId).eq('bill_id', bill.id).maybeSingle();
+    if (participantError) throw participantError;
+    if (!participant) return res.status(404).json({ success: false, error: 'Participant not found.' });
+    if (typeof req.body.expected_phone !== 'string' || participant.phone !== req.body.expected_phone) return res.status(409).json({ success: false, error: 'Assignment changed. Reopen the bill and try again.' });
+    const { data: duplicate, error: duplicateError } = await supabase.from('participants').select('id').eq('bill_id', bill.id).eq('phone', profile.email).neq('id', participant.id).limit(1);
+    if (duplicateError) throw duplicateError;
+    if (duplicate?.length) return res.status(409).json({ success: false, error: 'That account is already assigned to another participant on this bill.' });
+    // Keep the original name so item selections and payer references stay intact.
+    const { data: updated, error: updateError } = await supabase.from('participants').update({ phone: profile.email }).eq('id', participant.id).eq('bill_id', bill.id).eq('phone', participant.phone).select('id').maybeSingle();
+    if (updateError) throw updateError;
+    if (!updated) return res.status(409).json({ success: false, error: 'Assignment changed. Please refresh.' });
+    console.log('[bill-assignment]', JSON.stringify({ actor: user.id, bill: bill.id, participant: participant.id, target: profile.id }));
+    res.json({ success: true, raven_id: profile.raven_id });
+  } catch (error) {
+    console.error('[bill-assignment]', error.message);
+    res.status(500).json({ success: false, error: 'Could not update the assignment.' });
+  }
+});
+
 app.post('/bill/:billId/join', async (req, res) => {
   try {
     const { billId } = req.params;
@@ -1763,13 +1799,7 @@ app.get('/bill/:billId', async (req, res) => {
         if (directProfileRes.data) payerProfile = directProfileRes.data;
       }
     } catch (e) {}
-    if (!payerProfile) {
-      const r = await supabase.from('profiles')
-        .select('first_name,phone,email,venmo,cashapp,zelle,applepay,updated_at')
-        .ilike('first_name', paidByName)
-        .limit(8);
-      payerProfile = chooseBestPaymentProfile(r.data, paidByName);
-    }
+    // Unlinked payers stay unlinked until explicitly assigned by the creator.
   }
   const billPayerProfile = payerProfile || (paidByName ? { first_name: paidByName } : creatorProfile);
   if (billPayerProfile && paidByName) billPayerProfile.first_name = paidByName;
@@ -1783,31 +1813,21 @@ app.get('/bill/:billId', async (req, res) => {
 
   const participantItems = {};
   participants.forEach(p => { participantItems[billParticipantKey(p.name)] = []; });
-  const participantNames = [...new Set((participants || []).map(p => String(p.name || '').trim()).filter(Boolean))];
-  const participantFirstNames = [...new Set(participantNames.map(name => name.split(' ')[0]).filter(Boolean))];
-  const participantHandles = [...new Set(participantNames.map(name => name.replace(/^@/, '').trim().toLowerCase()).filter(Boolean))];
   const participantProfilesByKey = {};
-  const saveBillParticipantProfile = (profile) => {
-    if (!profile) return;
-    [profile.first_name, profile.raven_id, profile.username, profile.email]
-      .map(v => String(v || '').trim())
-      .filter(Boolean)
-      .forEach(alias => {
-        const key = billParticipantKey(alias);
-        if (!key || participantProfilesByKey[key]) return;
-        participantProfilesByKey[key] = profile;
-      });
-  };
-  try {
-    if (participantFirstNames.length > 0) {
-      const { data: byFirstName } = await supabase.from('profiles').select('first_name,last_name,email,raven_id,username,avatar_url').in('first_name', participantFirstNames);
-      (byFirstName || []).forEach(saveBillParticipantProfile);
+  // Display names and partial handles are not account identities.
+  const identities = [...new Set(participants.map(p => p.phone).filter(v => v && !v.startsWith('unknown_') && !v.startsWith('guest:')))];
+  if (identities.length) {
+    const fields = 'id,first_name,last_name,email,phone,raven_id,username,avatar_url';
+    const results = await Promise.all([
+      supabase.from('profiles').select(fields).in('email', identities),
+      supabase.from('profiles').select(fields).in('phone', identities)
+    ]);
+    for (const p of participants) {
+      const matches = results.flatMap(r => r.data || []).filter(profile => profile.email === p.phone || profile.phone === p.phone);
+      const unique = [...new Map(matches.map(profile => [profile.id, profile])).values()];
+      if (unique.length === 1) participantProfilesByKey[billParticipantKey(p.name)] = unique[0];
     }
-    if (participantHandles.length > 0) {
-      const { data: byHandle } = await supabase.from('profiles').select('first_name,last_name,email,raven_id,username,avatar_url').in('raven_id', participantHandles);
-      (byHandle || []).forEach(saveBillParticipantProfile);
-    }
-  } catch(e) {}
+  }
   if (items.length > 0 && selections.length > 0) {
     items.forEach(item => {
       const claimers = selections.filter(s => String(s.item_id) === String(item.id)).map(s => s.participant_name);
