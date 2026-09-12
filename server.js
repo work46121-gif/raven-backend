@@ -867,6 +867,27 @@ app.get('/admin/me', requireRavenAdmin, (req, res) => {
   res.json({ success: true, isAdmin: true, email: RAVEN_ADMIN_EMAIL });
 });
 
+app.get('/admin/recent-members', requireRavenAdmin, async (req, res) => {
+  try {
+    const offset = Number(req.query.offset || 0);
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > 100000) {
+      return res.status(400).json({ success: false, error: 'Invalid page.' });
+    }
+    const pageSize = 25;
+    const { data, error } = await supabase.from('profiles')
+      .select('id,first_name,last_name,raven_id,created_at,onboarding_complete')
+      .order('created_at', { ascending: false, nullsFirst: false })
+      .order('id', { ascending: false })
+      .range(offset, offset + pageSize);
+    if (error) throw error;
+    res.set('Cache-Control', 'private, no-store');
+    res.json({ success: true, members: (data || []).slice(0, pageSize), hasMore: (data || []).length > pageSize, nextOffset: offset + pageSize });
+  } catch (error) {
+    console.error('[admin] recent members:', error.message);
+    res.status(500).json({ success: false, error: 'Could not load recent members.' });
+  }
+});
+
 app.get('/admin/profile/:ravenId', requireRavenAdmin, async (req, res) => {
   try {
     const ravenId = normalizeRavenId(req.params.ravenId);
