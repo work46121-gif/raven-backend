@@ -9307,13 +9307,14 @@ app.get('/friend-invite/:ravenId', async (req, res) => {
       ? `<img src="${esc(profile.avatar_url)}" style="width:90px;height:90px;border-radius:50%;object-fit:cover;border:3px solid #30D158;display:block;margin:0 auto 16px">`
       : `<div style="width:90px;height:90px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#30D158);display:flex;align-items:center;justify-content:center;font-size:36px;font-weight:800;color:#fff;margin:0 auto 16px">${esc(name[0]?.toUpperCase()||'R')}</div>`;
 
+    res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(name)} wants to be your RAVEN friend ðŸª¶</title>
-<meta property="og:title" content="ðŸª¶ ${esc(name)} wants to connect on RAVEN">
+<title>${esc(name)} wants to be your RAVEN friend</title>
+<meta property="og:title" content="${esc(name)} wants to connect on RAVEN">
 <meta property="og:description" content="@${esc(ravenId)} invited you to be RAVEN friends. Split bills, track trips & settle up instantly.">
 <meta property="og:image" content="${ogImage}">
 <meta property="og:image:width" content="1024">
@@ -9321,7 +9322,7 @@ app.get('/friend-invite/:ravenId', async (req, res) => {
 <meta property="og:url" content="${baseUrl}/friend-invite/${esc(ravenId)}">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="ðŸª¶ ${esc(name)} wants to connect on RAVEN">
+<meta name="twitter:title" content="${esc(name)} wants to connect on RAVEN">
 <meta name="twitter:description" content="Tap to add @${esc(ravenId)} as a RAVEN friend">
 <meta name="twitter:image" content="${ogImage}">
 <style>
@@ -9341,12 +9342,12 @@ body{font-family:-apple-system,'Helvetica Neue',sans-serif;background:#06060A;co
 </head>
 <body>
 <div class="card">
-  <div class="raven-logo">ðŸª¶</div>
+  <div class="raven-logo" aria-label="RAVEN">&#x1FAB6;</div>
   <div class="brand">RAVEN</div>
   ${avatarHtml}
   <div class="invite-text">${esc(name)} wants to be your RAVEN friend</div>
   <div class="raven-id">@${esc(ravenId)}</div>
-  <a href="${dashboardUrl}" class="btn-accept">ðŸª¶ Accept &amp; Add Friend â†’</a>
+  <a href="${dashboardUrl}" class="btn-accept">&#x1FAB6; Accept &amp; Add Friend &rarr;</a>
   <a href="https://ravensplit.com/dashboard.html" class="btn-secondary">Sign in to existing account</a>
   <div class="divider"></div>
   <div class="footer">
