@@ -4924,6 +4924,8 @@ ${coverHTML}
     <button id="open-add-members" style="width:32px;height:32px;border-radius:50%;background:#13131A;border:2px dashed rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;cursor:pointer;margin-left:4px;flex-shrink:0;font-size:14px;color:#6E6B80">+</button>
     <button id="open-invite" style="padding:5px 14px;margin-left:10px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.25);border-radius:20px;color:#A855F7;font-family:'Epilogue',sans-serif;font-size:11px;font-weight:700;cursor:pointer">${inviteButtonLabel}</button>
     <button id="chat-open-btn" onclick="initChatDb().then(openChat)" style="padding:5px 14px;margin-left:8px;background:rgba(0,140,255,0.1);border:1px solid rgba(0,140,255,0.25);border-radius:20px;color:#4DB8FF;font-family:'Epilogue',sans-serif;font-size:11px;font-weight:700;cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation;position:relative">${chatButtonLabel}</button>
+    <button id="trip-travel-action" type="button" style="padding:7px 14px;margin:8px 0 0 8px;background:rgba(124,58,237,.12);border:1px solid #7c3aed66;border-radius:20px;color:#c084fc;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer">Stay &amp; flights</button>
+    <script defer src="https://ravensplit.com/raven-travel-ui.js?v=20260913-2"></script>
   </div>
 </div>
 
