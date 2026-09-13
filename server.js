@@ -114,6 +114,7 @@ async function requireRavenAdmin(req, res, next) {
 
 require('./raven-chat-routes')(app, supabase, getAuthenticatedRavenUser);
 require('./raven-push')(app, supabase, getAuthenticatedRavenUser);
+require('./raven-trip-travel')(app, supabase, getAuthenticatedRavenUser);
 
 async function provisionCreatorWelcome(user) {
   const createdAt = Date.parse(user?.created_at || '');
@@ -2402,13 +2403,15 @@ app.get('/bill/:billId', async (req, res) => {
   <div class="name-modal-bg" id="name-modal-bg"></div>
   <div class="name-modal-box" style="position:fixed;inset:0;width:100vw;height:100vh;max-width:none;max-height:none;min-height:100vh;margin:0;border-radius:0;padding:28px 20px calc(48px + env(safe-area-inset-bottom));overflow-y:auto;">
     <div style="width:36px;height:4px;background:rgba(255,255,255,0.12);border-radius:2px;margin:0 auto 20px"></div>
-    <div style="font-size:22px;font-weight:800;margin-bottom:6px">Who are you?</div>
-    <div style="font-size:14px;color:#6E6B80;margin-bottom:24px">Enter your name to claim items on the bill</div>
+    <button type="button" onclick="document.getElementById('name-modal').style.display='none'" style="background:none;border:0;color:#C084FC;padding:10px 0;margin-bottom:12px;cursor:pointer">← Back to bill</button>
+    <div id="name-picker-title" style="font-size:22px;font-weight:800;margin-bottom:6px">Join this bill</div>
+    <div id="name-picker-help" style="font-size:14px;color:#9896A8;margin-bottom:24px">Already on this bill? Tap your name below. Otherwise, add a new person.</div>
     <div id="name-picker-list" style="display:none;flex-direction:column;gap:8px;margin-bottom:14px"></div>
-    <button id="name-picker-other" type="button" style="display:none;width:100%;padding:11px 14px;margin-bottom:12px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#9896A8;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">I'm someone else</button>
+    <button id="name-picker-other" type="button" style="display:none;width:100%;padding:11px 14px;margin-bottom:12px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.3);border-radius:10px;color:#30D158;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">+ Add new person to bill</button>
+    <button id="name-picker-back" type="button" style="display:none;margin-bottom:14px;background:none;border:0;color:#C084FC;padding:10px;cursor:pointer" onclick="showIdentityChooser()">← Back to names</button>
     <input id="name-input" type="text" placeholder="Your name" autocomplete="name"
       style="width:100%;padding:14px 16px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:12px;color:#F0EEF8;font-size:16px;font-family:inherit;outline:none;margin-bottom:12px">
-    <button class="btn-g" onclick="submitName()">Start Claiming Items</button>
+    <button class="btn-g" onclick="submitName()">Add person & choose items</button>
     <div style="margin-top:8px;font-size:11px;line-height:1.5;color:#6E6B80;text-align:center">New to RAVEN? <a href="${appDashboardUrl}" style="color:#30D158;font-weight:700;text-decoration:none">Create, split, and share your own bills for free</a>.</div>
   </div>
   <div style="max-width:800px;margin:8px auto 0;font-size:11px;line-height:1.5;color:#6E6B80;text-align:center">New to RAVEN? <a href="${appDashboardUrl}" style="color:#30D158;font-weight:700;text-decoration:none">Create, split, and share your own bills for free</a>.</div>
@@ -2885,13 +2888,23 @@ function showIdentityChooser() {
   const input = document.getElementById('name-input');
   if (!modal || !list || !otherBtn || !input) return false;
   const names = getUniqueInitialParticipantNames();
-  if (names.length < 2) return false;
+  if (!names.length) {
+    document.getElementById('name-picker-title').textContent='Add new person to bill';
+    document.getElementById('name-picker-help').textContent='Enter your name, then choose the items that belong to you. No RAVEN account is required.';
+    document.getElementById('name-picker-back').style.display='none';
+    list.style.display='none';otherBtn.style.display='none';input.style.display='block';
+    const submit=modal.querySelector('.btn-g');if(submit){submit.style.display='block';submit.textContent='Add person & choose items';}
+    modal.style.display='flex';return true;
+  }
+  document.getElementById('name-picker-title').textContent = 'Choose your name';
+  document.getElementById('name-picker-help').textContent = 'Tap your existing name to claim items. Not listed? Add a new person below.';
+  document.getElementById('name-picker-back').style.display = 'none';
 
   list.style.display = 'flex';
   otherBtn.style.display = 'block';
   input.style.display = 'none';
   const submitBtn = modal.querySelector('.btn-g');
-  if (submitBtn) submitBtn.textContent = 'Start Claiming Items';
+  if (submitBtn) { submitBtn.textContent = 'Add person & choose items'; submitBtn.style.display = 'none'; }
   list.innerHTML = names.map(name =>
     '<button type="button" data-name="' + name.replace(/"/g, '&quot;') + '" style="width:100%;padding:12px 14px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:#F0EEF8;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;text-align:left">' + name + '</button>'
   ).join('');
@@ -2900,6 +2913,11 @@ function showIdentityChooser() {
     btn.addEventListener('click', () => autoJoin(btn.dataset.name || ''));
   });
   otherBtn.onclick = function() {
+    document.getElementById('name-picker-title').textContent = 'Add new person to bill';
+    document.getElementById('name-picker-help').textContent = 'Enter the new person’s name. Next, choose which items belong to them. This does not create a RAVEN account.';
+    document.getElementById('name-picker-back').style.display = 'block';
+    if (submitBtn) submitBtn.style.display = 'block';
+    input.value = '';
     list.style.display = 'none';
     otherBtn.style.display = 'none';
     input.style.display = 'block';
