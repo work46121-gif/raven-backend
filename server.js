@@ -113,6 +113,7 @@ async function requireRavenAdmin(req, res, next) {
 }
 
 require('./raven-chat-routes')(app, supabase, getAuthenticatedRavenUser);
+require('./raven-push')(app, supabase, getAuthenticatedRavenUser);
 
 async function provisionCreatorWelcome(user) {
   const createdAt = Date.parse(user?.created_at || '');
