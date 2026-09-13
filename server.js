@@ -1953,30 +1953,15 @@ app.get('/bill/:billId', async (req, res) => {
         ${items.map(i => `<div style="display:flex;justify-content:space-between;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.05)"><span style="font-size:14px;color:#F0EEF8">${i.name}</span><span style="font-size:14px;color:#9896A8">$${parseFloat(i.price).toFixed(2)}</span></div>`).join('')}
         ${bill.tax ? `<div style="display:flex;justify-content:space-between;padding:11px 16px;border-bottom:1px solid rgba(255,255,255,0.05)"><span style="font-size:13px;color:#6E6B80">Tax</span><span style="font-size:13px;color:#6E6B80">$${parseFloat(bill.tax).toFixed(2)}</span></div>` : ''}
         ${bill.tip ? `<div style="display:flex;justify-content:space-between;padding:11px 16px;border-bottom:1px solid rgba(255,255,255,0.05)"><span style="font-size:13px;color:#6E6B80">Tip</span><span style="font-size:13px;color:#6E6B80">$${parseFloat(bill.tip).toFixed(2)}</span></div>` : ''}
-        ${[['Service fee',bill.service_fee],['Misc. fee',bill.misc]].filter(([,v])=>parseFloat(v)>0).map(([label,value])=>'<div style="display:flex;justify-content:space-between;padding:11px 16px"><span>'+label+'</span><span><span style="font-size:15px;font-weight:700;color:#F0EEF8">Total</span><span style="font-size:15px;font-weight:700;color:#30D158">$${parseFloat(bill.total || 0).toFixed(2)}</span></div>
+        ${[['Service fee',bill.service_fee],['Misc. fee',bill.misc]].filter(([,v])=>parseFloat(v)>0).map(([label,value])=>'<div style="display:flex;justify-content:space-between;padding:11px 16px"><span>'+label+'</span><span>$'+parseFloat(value).toFixed(2)+'</span></div>').join('')}
+        <div style="display:flex;justify-content:space-between;padding:14px 16px"><span style="font-size:15px;font-weight:700;color:#F0EEF8">Total</span><span style="font-size:15px;font-weight:700;color:#30D158">$${parseFloat(bill.total || 0).toFixed(2)}</span></div>
       </div>
     </div>` : (bill.tax || bill.tip || bill.service_fee || bill.misc ? `
     <div style="max-width:800px;margin:20px auto 0;padding:0 20px">
       <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:16px;overflow:hidden">
         ${bill.tax ? `<div style="display:flex;justify-content:space-between;padding:11px 16px;border-bottom:1px solid rgba(255,255,255,0.05)"><span style="font-size:13px;color:#6E6B80">Tax</span><span style="font-size:13px;color:#6E6B80">$${parseFloat(bill.tax).toFixed(2)}</span></div>` : ''}
         ${bill.tip ? `<div style="display:flex;justify-content:space-between;padding:11px 16px;border-bottom:1px solid rgba(255,255,255,0.05)"><span style="font-size:13px;color:#6E6B80">Tip</span><span style="font-size:13px;color:#6E6B80">$${parseFloat(bill.tip).toFixed(2)}</span></div>` : ''}
-        <div style="display:flex;justify-content:space-between;padding:14px 16px"><span style="font-size:15px;font-weight:700;color:#F0EEF8">Total</span><span style="font-size:15px;font-weight:700;color:#30D158">$${parseFloat(bill.total || 0).toFixed(2)}</span></div>
-      </div>
-    </div>` : '');
-
-+parseFloat(value).toFixed(2)+'</span></div>').join('')}
-        <div style="display:flex;justify-content:space-between;padding:14px 16px"><span style="font-size:15px;font-weight:700;color:#F0EEF8">Total</span><span style="font-size:15px;font-weight:700;color:#30D158">$${parseFloat(bill.total || 0).toFixed(2)}</span></div>
-      </div>
-    </div>` : (bill.tax || bill.tip ? `
-    <div style="max-width:800px;margin:20px auto 0;padding:0 20px">
-      <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:16px;overflow:hidden">
-        ${bill.tax ? `<div style="display:flex;justify-content:space-between;padding:11px 16px;border-bottom:1px solid rgba(255,255,255,0.05)"><span style="font-size:13px;color:#6E6B80">Tax</span><span style="font-size:13px;color:#6E6B80">$${parseFloat(bill.tax).toFixed(2)}</span></div>` : ''}
-        ${bill.tip ? `<div style="display:flex;justify-content:space-between;padding:11px 16px;border-bottom:1px solid rgba(255,255,255,0.05)"><span style="font-size:13px;color:#6E6B80">Tip</span><span style="font-size:13px;color:#6E6B80">$${parseFloat(bill.tip).toFixed(2)}</span></div>` : ''}
-        ${[['Service fee',bill.service_fee],['Misc. fee',bill.misc]].filter(([,v])=>parseFloat(v)>0).map(([label,value])=>'<div style="display:flex;justify-content:space-between;padding:11px 16px"><span>'+label+'</span><span><span style="font-size:15px;font-weight:700;color:#F0EEF8">Total</span><span style="font-size:15px;font-weight:700;color:#30D158">$${parseFloat(bill.total || 0).toFixed(2)}</span></div>
-      </div>
-    </div>` : '');
-
-+parseFloat(value).toFixed(2)+'</span></div>').join('')}
+        ${[['Service fee',bill.service_fee],['Misc. fee',bill.misc]].filter(([,v])=>parseFloat(v)>0).map(([label,value])=>'<div style="display:flex;justify-content:space-between;padding:11px 16px"><span>'+label+'</span><span>$'+parseFloat(value).toFixed(2)+'</span></div>').join('')}
         <div style="display:flex;justify-content:space-between;padding:14px 16px"><span style="font-size:15px;font-weight:700;color:#F0EEF8">Total</span><span style="font-size:15px;font-weight:700;color:#30D158">$${parseFloat(bill.total || 0).toFixed(2)}</span></div>
       </div>
     </div>` : '');
