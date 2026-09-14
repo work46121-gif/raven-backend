@@ -1,9 +1,12 @@
-const {randomUUID}=require('node:crypto');
+const {randomUUID,randomBytes,createHmac,timingSafeEqual}=require('node:crypto');
 const {photoBytes}=require('./raven-chat-routes');
 const BUCKET='raven-trip-media';
 const emails=value=>{try{const a=typeof value==='string'?JSON.parse(value):value;return Array.isArray(a)?a.map(v=>String(v).trim().toLowerCase()):[]}catch{return []}};
 const deny=(status,message)=>{throw Object.assign(Error(message),{status})};
 module.exports=function registerTravel(app,db,authenticate){
+ const secret=process.env.RAVEN_TRAVEL_SECRET||randomBytes(32).toString('hex');
+ const sign=data=>createHmac('sha256',secret).update(data).digest('base64url');
+ function fromPass(req){try{const token=String(req.headers?.authorization||'').replace(/^Bearer /,'');const [data,signature]=token.split('.');if(!data||!signature)return null;const expected=Buffer.from(sign(data)),actual=Buffer.from(signature);if(actual.length!==expected.length||!timingSafeEqual(actual,expected))return null;const p=JSON.parse(Buffer.from(data,'base64url').toString());return p.trip===req.params.id&&p.exp>Date.now()?p.user:null}catch{return null}}
  const result=async q=>{const {data,error}=await q;if(error)throw error;return data};
  async function access(id,user){
   if(!/^[a-z0-9_-]{1,64}$/i.test(id))deny(400,'Invalid trip.');
@@ -14,7 +17,8 @@ module.exports=function registerTravel(app,db,authenticate){
   if(!email||!allowed.includes(email))deny(403,'Only linked trip members can access travel plans. Ask the organizer to add your Raven account to the trip.');
   return {trip,owner:email===owner,allowed};
  }
- const run=fn=>async(req,res)=>{try{const user=await authenticate(req);if(!user)deny(401,'Sign in required.');res.set('Cache-Control','private, no-store');const scope=await access(req.params.id,user);await fn(req,res,user,scope)}catch(e){res.status(e.status||503).json({success:false,error:e.status?e.message:'Travel uploads are not ready. Ask the owner to run the travel-storage setup, or retry later.'})}};
+ const run=fn=>async(req,res)=>{try{const user=fromPass(req)||await authenticate(req);if(!user)deny(401,'Open this trip from your Raven dashboard to reconnect securely.');res.set('Cache-Control','private, no-store');const scope=await access(req.params.id,user);await fn(req,res,user,scope)}catch(e){res.status(e.status||503).json({success:false,error:e.status?e.message:'Travel uploads are not ready. Ask the owner to run the travel-storage setup, or retry later.'})}};
+ app.post('/trips/:id/travel-pass',async(req,res)=>{try{const user=await authenticate(req);if(!user)deny(401,'Sign in required.');await access(req.params.id,user);const data=Buffer.from(JSON.stringify({trip:req.params.id,user:{id:user.id,email:user.email},exp:Date.now()+2*60*60*1000})).toString('base64url');res.set('Cache-Control','private, no-store');res.json({success:true,pass:data+'.'+sign(data)})}catch(e){res.status(e.status||503).json({success:false,error:e.status?e.message:'Could not connect travel plans.'})}});
  app.get('/trips/:id/travel',run(async(req,res,user,scope)=>{
   const members=await result(db.from('profiles').select('id,first_name,last_name,raven_id').in('email',scope.allowed));
   const offset=Number(req.query.offset||0);if(!Number.isSafeInteger(offset)||offset<0||offset>100000)deny(400,'Invalid page.');

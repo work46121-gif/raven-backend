@@ -29,7 +29,7 @@ const app = express();
 
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Raven-Bill-Token');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
@@ -1905,7 +1905,7 @@ app.get('/bill/:billId', async (req, res) => {
 
     let shared_rows = '';
     for (const [label, value] of [['Service fee', bill.service_fee], ['Misc. fee', bill.misc]]) {
-      if (parseFloat(value) > 0) shared_rows += `<div style="display:flex;justify-content:space-between;padding:2px 0"><span>${label}</span><span>$${(parseFloat(value) * proportion).toFixed(2)}</span></div>`;
+      if (parseFloat(value) > 0) shared_rows += `<div style="display:flex;justify-content:space-between;padding:2px 0;font-size:11px;color:#6E6B80"><span>${label}</span><span style="font-family:monospace">$${(parseFloat(value) * proportion).toFixed(2)}</span></div>`;
     }
     if (tax) shared_rows += `<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="font-size:11px;color:#6E6B80">Tax</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$${myTax.toFixed(2)}</span></div>`;
     if (tip) shared_rows += `<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="font-size:11px;color:#6E6B80">Tip</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$${myTip.toFixed(2)}</span></div>`;
@@ -3242,8 +3242,8 @@ function renderState(d) {
               }).join('')
             + (myTax > 0 ? '<div style="display:flex;justify-content:space-between;padding:3px 0;border-top:1px solid rgba(255,255,255,0.06);margin-top:4px"><span style="font-size:11px;color:#6E6B80">Tax <span style="color:#4E4B5A">(' + (tax > 0 ? (myTax / tax * 100).toFixed(1) : '0.0') + '% of total tax)</span></span><span style="font-size:11px;color:#6E6B80;font-family:monospace">$' + myTax.toFixed(2) + '</span></div>' : '')
             + (myTip > 0 ? '<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6E6B80">Tip <span style="color:#4E4B5A">(' + (tip > 0 ? (myTip / tip * 100).toFixed(1) : '0.0') + '% of total tip)</span></span><span style="font-size:11px;color:#6E6B80;font-family:monospace">$' + myTip.toFixed(2) + '</span></div>' : '')
-            + (myService > 0 ? '<div style="display:flex;justify-content:space-between"><span>Service fee</span><span>$' + myService.toFixed(2) + '</span></div>' : '')
-            + (myMisc > 0 ? '<div style="display:flex;justify-content:space-between"><span>Misc. fee</span><span>$' + myMisc.toFixed(2) + '</span></div>' : '')
+            + (myService > 0 ? '<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:11px;color:#6E6B80"><span>Service fee</span><span style="font-family:monospace">$' + myService.toFixed(2) + '</span></div>' : '')
+            + (myMisc > 0 ? '<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:11px;color:#6E6B80"><span>Misc. fee</span><span style="font-family:monospace">$' + myMisc.toFixed(2) + '</span></div>' : '')
             + '<div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:6px;padding-top:6px;display:flex;justify-content:space-between"><span style="font-size:12px;font-weight:700;color:#F0EEF8">' + breakdownLabel + '</span><span style="font-size:13px;font-weight:800;color:#30D158;font-family:monospace">$' + breakdownTotal.toFixed(2) + '</span></div>'
             + '</div>';
         } else if (!isBillPayer && anySelections && myItems.length === 0) {
@@ -4924,12 +4924,12 @@ ${coverHTML}
     <button id="open-add-members" style="width:32px;height:32px;border-radius:50%;background:#13131A;border:2px dashed rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;cursor:pointer;margin-left:4px;flex-shrink:0;font-size:14px;color:#6E6B80">+</button>
     <button id="open-invite" style="padding:5px 14px;margin-left:10px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.25);border-radius:20px;color:#A855F7;font-family:'Epilogue',sans-serif;font-size:11px;font-weight:700;cursor:pointer">${inviteButtonLabel}</button>
     <button id="chat-open-btn" onclick="initChatDb().then(openChat)" style="padding:5px 14px;margin-left:8px;background:rgba(0,140,255,0.1);border:1px solid rgba(0,140,255,0.25);border-radius:20px;color:#4DB8FF;font-family:'Epilogue',sans-serif;font-size:11px;font-weight:700;cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation;position:relative">${chatButtonLabel}</button>
-    <button id="trip-travel-action" type="button" style="padding:7px 14px;margin:8px 0 0 8px;background:rgba(124,58,237,.12);border:1px solid #7c3aed66;border-radius:20px;color:#c084fc;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer">Stay &amp; flights</button>
-    <script defer src="https://ravensplit.com/raven-travel-ui.js?v=20260913-2"></script>
   </div>
 </div>
 
 <div class="sec" style="margin-top:16px">${countdownHTML}</div>
+<div class="sec" style="margin-top:12px"><button id="trip-travel-action" type="button" style="display:flex;align-items:center;justify-content:space-between;width:100%;box-sizing:border-box;padding:13px 16px;background:linear-gradient(110deg,#7c3aed18,#30d1580c);border:1px solid #7c3aed44;border-radius:13px;color:#d8c5f5;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer"><span>Stay &amp; flights</span><span style="font-size:12px;color:#9896a8">View / upload &#8599;</span></button></div>
+<script defer src="https://ravensplit.com/raven-travel-ui.js?v=20260913-3"></script>
 
 <div class="sec" style="margin-top:16px">
   <div id="trip-reminder-wrap" style="display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 16px;background:linear-gradient(135deg,rgba(255,193,7,0.12),rgba(255,193,7,0.04));border:1px solid rgba(255,193,7,0.24);border-radius:16px">

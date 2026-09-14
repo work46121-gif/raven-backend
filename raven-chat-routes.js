@@ -19,6 +19,7 @@ module.exports = function registerRavenChats(app, db, authenticate) {
     catch(error){console.error('[private-chat]',error.message);res.status(error.status||503).json({success:false,error:error.status?error.message:'Chat could not be updated. Please retry.'});}
   };
   async function result(query) { const {data,error}=await query;if(error)throw error;return data; }
+  require('./raven-group-controls')(app,db,{run,result,member,photoBytes});
   async function member(chatId,userId) {
     if(!UUID.test(chatId))fail(400,'Invalid chat.');
     const row=await result(db.from('raven_chat_members').select('chat_id,user_id,last_read_at').eq('chat_id',chatId).eq('user_id',userId).maybeSingle());
@@ -40,10 +41,12 @@ module.exports = function registerRavenChats(app, db, authenticate) {
     const ids=(membership||[]).map(m=>m.chat_id);
     if(!ids.length)return res.json({success:true,chats:[],hasMore:false,nextOffset:offset+50});
     const rows=await result(db.from('raven_chats').select('id,name,kind,updated_at,created_at,created_by').in('id',ids).order('updated_at',{ascending:false}).order('id',{ascending:false}).range(offset,offset+50));
+    let groupPhotos=[];try{groupPhotos=await result(db.from('raven_chats').select('id,photo_path').in('id',rows.slice(0,50).map(c=>c.id)))}catch{/* Older schema still supports existing chats. */}
     const chats=await Promise.all(rows.slice(0,50).map(async chat=>{
       const latest=await result(db.from('raven_chat_messages').select('id,sender_id,body,created_at').eq('chat_id',chat.id).order('created_at',{ascending:false}).order('id',{ascending:false}).limit(1));
       const last=latest[0]||null,read=membership.find(m=>m.chat_id===chat.id)?.last_read_at;
-      return {...chat,last_message:last,unread:!!(last&&last.sender_id!==user.id&&(!read||last.created_at>read))};
+      let photo_url=null;const photoPath=groupPhotos.find(p=>p.id===chat.id)?.photo_path;if(photoPath){try{photo_url=(await result(db.storage.from(BUCKET).createSignedUrl(photoPath,900))).signedUrl}catch{}}
+      return {...chat,photo_url,last_message:last,unread:!!(last&&last.sender_id!==user.id&&(!read||last.created_at>read))};
     }));
     res.json({success:true,chats,hasMore:rows.length>50,nextOffset:offset+50});
   }));
@@ -59,7 +62,9 @@ module.exports = function registerRavenChats(app, db, authenticate) {
   }));
   app.patch('/chats/:id',run(async(req,res,user)=>{
     await member(req.params.id,user.id);const name=String(req.body.name||'').trim();if(!name||name.length>80)fail(400,'Use 1–80 characters for the group name.');
-    const chat=await result(db.from('raven_chats').update({name,updated_at:new Date().toISOString()}).eq('id',req.params.id).eq('kind','group').select('id,name').maybeSingle());
+    const {error}=await db.rpc('raven_manage_group',{p_chat:req.params.id,p_actor:user.id,p_action:'rename',p_value:name});
+    if(error)return res.status(error.code==='P0001'?403:503).json({success:false,error:error.code==='P0001'?error.message:'Group controls need the one-time database setup.'});
+    const chat=await result(db.from('raven_chats').select('id,name').eq('id',req.params.id).maybeSingle());
     if(!chat)fail(404,'Group not found.');res.json({success:true,chat});
   }));
   app.get('/chats/:id/messages',run(async(req,res,user)=>{
