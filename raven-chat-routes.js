@@ -30,7 +30,7 @@ module.exports = function registerRavenChats(app, db, authenticate) {
     return [...new Set((edges||[]).map(e=>e.user_id===userId?e.friend_id:e.user_id).filter(id=>id!==userId))];
   }
   async function requireFriend(peer,user) {if(!UUID.test(peer)||peer===user)fail(400,'Choose a Raven friend.');if(!(await friends(user)).includes(peer))fail(403,'You must be accepted Raven friends first.');}
-  const profileFields='id,first_name,last_name,raven_id';
+  const profileFields='id,first_name,last_name,raven_id,avatar_url';
   app.get('/chats/friends',run(async(req,res,user)=>{
     const ids=await friends(user.id);const profiles=ids.length?await result(db.from('profiles').select(profileFields).in('id',ids)):[];
     res.json({success:true,friends:profiles});

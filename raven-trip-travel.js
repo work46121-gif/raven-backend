@@ -10,7 +10,7 @@ module.exports=function registerTravel(app,db,authenticate){
  const result=async q=>{const {data,error}=await q;if(error)throw error;return data};
  async function access(id,user){
   if(!/^[a-z0-9_-]{1,64}$/i.test(id))deny(400,'Invalid trip.');
-  const trip=await result(db.from('trips').select('id,name,creator_email,member_emails').eq('id',id).maybeSingle());
+  const trip=await result(db.from('trips').select('id,name,creator_email,member_emails,people').eq('id',id).maybeSingle());
   if(!trip)deny(404,'Trip not found.');
   const owner=String(trip.creator_email||'').trim().toLowerCase(),email=String(user.email||'').trim().toLowerCase();
   const allowed=[...new Set([owner,...emails(trip.member_emails)].filter(Boolean))];
@@ -21,6 +21,11 @@ module.exports=function registerTravel(app,db,authenticate){
  app.post('/trips/:id/travel-pass',async(req,res)=>{try{const user=await authenticate(req);if(!user)deny(401,'Sign in required.');await access(req.params.id,user);const data=Buffer.from(JSON.stringify({trip:req.params.id,user:{id:user.id,email:user.email},exp:Date.now()+2*60*60*1000})).toString('base64url');res.set('Cache-Control','private, no-store');res.json({success:true,pass:data+'.'+sign(data)})}catch(e){res.status(e.status||503).json({success:false,error:e.status?e.message:'Could not connect travel plans.'})}});
  app.get('/trips/:id/travel',run(async(req,res,user,scope)=>{
   const members=await result(db.from('profiles').select('id,first_name,last_name,raven_id').in('email',scope.allowed));
+  // Keep the full stored roster visible. A display-name match never grants account access.
+  let roster=[];try{roster=typeof scope.trip.people==='string'?JSON.parse(scope.trip.people):scope.trip.people||[]}catch{}
+  const aliases=new Set(members.flatMap(p=>[p.first_name,[p.first_name,p.last_name].filter(Boolean).join(' '),p.raven_id].filter(Boolean).map(v=>String(v).trim().replace(/^@/,'').toLowerCase())));
+  const guests=Array.isArray(roster)?roster.filter(n=>typeof n==='string'&&n.trim()&&!aliases.has(n.trim().replace(/^@/,'').toLowerCase())).map((name,index)=>({id:'guest-'+index,first_name:name,unlinked:true})):[];
+  members.push(...guests);
   const offset=Number(req.query.offset||0);if(!Number.isSafeInteger(offset)||offset<0||offset>100000)deny(400,'Invalid page.');
   const rows=await result(db.from('raven_trip_media').select('*').eq('trip_id',scope.trip.id).order('created_at',{ascending:false}).order('id',{ascending:false}).range(offset,offset+50));
   const media=await Promise.all(rows.slice(0,50).map(async row=>{
