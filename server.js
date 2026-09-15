@@ -6781,94 +6781,17 @@ async function tripFriendSessionInfo() {
 }
 
 async function tripProfileIsFriend(profile) {
-  const targetRid = String(profile?.raven_id || '').replace(/^@/, '').toLowerCase();
-  const targetEmail = String(profile?.email || '').toLowerCase();
-  let targetProfileId = String(profile?.id || '').trim();
-
-  try {
-    if (window.supabase && window.supabase.createClient) {
-      const db = window.supabase.createClient(SUPA_URL, SUPA_KEY);
-      const sess = await db.auth.getSession();
-      const currentUserId = String(sess?.data?.session?.user?.id || '').trim();
-      if (currentUserId) {
-        if (!targetProfileId && targetRid) {
-          const { data: profByRid } = await db.from('profiles').select('id,email,raven_id').eq('raven_id', targetRid).maybeSingle();
-          if (profByRid) targetProfileId = String(profByRid.id || '').trim();
-        }
-        if (!targetProfileId && targetEmail) {
-          const { data: profByEmail } = await db.from('profiles').select('id,email,raven_id').eq('email', targetEmail).maybeSingle();
-          if (profByEmail) targetProfileId = String(profByEmail.id || '').trim();
-        }
-        const { data: friendships } = await db.from('raven_friends')
-          .select('user_id,friend_id,status')
-          .or('user_id.eq.' + currentUserId + ',friend_id.eq.' + currentUserId)
-          .eq('status', 'accepted');
-        const friendIds = [...new Set((friendships || []).map(f => String(f.user_id) === currentUserId ? String(f.friend_id || '').trim() : String(f.user_id || '').trim()).filter(Boolean))];
-        if (targetProfileId && friendIds.includes(targetProfileId)) return true;
-        if (friendIds.length) {
-          const { data: friendProfiles } = await db.from('profiles').select('id,email,raven_id').in('id', friendIds);
-          if ((friendProfiles || []).some(fp => {
-            const friendRid = String(fp?.raven_id || '').replace(/^@/, '').toLowerCase();
-            const friendEmail = String(fp?.email || '').toLowerCase();
-            return (!!targetRid && friendRid === targetRid) || (!!targetEmail && friendEmail === targetEmail) || (!!targetProfileId && String(fp?.id || '') === targetProfileId);
-          })) return true;
-        }
-      }
-    }
-  } catch (e) {}
-
-  const { currentUserId, accessToken } = await tripFriendSessionInfo();
-  if (!currentUserId || !accessToken) return false;
-  const headers = { apikey: SUPA_KEY, Authorization: 'Bearer ' + accessToken, Accept: 'application/json' };
-
-  if (!targetProfileId && targetEmail) {
-    const byEmail = await fetch(SUPA_URL + '/rest/v1/profiles?select=id,email,raven_id&email=eq.' + encodeURIComponent(targetEmail), { headers });
-    if (byEmail.ok) {
-      const rows = await byEmail.json();
-      targetProfileId = rows?.[0]?.id || '';
-    }
+  let token='';
+  try { token=sessionStorage.getItem('raven_trip_access_'+TRIP_ID)||''; } catch(e) {}
+  if(!token){
+    try { await initChatDb();const session=await chatDb.auth.getSession();token=session?.data?.session?.access_token||''; } catch(e) {}
   }
-  if (!targetProfileId && targetRid) {
-    const byRid = await fetch(SUPA_URL + '/rest/v1/profiles?select=id,email,raven_id&raven_id=eq.' + encodeURIComponent(targetRid), { headers });
-    if (byRid.ok) {
-      const rows = await byRid.json();
-      targetProfileId = rows?.[0]?.id || '';
-    }
-  }
-
-  if (targetProfileId) {
-    const directResp = await fetch(
-      SUPA_URL + '/rest/v1/raven_friends?select=user_id,friend_id,status&or=' + encodeURIComponent(
-        'and(user_id.eq.' + currentUserId + ',friend_id.eq.' + targetProfileId + '),and(user_id.eq.' + targetProfileId + ',friend_id.eq.' + currentUserId + ')'
-      ),
-      { headers }
-    );
-    if (directResp.ok) {
-      const rows = await directResp.json();
-      if ((rows || []).some(f => String(f.status || '').toLowerCase() === 'accepted')) return true;
-    }
-  }
-
-  const acceptedResp = await fetch(
-    SUPA_URL + '/rest/v1/raven_friends?select=user_id,friend_id,status&or=' + encodeURIComponent('user_id.eq.' + currentUserId + ',friend_id.eq.' + currentUserId) + '&status=eq.accepted',
-    { headers }
-  );
-  if (!acceptedResp.ok) return false;
-  const acceptedRows = await acceptedResp.json();
-  const friendIds = [...new Set((acceptedRows || []).map(f => String(f.user_id) === currentUserId ? String(f.friend_id || '').trim() : String(f.user_id || '').trim()).filter(Boolean))];
-  if (!friendIds.length) return false;
-
-  const friendProfilesResp = await fetch(
-    SUPA_URL + '/rest/v1/profiles?select=id,email,raven_id&or=' + encodeURIComponent(friendIds.map(id => 'id.eq.' + id).join(',')),
-    { headers }
-  );
-  if (!friendProfilesResp.ok) return false;
-  const friendProfiles = await friendProfilesResp.json();
-  return (friendProfiles || []).some(fp => {
-    const friendRid = String(fp?.raven_id || '').replace(/^@/, '').toLowerCase();
-    const friendEmail = String(fp?.email || '').toLowerCase();
-    return (!!targetRid && friendRid === targetRid) || (!!targetEmail && friendEmail === targetEmail) || (!!targetProfileId && String(fp?.id || '') === targetProfileId);
-  });
+  if(!token)token=(await tripFriendSessionInfo()).accessToken;
+  if(!token)throw Error('Connect your Raven account to check friendship.');
+  const response=await fetch(BACKEND+'/trips/'+encodeURIComponent(TRIP_ID)+'/friend-status?raven_id='+encodeURIComponent(profile.raven_id),{headers:{Authorization:'Bearer '+token}});
+  const result=await response.json();
+  if(!response.ok||!result.success)throw Error('Could not check friendship.');
+  return result;
 }
 
 function openMemberProfile(name) {
@@ -6904,7 +6827,7 @@ function openMemberProfile(name) {
   const ridEl=document.getElementById("mp-raven-id"); if(ridEl) ridEl.textContent=prof?.raven_id?"@"+prof.raven_id:"";
   const sinceEl=document.getElementById("mp-member-since"); if(sinceEl) { if(prof?.created_at){const d=new Date(prof.created_at);sinceEl.textContent=" RAVEN member since "+d.toLocaleDateString("en-US",{month:"long",year:"numeric"});}else{sinceEl.textContent=" RAVEN member";}}
   const chipsEl=document.getElementById("mp-payment-chips"); if(chipsEl){const chips=[];if(prof?.venmo)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#0084FF;border-radius:8px;font-size:12px;font-weight:700;color:#fff"><span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;background:rgba(255,255,255,0.18);font-size:10px;line-height:1;font-weight:800">V</span> Venmo</span>');if(prof?.cashapp)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#00D632;border-radius:8px;font-size:12px;font-weight:700;color:#000"><span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;background:rgba(0,0,0,0.14);font-size:10px;line-height:1;font-weight:800">$</span> Cash App</span>');if(prof?.zelle)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#6D1ED4;border-radius:8px;font-size:12px;font-weight:700;color:#fff"><span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;background:rgba(255,255,255,0.18);font-size:10px;line-height:1;font-weight:800">Z</span> Zelle</span>');if(prof?.applepay)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#1a1a1a;border:1px solid #555;border-radius:8px;font-size:12px;font-weight:700;color:#fff"><span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;background:rgba(255,255,255,0.12);font-size:10px;line-height:1;font-weight:800">Pay</span> Apple Pay</span>');chipsEl.innerHTML=chips.length?chips.join(""):'<span style="font-size:12px;color:#6E6B80">No payment methods set up</span>';}
-  const actEl=document.getElementById("mp-actions"); if(actEl){actEl.innerHTML="";if(prof?.raven_id&&!isOwnProfile){const addBtn=document.createElement("button");addBtn.style.cssText="width:100%;padding:13px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.3);border-radius:12px;font-family:inherit;font-size:14px;font-weight:700;color:#A855F7;cursor:pointer";addBtn.textContent=" Add Friend on RAVEN";addBtn.onclick=()=>{window.open("https://ravensplit.com/dashboard.html","_blank");toast("Search for @"+prof.raven_id+" in Friends");closeMemberProfile();};actEl.appendChild(addBtn);(async()=>{try{if(await tripProfileIsFriend(prof)){addBtn.textContent=' Message on RAVEN';addBtn.onclick=()=>{const dmUrl='https://ravensplit.com/dashboard.html?dm_friend='+encodeURIComponent(String(prof?.id||''))+'&dm_name='+encodeURIComponent(displayName)+'&dm_raven_id='+encodeURIComponent(String(prof?.raven_id||''));window.open(dmUrl,'_blank');closeMemberProfile();};}}catch(e){}})();}const closeBtn=document.createElement("button");closeBtn.style.cssText="width:100%;padding:13px;background:transparent;border:1px solid rgba(255,255,255,0.1);border-radius:12px;font-family:inherit;font-size:14px;color:#6E6B80;cursor:pointer";closeBtn.textContent="Close";closeBtn.onclick=closeMemberProfile;actEl.appendChild(closeBtn);}
+  const actEl=document.getElementById("mp-actions"); if(actEl){actEl.innerHTML="";if(prof?.raven_id&&!isOwnProfile){const addBtn=document.createElement("button");addBtn.style.cssText="width:100%;padding:13px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.3);border-radius:12px;font-family:inherit;font-size:14px;font-weight:700;color:#A855F7;cursor:pointer";addBtn.textContent="View on RAVEN";addBtn.onclick=()=>{window.open("https://ravensplit.com/dashboard.html","_blank");toast("Search for @"+prof.raven_id+" in Friends");closeMemberProfile();};actEl.appendChild(addBtn);(async()=>{try{const friendship=await tripProfileIsFriend(prof);if(!addBtn.isConnected)return;if(friendship.status==='none')addBtn.textContent='Add Friend on RAVEN';if(friendship.status==='pending'){addBtn.textContent='Friend request pending';addBtn.disabled=true;}if(friendship.status==='self'){addBtn.textContent='Your profile';addBtn.disabled=true;}if(friendship.status==='accepted'){addBtn.textContent='Friends · Message';addBtn.onclick=()=>{const dmUrl='https://ravensplit.com/dashboard.html?dm_friend='+encodeURIComponent(String(friendship.profile_id||prof?.id||''))+'&dm_name='+encodeURIComponent(displayName)+'&dm_raven_id='+encodeURIComponent(String(prof?.raven_id||''));window.open(dmUrl,'_blank');closeMemberProfile();};}}catch(e){}})();}const closeBtn=document.createElement("button");closeBtn.style.cssText="width:100%;padding:13px;background:transparent;border:1px solid rgba(255,255,255,0.1);border-radius:12px;font-family:inherit;font-size:14px;color:#6E6B80;cursor:pointer";closeBtn.textContent="Close";closeBtn.onclick=closeMemberProfile;actEl.appendChild(closeBtn);}
   if(modal) modal.classList.add("open");
 }
 function closeMemberProfile(){const m=document.getElementById("member-profile-modal");if(m)m.classList.remove("open");}

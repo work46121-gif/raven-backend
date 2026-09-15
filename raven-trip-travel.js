@@ -19,6 +19,17 @@ module.exports=function registerTravel(app,db,authenticate){
  }
  const run=fn=>async(req,res)=>{try{const user=fromPass(req)||await authenticate(req);if(!user)deny(401,'Open this trip from your Raven dashboard to reconnect securely.');res.set('Cache-Control','private, no-store');const scope=await access(req.params.id,user);await fn(req,res,user,scope)}catch(e){res.status(e.status||503).json({success:false,error:e.status?e.message:'Travel uploads are not ready. Ask the owner to run the travel-storage setup, or retry later.'})}};
  app.post('/trips/:id/travel-pass',async(req,res)=>{try{const user=await authenticate(req);if(!user)deny(401,'Sign in required.');await access(req.params.id,user);const data=Buffer.from(JSON.stringify({trip:req.params.id,user:{id:user.id,email:user.email},exp:Date.now()+2*60*60*1000})).toString('base64url');res.set('Cache-Control','private, no-store');res.json({success:true,pass:data+'.'+sign(data)})}catch(e){res.status(e.status||503).json({success:false,error:e.status?e.message:'Could not connect travel plans.'})}});
+ app.get('/trips/:id/friend-status',run(async(req,res,user,scope)=>{
+  const rid=String(req.query.raven_id||'').trim().replace(/^@/,'').toLowerCase();
+  if(!/^[a-z0-9_]{1,64}$/.test(rid))deny(400,'Invalid Raven ID.');
+  const profile=await result(db.from('profiles').select('id,email').eq('raven_id',rid).maybeSingle());
+  if(!profile||!scope.allowed.includes(String(profile.email||'').trim().toLowerCase()))deny(404,'Linked trip member not found.');
+  if(profile.id===user.id)return res.json({success:true,status:'self',profile_id:profile.id});
+  const rows=await result(db.from('raven_friends').select('user_id,friend_id,status')
+   .or('and(user_id.eq.'+user.id+',friend_id.eq.'+profile.id+'),and(user_id.eq.'+profile.id+',friend_id.eq.'+user.id+')'));
+  const status=rows.some(r=>r.status==='accepted')?'accepted':rows.some(r=>r.status==='pending')?'pending':'none';
+  res.json({success:true,status,profile_id:profile.id});
+ }));
  app.get('/trips/:id/travel',run(async(req,res,user,scope)=>{
   const members=await result(db.from('profiles').select('id,first_name,last_name,raven_id').in('email',scope.allowed));
   // Keep the full stored roster visible. A display-name match never grants account access.
