@@ -34,7 +34,7 @@ module.exports=function registerTravel(app,db,authenticate){
   }));res.json({success:true,members,media,can_assign:scope.owner,hasMore:rows.length>50,nextOffset:offset+50});
  }));
  app.post('/trips/:id/travel',run(async(req,res,user,scope)=>{
-  const kind=req.body.kind,title=String(req.body.title||'').trim();if(!['stay','flight'].includes(kind)||title.length>100)deny(400,'Choose Airbnb / stay or a flight and use a title under 100 characters.');
+  const kind=req.body.kind,title=String(req.body.title||'').trim();if(!['stay','flight','vehicle'].includes(kind)||title.length>100)deny(400,'Choose Airbnb / stay, Flight or Vehicle and use a title under 100 characters.');
   let person=null;
   if(kind==='flight'){
    person=req.body.person_id||user.id;
