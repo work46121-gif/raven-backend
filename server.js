@@ -4366,7 +4366,7 @@ app.get('/trip/:tripId', async (req, res) => {
   }
 
   const coverHTML = trip.cover_image
-    ? `<div style="max-width:800px;margin:0 auto;padding:16px 20px 0"><div style="position:relative;width:100%;height:190px;border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,0.07)"><img src="${baseUrl}/trip/${tripId}/cover-image" id="cover-img" style="width:100%;height:100%;object-fit:cover"><button id="cover-change-btn" style="position:absolute;bottom:10px;right:10px;padding:7px 14px;background:rgba(0,0,0,0.7);border:1px solid rgba(255,255,255,0.2);border-radius:8px;color:#fff;font-family:'Epilogue',sans-serif;font-size:12px;font-weight:600;cursor:pointer">Change</button><input id="cover-upload" type="file" accept="image/*" style="display:none"></div></div>`
+    ? `<div style="max-width:800px;margin:0 auto;padding:16px 20px 0"><div style="position:relative;width:100%;height:190px;border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,0.07)"><img src="${baseUrl}/trip/${tripId}/cover-image?v=${crypto.createHash('sha256').update(trip.cover_image).digest('hex').slice(0,16)}" id="cover-img" style="width:100%;height:100%;object-fit:cover"><button id="cover-change-btn" style="position:absolute;bottom:10px;right:10px;padding:7px 14px;background:rgba(0,0,0,0.7);border:1px solid rgba(255,255,255,0.2);border-radius:8px;color:#fff;font-family:'Epilogue',sans-serif;font-size:12px;font-weight:600;cursor:pointer">Change</button><input id="cover-upload" type="file" accept="image/*" style="display:none"></div></div>`
     : `<div style="max-width:800px;margin:16px auto 0;padding:0 20px"><div id="cover-empty" style="width:100%;height:100px;border:2px dashed rgba(124,58,237,0.3);border-radius:16px;display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;background:rgba(124,58,237,0.03)"><span style="font-size:13px;color:#6E6B80;font-weight:500">${coverEmptyLabel}</span></div><input id="cover-upload" type="file" accept="image/*" style="display:none"></div>`;
 
   const visiblePeople = people.slice(0, 5);
@@ -7076,10 +7076,9 @@ document.getElementById('close-receipt-btn').addEventListener('click', () => { d
         c.getContext('2d').drawImage(img,(tw-w)/2,(th-h)/2,w,h);
         const resized = c.toDataURL('image/jpeg',0.88);
         const existing = document.getElementById('cover-img');
-        if (existing) existing.src = resized;
         toast('Saving cover...');
         fetch(BACKEND+'/trip/'+TRIP_ID+'/cover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,image:resized.split(',')[1]})})
-          .then(r=>r.json()).then(d=>{ if(d.success){toast(' Cover saved!');reloadPage(1200);}else toast(d.error||'Error',false); })
+          .then(r=>r.json()).then(d=>{ if(d.success){if(existing)existing.src=resized;toast('Cover saved!');reloadPage(1200);}else toast(d.error||'Cover could not be saved. Please retry.',false); })
           .catch(()=>toast('Network error',false));
       };
       img.src = e.target.result;
@@ -9152,7 +9151,8 @@ app.post('/trip/:tripId/cover', async (req, res) => {
     const { data: trip } = await supabase.from('trips').select('share_token').eq('id', tripId).single();
     if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
     if (!image) return res.json({ success: false, error: 'No image' });
-    await supabase.from('trips').update({ cover_image: image }).eq('id', tripId);
+    const { data: saved, error } = await supabase.from('trips').update({ cover_image: image }).eq('id', tripId).eq('share_token', token).select('cover_image').single();
+    if (error || saved?.cover_image !== image) return res.status(500).json({ success: false, error: 'Cover could not be saved. Please retry.' });
     res.json({ success: true });
   } catch(err) { res.json({ success: false, error: err.message }); }
 });
@@ -9591,7 +9591,7 @@ app.get('/trip/:tripId/cover-image', async (req, res) => {
     if (!trip || !trip.cover_image) return res.status(404).send('No cover image');
     const buf = Buffer.from(trip.cover_image, 'base64');
     res.set('Content-Type', 'image/jpeg');
-    res.set('Cache-Control', 'public, max-age=3600');
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.send(buf);
   } catch(err) { res.status(500).send('Error'); }
 });
