@@ -3204,7 +3204,7 @@ function renderState(d) {
           return '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;background:' + (isYou?'rgba(48,209,88,0.18)':'rgba(255,255,255,0.08)') + ';border:1px solid ' + (isYou?'rgba(48,209,88,0.4)':'rgba(255,255,255,0.12)') + ';border-radius:20px;font-size:10px;font-weight:700;color:' + (isYou?'#30D158':'#9896A8') + '">' + c + (isPayer ? ' (Paid)' : '') + '</span>';
         }).join('');
         claimersEl.innerHTML = nameHtml + (isSplit ? ' <span style="font-size:10px;color:#FF9A3C;font-weight:600;margin-left:2px">' + claimers.length + '-way split</span>' : '');
-        if(isSplit){const adjust=document.createElement('button');adjust.textContent='Adjust quantities';adjust.style.cssText='display:block;margin-top:7px;padding:5px 9px;border:1px solid #7c3aed55;border-radius:8px;background:#7c3aed18;color:#cba5ee;font:inherit;font-size:11px';adjust.onclick=event=>{event.stopPropagation();RavenQuantities.edit(item,claimers,async quantity_split=>{const response=await fetch('/bill/'+BID+'/items/'+item.id+'/quantities',{method:'POST',headers:{'Content-Type':'application/json','x-raven-bill-token':BILL_TOKEN},body:JSON.stringify({quantity_split})});const result=await response.json();if(!result.success)throw Error(result.error);await refreshAll()})};claimersEl.append(adjust)}
+        if(isSplit){const adjust=document.createElement('button');adjust.type='button';adjust.dataset.itemControl='quantity';adjust.textContent='Adjust quantities';adjust.style.cssText='display:block;margin-top:7px;padding:5px 9px;border:1px solid #7c3aed55;border-radius:8px;background:#7c3aed18;color:#cba5ee;font:inherit;font-size:11px;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent';adjust.onclick=event=>{event.stopPropagation();RavenQuantities.edit(item,claimers,async quantity_split=>{const response=await fetch('/bill/'+BID+'/items/'+item.id+'/quantities',{method:'POST',headers:{'Content-Type':'application/json','x-raven-bill-token':BILL_TOKEN},body:JSON.stringify({quantity_split})});const result=await response.json();if(!result.success)throw Error(result.error);await refreshAll()})};claimersEl.append(adjust)}
       }
     }
   });
@@ -3742,6 +3742,7 @@ document.getElementById('bill-comment-gif-search')?.addEventListener('input', fu
   let _lastClaimTime = 0;
   let _touchStartY = 0;
   let _didTouch = false;
+  const isItemControl = target => !!target.closest?.('button,input,select,textarea,a,[data-item-control]');
 
   function fireClaim(itemId, itemName) {
     if (!itemsEditMode) { toast('Tap Edit to change your items', false); return; }
@@ -3753,11 +3754,13 @@ document.getElementById('bill-comment-gif-search')?.addEventListener('input', fu
 
   // Touch: primary handler on mobile
   container.addEventListener('touchstart', function(e) {
+    if (isItemControl(e.target)) return;
     _touchStartY = e.touches[0].clientY;
     _didTouch = true;
   }, { passive: true });
 
   container.addEventListener('touchend', function(e) {
+    if (isItemControl(e.target)) return;
     const touch = e.changedTouches[0];
     if (Math.abs(touch.clientY - _touchStartY) > 12) return; // scrolling â€” ignore
     const row = e.target.closest('[data-item-id]');
@@ -3770,6 +3773,7 @@ document.getElementById('bill-comment-gif-search')?.addEventListener('input', fu
 
   // Click: desktop only (skipped if touch already handled it)
   container.addEventListener('click', function(e) {
+    if (isItemControl(e.target)) return;
     if (_didTouch) { _didTouch = false; return; } // mobile already handled via touchend
     const row = e.target.closest('[data-item-id]');
     if (!row) return;
@@ -5777,7 +5781,7 @@ function applyAvatarToMatchingElements(name, avatarUrl) {
     const nameProfile = resolveTripProfile(name);
     const sameProfile = targetProfile && nameProfile && tripProfileAliases(targetProfile, target).some(alias => tripProfileAliases(nameProfile, name).includes(alias));
     if (sameProfile || normalizeTripAlias(target) === normalizeTripAlias(name)) {
-      if(!/^(https:\/\/|data:image\/(?:png|jpe?g|webp|gif);base64,)/i.test(avatarUrl))return;
+      const validAvatar=typeof avatarUrl==='string'&&(avatarUrl.indexOf('https:')===0||avatarUrl.indexOf('data:image/png;base64,')===0||avatarUrl.indexOf('data:image/jpeg;base64,')===0||avatarUrl.indexOf('data:image/webp;base64,')===0||avatarUrl.indexOf('data:image/gif;base64,')===0);if(!validAvatar)return;
       const img=document.createElement('img');img.src=avatarUrl;img.alt='';img.style.cssText='width:100%;height:100%;object-fit:cover;border-radius:50%';img.onerror=()=>{img.remove();el.textContent=target.charAt(0).toUpperCase()};el.replaceChildren(img);
     }
   });
@@ -7268,7 +7272,7 @@ function renderItems() {
     });
     d.appendChild(row); d.appendChild(btns); container.appendChild(d);
     const sharing=item.assignees.length?item.assignees:PEOPLE;
-    if(sharing.length>1){const adjust=document.createElement('button');adjust.textContent='Adjust quantities';adjust.style.cssText='margin-top:10px;background:#7c3aed18;color:#cba5ee;border:1px solid #7c3aed55;border-radius:8px;padding:7px 10px;font:inherit;font-size:12px';adjust.onclick=()=>RavenQuantities.edit(item,sharing,async q=>{item.quantity_split=q;renderItems()});d.append(adjust);if(RavenQuantities.valid(item,sharing)){const detail=document.createElement('p');detail.textContent=sharing.map(p=>p+': '+RavenQuantities.label(item,sharing,p)).join(' · ');detail.style.cssText='font-size:12px;color:#9896a8';d.append(detail)}}
+    if(sharing.length>1){const adjust=document.createElement('button');adjust.type='button';adjust.dataset.itemControl='quantity';adjust.textContent='Adjust quantities';adjust.style.cssText='margin-top:10px;background:#7c3aed18;color:#cba5ee;border:1px solid #7c3aed55;border-radius:8px;padding:7px 10px;font:inherit;font-size:12px;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent';adjust.onclick=()=>RavenQuantities.edit(item,sharing,async q=>{item.quantity_split=q;renderItems()});d.append(adjust);if(RavenQuantities.valid(item,sharing)){const detail=document.createElement('p');detail.textContent=sharing.map(p=>p+': '+RavenQuantities.label(item,sharing,p)).join(' · ');detail.style.cssText='font-size:12px;color:#9896a8';d.append(detail)}}
   });
   updateItemizedSummary();
 }
