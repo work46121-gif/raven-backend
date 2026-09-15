@@ -8138,14 +8138,13 @@ async function sendChat() {
 
   if (!message && !gifUrl && !photoData) return;
 
-  input.value = ''; input.style.height = 'auto';
-  clearChatGif();
-  clearChatPhoto();
+
 
   if (tripChatMode === 'ravenbot') {
     const ravenbotText = message || '[attachment]';
     const aiOk = await requestRavenAiConsent();
     if (!aiOk) { if (typeof toast === 'function') toast('RAVENbot needs AI permission to reply', false); return; }
+    input.value='';clearChatGif();clearChatPhoto();
     appendRavenbotMessage({ role: 'user', text: ravenbotText, created_at: new Date().toISOString() }, true);
     const c = document.getElementById('chat-msgs');
     if (c) c.scrollTop = c.scrollHeight;
@@ -8161,10 +8160,14 @@ async function sendChat() {
     if (liveProfile?.avatar_url && !avatarUrl) window._ravenAvatarUrl = liveProfile.avatar_url;
   } catch(e) {}
 
+  if(window._tripSending)return;window._tripSending=true;
   try {
-    const resp = await fetch(BACKEND + '/trip/' + TRIP_ID + '/message', {
+    let sendToken=session?.access_token||'';
+    try{sendToken=sessionStorage.getItem('raven_trip_access_'+TRIP_ID)||sendToken}catch(e){}
+    if(!sendToken)throw Error('Reconnect from your Raven dashboard to send a message.');
+    const resp = await fetch(BACKEND + '/trips/' + TRIP_ID + '/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization:'Bearer '+sendToken },
       body: JSON.stringify({
         token: TRIP_TOKEN,
         user_id: window._ravenUserId || null,
@@ -8177,6 +8180,9 @@ async function sendChat() {
     });
     const payload = await resp.json();
     if (!payload.success) throw new Error(payload.error || 'Could not send');
+    if(input.value.trim()===message){input.value='';input.style.height='auto'}
+    if(chatGifUrl===gifUrl)clearChatGif();
+    if(window._chatPhotoData===photoData)clearChatPhoto();
     appendMsg(payload.message || {
       id: 'local-' + Date.now(),
       user_id: window._ravenUserId || '',
@@ -8188,9 +8194,9 @@ async function sendChat() {
       created_at: new Date().toISOString()
     }, true);
   } catch(e) {
-    toast('Could not send message', false);
-    input.value = message;
-  }
+    toast(e.message || 'Could not send message. Please retry.', false);
+
+  } finally {window._tripSending=false;}
 }
 
 function openChatPhotoLightbox(src) {

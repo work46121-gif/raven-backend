@@ -17,8 +17,19 @@ module.exports=function registerTravel(app,db,authenticate){
   if(!email||!allowed.includes(email))deny(403,'Only linked trip members can access travel plans. Ask the organizer to add your Raven account to the trip.');
   return {trip,owner:email===owner,allowed};
  }
- const run=fn=>async(req,res)=>{try{const user=fromPass(req)||await authenticate(req);if(!user)deny(401,'Open this trip from your Raven dashboard to reconnect securely.');res.set('Cache-Control','private, no-store');const scope=await access(req.params.id,user);await fn(req,res,user,scope)}catch(e){res.status(e.status||503).json({success:false,error:e.status?e.message:'Travel uploads are not ready. Ask the owner to run the travel-storage setup, or retry later.'})}};
+ const run=fn=>async(req,res)=>{try{const user=fromPass(req)||await authenticate(req);if(!user)deny(401,'Open this trip from your Raven dashboard to reconnect securely.');res.set('Cache-Control','private, no-store');const scope=await access(req.params.id,user);await fn(req,res,user,scope)}catch(e){res.status(e.status||503).json({success:false,error:e.status?e.message:(req.body?.message||req.body?.gif_url||req.body?.photo_url)?'Could not send your message. Please retry.':'Travel uploads are not ready. Ask the owner to run the travel-storage setup, or retry later.'})}};
  app.post('/trips/:id/travel-pass',async(req,res)=>{try{const user=await authenticate(req);if(!user)deny(401,'Sign in required.');await access(req.params.id,user);const data=Buffer.from(JSON.stringify({trip:req.params.id,user:{id:user.id,email:user.email},exp:Date.now()+2*60*60*1000})).toString('base64url');res.set('Cache-Control','private, no-store');res.json({success:true,pass:data+'.'+sign(data)})}catch(e){res.status(e.status||503).json({success:false,error:e.status?e.message:'Could not connect travel plans.'})}});
+ app.post('/trips/:id/messages',run(async(req,res,user,scope)=>{
+  const message=String(req.body.message||'').trim(),gif=req.body.gif_url||null,photo=req.body.photo_url||null;
+  if(!message&&!gif&&!photo)deny(400,'Write a message or select a GIF/photo.');
+  if(message.length>10000)deny(400,'Message is too long.');
+  if(gif&&(typeof gif!=='string'||gif.length>2048||!/^https:\/\//i.test(gif)))deny(400,'Choose a valid GIF.');
+  if(photo)photoBytes(photo);
+  const profile=await result(db.from('profiles').select('first_name,avatar_url').eq('id',user.id).maybeSingle());
+  const row={trip_id:scope.trip.id,user_id:user.id,sender_name:profile?.first_name||'Member',avatar_url:profile?.avatar_url||null,message,gif_url:gif,photo_url:photo,created_at:new Date().toISOString()};
+  const inserted=await result(db.from('trip_messages').insert(row).select('*').single());
+  res.status(201).json({success:true,message:inserted});
+ }));
  app.get('/trips/:id/friend-status',run(async(req,res,user,scope)=>{
   const rid=String(req.query.raven_id||'').trim().replace(/^@/,'').toLowerCase();
   if(!/^[a-z0-9_]{1,64}$/.test(rid))deny(400,'Invalid Raven ID.');
