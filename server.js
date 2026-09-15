@@ -4623,12 +4623,12 @@ app.get('/trip/:tripId', async (req, res) => {
       : '';
 
     // data-is-settled used for accurate settled count
-    return `<div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)" id="row-${personId}" data-is-settled="${effectiveIsSettled?'1':'0'}" data-is-debtor="${effectiveAmtOwed>0.02?'1':'0'}">
+    return `<div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)" id="row-${personId}" data-trip-member-row="1" data-trip-person="${esc(p)}" data-is-settled="${effectiveIsSettled?'1':'0'}" data-is-debtor="${effectiveAmtOwed>0.02?'1':'0'}">
       <div style="display:flex;align-items:center;justify-content:space-between;${(payerEntries.length>0&&!isSettled)?'margin-bottom:4px':''}">
         <div style="display:flex;align-items:center;gap:10px;cursor:pointer" data-open-profile="${esc(p)}" title="View ${esc(displayName)}'s profile">
           <div data-person-avatar="${esc(p)}" style="width:34px;height:34px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;overflow:hidden">${profile?.avatar_url ? `<img src="${esc(profile.avatar_url)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : esc(displayName[0].toUpperCase())}</div>
           <div>
-            <div style="font-weight:600;font-size:14px;display:flex;align-items:center;gap:6px">${esc(displayName)} <span style="font-size:11px;color:#6E6B80;font-weight:400">&gt;</span></div>
+            <div data-trip-member-name="1" style="font-weight:600;font-size:14px;display:flex;align-items:center;gap:6px">${esc(displayName)} <span data-trip-member-you="1" style="display:none;font-size:11px;color:#30D158;font-weight:700">(you)</span><span style="font-size:11px;color:#6E6B80;font-weight:400">&gt;</span></div>
             <div class="person-status-display" style="font-size:11px;color:${effectiveIsSettled?'#30D158':effectiveAmtOwed>0?'#FF9A3C':effectiveIsCreditor?'#A855F7':'#30D158'}">
               ${effectiveIsSettled ? 'all settled' : effectiveAmtOwed>0 ? (effectiveIsPartiallySettled ? 'still owes $' + effectiveAmtOwed.toFixed(2) : 'owes $' + effectiveAmtOwed.toFixed(2)) : effectiveIsCreditor ? 'collecting $' + amtReceivable.toFixed(2) : 'all settled'}
             </div>
@@ -5007,6 +5007,10 @@ ${coverHTML}
 
 <div class="sec" style="margin-top:20px">
   <div class="sec-lbl">${owesHeading}${tripUsesSimpleSplit ? ` <button type="button" onclick="document.getElementById(\'sweep-info\').showModal()" aria-label="What is RAVENSWEEP?" style="display:inline-flex;align-items:center;gap:5px;margin-left:8px;padding:4px 8px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:999px;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#30D158;vertical-align:middle">RAVEN Sweep ⓘ</button>` : ''}</div>
+  <div id="trip-viewer-identity" aria-live="polite" style="display:none;align-items:center;gap:7px;width:max-content;max-width:100%;margin:-1px 0 10px;padding:7px 10px;border:1px solid rgba(48,209,88,0.24);border-radius:10px;background:rgba(48,209,88,0.07);color:#A6E8B9;font-size:11px;font-weight:700">
+    <span aria-hidden="true" style="width:7px;height:7px;border-radius:50%;background:#30D158;box-shadow:0 0 10px rgba(48,209,88,0.85);flex-shrink:0"></span>
+    <span>Viewing as <strong id="trip-viewer-identity-name" style="color:#30D158"></strong></span>
+  </div>
   <div class="card">
     ${owesRows}
     <div id="outstanding-footer" data-total-spend="${totalSpend.toFixed(2)}" style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:${grandTotal>0?'rgba(255,107,53,0.04)':'rgba(48,209,88,0.04)'};border-top:1px solid ${grandTotal>0?'rgba(255,107,53,0.15)':'rgba(48,209,88,0.12)'}">
@@ -5802,6 +5806,7 @@ function applyNameAndAvatar(firstName, avatarUrl) {
       }
     });
   }
+  try { if (typeof scheduleTripViewerIdentityFocus === 'function') scheduleTripViewerIdentityFocus(); } catch(e) {}
 }
 
 // Fetch and apply profile pictures for ALL trip members
@@ -5890,6 +5895,7 @@ async function applyAllMemberAvatars() {
         [lp.first_name, lp.raven_id, lp.username, lp.email].forEach(alias => applyAvatarToMatchingElements(alias, lp.avatar_url));
       }
     } catch(e) {}
+    try { if (typeof scheduleTripViewerIdentityFocus === 'function') scheduleTripViewerIdentityFocus(); } catch(e) {}
   } catch(e) { /* best effort */ }
 }
 
@@ -5925,7 +5931,7 @@ async function applyAllMemberAvatars() {
             const p = profiles[0];
             const fn = p.first_name || firstName;
             const av = p.avatar_url || '';
-            localStorage.setItem('raven_profile', JSON.stringify({ ...local, first_name: fn, avatar_url: av, user_id: userId }));
+            localStorage.setItem('raven_profile', JSON.stringify({ ...local, first_name: fn, avatar_url: av, user_id: userId, raven_id: p.raven_id || local.raven_id || '', username: p.username || p.raven_id || local.username || '', email: p.email || local.email || '' }));
             applyNameAndAvatar(fn, av);
           }
         }
@@ -6810,6 +6816,89 @@ if (typeof getTripProfileDisplayName !== 'function') {
     return '';
   }
 }
+
+function normalizeTripViewerIdentity(value) {
+  return String(value || '').trim().replace(/^@/, '').toLowerCase();
+}
+
+function getTripViewerProfile() {
+  let local = {};
+  try { local = JSON.parse(localStorage.getItem('raven_profile') || '{}') || {}; } catch(e) {}
+  if (!Object.keys(local).length) {
+    try { local = JSON.parse(sessionStorage.getItem('raven_profile') || '{}') || {}; } catch(e) {}
+  }
+  return local;
+}
+
+function getTripViewerAliases(profile) {
+  return [...new Set([
+    profile?.user_id, profile?.id, profile?.email, profile?.raven_id,
+    profile?.username, profile?.first_name, profile?.display_name
+  ].map(normalizeTripViewerIdentity).filter(Boolean))];
+}
+
+function tripViewerMatchesMember(profile, memberName) {
+  const viewerAliases = getTripViewerAliases(profile);
+  if (!viewerAliases.length) return false;
+  const memberProfile = typeof resolveTripProfile === 'function' ? resolveTripProfile(memberName) : null;
+  const memberAliases = [...new Set([
+    memberName, memberProfile?.id, memberProfile?.user_id, memberProfile?.email,
+    memberProfile?.raven_id, memberProfile?.username, memberProfile?.first_name,
+    memberProfile?.display_name
+  ].map(normalizeTripViewerIdentity).filter(Boolean))];
+  if (!memberAliases.length) return false;
+
+  // A stable account identifier wins. First-name matching is only the fallback
+  // for older trips that stored a display name before member accounts were linked.
+  const viewerAccountAliases = [profile?.user_id, profile?.id, profile?.email, profile?.raven_id, profile?.username]
+    .map(normalizeTripViewerIdentity).filter(Boolean);
+  const memberAccountAliases = [memberProfile?.id, memberProfile?.user_id, memberProfile?.email, memberProfile?.raven_id, memberProfile?.username]
+    .map(normalizeTripViewerIdentity).filter(Boolean);
+  if (viewerAccountAliases.some(alias => memberAccountAliases.includes(alias))) return true;
+
+  const viewerName = normalizeTripViewerIdentity(profile?.first_name || profile?.display_name);
+  return !!viewerName && memberAliases.includes(viewerName);
+}
+
+function ensureTripViewerFocusStyles() {
+  if (document.getElementById('trip-viewer-focus-styles')) return;
+  const style = document.createElement('style');
+  style.id = 'trip-viewer-focus-styles';
+  style.textContent = '[data-trip-member-row].raven-current-trip-member{background:linear-gradient(90deg,rgba(48,209,88,.14),rgba(48,209,88,.045) 62%,transparent)!important;box-shadow:inset 4px 0 0 #30D158,inset 0 1px 0 rgba(48,209,88,.17),inset 0 -1px 0 rgba(48,209,88,.09)}[data-trip-member-row].raven-current-trip-member [data-trip-member-name]{color:#30D158!important;font-weight:800!important;text-shadow:0 0 16px rgba(48,209,88,.25)}[data-trip-member-row].raven-current-trip-member [data-trip-member-you]{display:inline!important}[data-trip-member-row].raven-current-trip-member [data-person-avatar]{outline:2px solid #30D158;outline-offset:2px;box-shadow:0 0 16px rgba(48,209,88,.28)}';
+  document.head.append(style);
+}
+
+function syncTripViewerIdentity() {
+  const profile = getTripViewerProfile();
+  const viewerLabel = String(profile.first_name || profile.display_name || profile.raven_id || profile.username || (profile.email || '').split('@')[0] || '').trim();
+  const rows = Array.from(document.querySelectorAll('[data-trip-member-row][data-trip-person]'));
+  if (!viewerLabel || !rows.length) return;
+  ensureTripViewerFocusStyles();
+  let matched = false;
+  rows.forEach(row => {
+    const isViewer = tripViewerMatchesMember(profile, row.getAttribute('data-trip-person') || '');
+    row.classList.toggle('raven-current-trip-member', isViewer);
+    if (isViewer) {
+      row.setAttribute('aria-current', 'true');
+      matched = true;
+    } else {
+      row.removeAttribute('aria-current');
+    }
+  });
+  const identity = document.getElementById('trip-viewer-identity');
+  const identityName = document.getElementById('trip-viewer-identity-name');
+  if (identity) identity.style.display = matched ? 'inline-flex' : 'none';
+  if (identityName && matched) identityName.textContent = viewerLabel;
+}
+
+let tripViewerFocusTimer = null;
+function scheduleTripViewerIdentityFocus() {
+  clearTimeout(tripViewerFocusTimer);
+  tripViewerFocusTimer = setTimeout(syncTripViewerIdentity, 0);
+}
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', scheduleTripViewerIdentityFocus, { once: true });
+else scheduleTripViewerIdentityFocus();
 
 async function tripFriendSessionInfo() {
   let currentUserId = '';
