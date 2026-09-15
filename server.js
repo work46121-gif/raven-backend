@@ -1669,6 +1669,18 @@ app.post('/bill/:billId/rename', async (req, res) => {
   } catch(e) { res.json({ success: false, error: e.message }); }
 });
 
+const RavenQuantities=require('./raven-quantities');
+app.post('/bill/:billId/items/:itemId/quantities',async(req,res)=>{
+ try{const {billId,itemId}=req.params;const {data:bill,error:billError}=await supabase.from('bills').select('share_token,status').eq('id',billId).single();
+ if(billError||!bill||bill.status==='deleted'||!bill.share_token||req.headers['x-raven-bill-token']!==bill.share_token)return res.status(403).json({success:false,error:'Open the editable bill link to adjust quantities.'});
+ const {data:selections,error}=await supabase.from('item_selections').select('participant_name').eq('bill_id',billId).eq('item_id',itemId);if(error)throw error;
+ const names=[...new Set((selections||[]).map(s=>billParticipantKey(s.participant_name)))];
+ const quantity_split=req.body.quantity_split;if(names.length<2||!RavenQuantities.valid({quantity_split},names))return res.status(400).json({success:false,error:'The people sharing this item changed, or quantities do not add up. Refresh and try again.'});
+ const updated=await supabase.from('receipt_items').update({quantity_split}).eq('bill_id',billId).eq('id',itemId).select('id');if(updated.error)throw updated.error;if(!updated.data?.length)throw Error('Item not found.');
+ const reset=await supabase.from('participants').update({paid:false,paid_at:null,payment_method:null}).eq('bill_id',billId).in('name',(selections||[]).map(s=>s.participant_name));if(reset.error)throw reset.error;
+ await recalcBillAmounts(billId);res.json({success:true});
+ }catch(e){res.status(503).json({success:false,error:'Could not save quantities. Check that the item-quantities SQL setup has been run, then retry.'})}
+});
 // Helper: recalculate each participant's amount from item_selections
 async function recalcBillAmounts(billId) {
   try {
@@ -1712,7 +1724,7 @@ async function recalcBillAmounts(billId) {
         items.forEach(item => {
           const claimers = itemClaimers[String(item.id)] || [];
           if (claimers.includes(pLower)) {
-            itemsTotal += parseFloat(item.price || 0) / claimers.length;
+            itemsTotal += RavenQuantities.share(item,claimers,pLower);
           }
         });
       } else {
@@ -1870,7 +1882,7 @@ app.get('/bill/:billId', async (req, res) => {
       claimers.forEach(claimer => {
         const key = billParticipantKey(claimer);
         if (participantItems[key] !== undefined) {
-          participantItems[key].push({ name: item.name, price: parseFloat(item.price), splitWith: claimers.length });
+          participantItems[key].push({ name: item.name, price: RavenQuantities.share(item,claimers,claimer), splitWith: 1, quantityLabel:RavenQuantities.label(item,claimers,claimer) });
         }
       });
     });
@@ -1899,7 +1911,7 @@ app.get('/bill/:billId', async (req, res) => {
 
     let rows = myItems.map(i => {
       const share = (i.price / i.splitWith).toFixed(2);
-      const split = i.splitWith > 1 ? ` <span style="color:#9896A8;font-size:10px">(Ã·${i.splitWith})</span>` : '';
+      const split = i.quantityLabel ? ' ('+i.quantityLabel+')' : i.splitWith > 1 ? ` <span style="color:#9896A8;font-size:10px">(Ã·${i.splitWith})</span>` : '';
       return `<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6E6B80">${i.name}${split}</span><span style="font-size:11px;color:#9896A8;font-family:monospace">$${share}</span></div>`;
     }).join('');
 
@@ -2615,6 +2627,7 @@ ${bill.receipt_image ? `
 <input type="hidden" id="paid-by-name" value="${bill.paid_by ? bill.paid_by.replace(/"/g,'&quot;') : ''}">
 <script>
 const BID = ${JSON.stringify(billId)};
+${require('fs').readFileSync(require.resolve('./raven-quantities.js'),'utf8')}
 const BILL_TOKEN = ${JSON.stringify(bill.share_token || '')};
 const BILL_URL = ${JSON.stringify(billUrl)};
 const BILL_NAME = ${JSON.stringify(bill.name || 'this bill')};
@@ -3191,6 +3204,7 @@ function renderState(d) {
           return '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;background:' + (isYou?'rgba(48,209,88,0.18)':'rgba(255,255,255,0.08)') + ';border:1px solid ' + (isYou?'rgba(48,209,88,0.4)':'rgba(255,255,255,0.12)') + ';border-radius:20px;font-size:10px;font-weight:700;color:' + (isYou?'#30D158':'#9896A8') + '">' + c + (isPayer ? ' (Paid)' : '') + '</span>';
         }).join('');
         claimersEl.innerHTML = nameHtml + (isSplit ? ' <span style="font-size:10px;color:#FF9A3C;font-weight:600;margin-left:2px">' + claimers.length + '-way split</span>' : '');
+        if(isSplit){const adjust=document.createElement('button');adjust.textContent='Adjust quantities';adjust.style.cssText='display:block;margin-top:7px;padding:5px 9px;border:1px solid #7c3aed55;border-radius:8px;background:#7c3aed18;color:#cba5ee;font:inherit;font-size:11px';adjust.onclick=event=>{event.stopPropagation();RavenQuantities.edit(item,claimers,async quantity_split=>{const response=await fetch('/bill/'+BID+'/items/'+item.id+'/quantities',{method:'POST',headers:{'Content-Type':'application/json','x-raven-bill-token':BILL_TOKEN},body:JSON.stringify({quantity_split})});const result=await response.json();if(!result.success)throw Error(result.error);await refreshAll()})};claimersEl.append(adjust)}
       }
     }
   });
@@ -3218,7 +3232,7 @@ function renderState(d) {
         items.forEach(item => {
           const claimers = selMap[String(item.id)] || [];
           if (claimers.some(c => c.toLowerCase() === p.name.toLowerCase())) {
-            myItems.push({ name: item.name, price: parseFloat(item.price||0), splitWith: claimers.length });
+            myItems.push({ name: item.name, price: RavenQuantities.share(item,claimers,p.name), splitWith: 1, quantityLabel:RavenQuantities.label(item,claimers,p.name) });
           }
         });
         const anySelections = Object.values(selMap).some(c => c.length > 0);
@@ -3237,7 +3251,7 @@ function renderState(d) {
           breakdown = '<div style="margin-top:10px;background:rgba(255,255,255,0.03);border-radius:10px;padding:10px 12px">'
             + myItems.map(i => {
                 const share = (i.price / i.splitWith).toFixed(2);
-                const sp = i.splitWith > 1 ? ' <span style="color:#FF9A3C;font-size:10px;font-weight:600">' + i.splitWith + '-way</span>' : '';
+                const sp = i.quantityLabel ? ' ('+i.quantityLabel+')' : i.splitWith > 1 ? ' <span style="color:#FF9A3C;font-size:10px;font-weight:600">' + i.splitWith + '-way</span>' : '';
                 return '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0"><span style="font-size:12px;color:#9896A8">' + i.name + sp + '</span><span style="font-size:12px;color:#9896A8;font-family:monospace">$' + share + '</span></div>';
               }).join('')
             + (myTax > 0 ? '<div style="display:flex;justify-content:space-between;padding:3px 0;border-top:1px solid rgba(255,255,255,0.06);margin-top:4px"><span style="font-size:11px;color:#6E6B80">Tax <span style="color:#4E4B5A">(' + (tax > 0 ? (myTax / tax * 100).toFixed(1) : '0.0') + '% of total tax)</span></span><span style="font-size:11px;color:#6E6B80;font-family:monospace">$' + myTax.toFixed(2) + '</span></div>' : '')
@@ -3285,7 +3299,7 @@ function renderState(d) {
       const myBarItems = [];
       items.forEach(item => {
         const cl = selMap[String(item.id)] || [];
-        if (cl.some(c => c.toLowerCase() === myName.toLowerCase())) myBarItems.push({ price: parseFloat(item.price||0), splitWith: cl.length });
+        if (cl.some(c => c.toLowerCase() === myName.toLowerCase())) myBarItems.push({ price: RavenQuantities.share(item,cl,myName), splitWith: 1 });
       });
       const myBarTotal = myBarItems.reduce((s,i) => s + i.price/i.splitWith, 0);
       const barProportion = billSubtotal > 0 && myBarTotal > 0 ? myBarTotal/billSubtotal : 0;
@@ -4613,7 +4627,7 @@ app.get('/trip/:tripId', async (req, res) => {
     // Split pills (collapsed view)  only non-payers
     const splitPillsHtml = splitEntries.map(([p,a]) =>
       `<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:rgba(255,255,255,0.05);border-radius:20px;font-size:12px;color:#9896A8">
-        <span style="width:18px;height:18px;border-radius:50%;background:${avatarColorMap[people.indexOf(p) % avatarColorMap.length] || '#6E6B80'};display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0">${esc(p[0].toUpperCase())}</span>
+        <span data-person-avatar="${esc(p)}" style="width:18px;height:18px;border-radius:50%;background:${avatarColorMap[people.indexOf(p) % avatarColorMap.length] || '#6E6B80'};display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0">${esc(p[0].toUpperCase())}</span>
         ${esc(getMemberDisplayName(p))} <b style="color:#F0EEF8;font-family:monospace">$${parseFloat(a).toFixed(2)}</b>
       </span>`
     ).join('');
@@ -4636,7 +4650,7 @@ app.get('/trip/:tripId', async (req, res) => {
           ${items.map((item,i) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:${i<items.length-1?'1px solid rgba(255,255,255,0.05)':'none'}">
             <span style="font-size:13px;color:#E0DEF0">${esc(item.name||'Item')}</span>
             <div style="display:flex;align-items:center;gap:8px">
-              ${item.assignees&&item.assignees.length>0?`<span style="font-size:11px;color:#6E6B80">${item.assignees.map(a=>esc(a)).join(', ')}</span>`:''}
+              ${item.assignees&&item.assignees.length>0?`<span style="font-size:11px;color:#6E6B80">${item.assignees.map(a=>esc(a)+(RavenQuantities.label(item,item.assignees,a)?' ('+RavenQuantities.label(item,item.assignees,a)+')':'')).join(', ')}</span>`:''}
               <span style="font-family:monospace;font-size:13px;color:#9896A8">$${parseFloat(item.price||0).toFixed(2)}</span>
             </div>
           </div>`).join('')}
@@ -4947,7 +4961,7 @@ ${coverHTML}
 </div>
 
 <div class="sec" style="margin-top:20px">
-  <div class="sec-lbl">${owesHeading}${tripUsesSimpleSplit ? ` <span style="display:inline-flex;align-items:center;gap:5px;margin-left:8px;padding:4px 8px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:999px;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#30D158;vertical-align:middle">RAVEN Sweep</span>` : ''}</div>
+  <div class="sec-lbl">${owesHeading}${tripUsesSimpleSplit ? ` <button type="button" onclick="document.getElementById(\'sweep-info\').showModal()" aria-label="What is RAVENSWEEP?" style="display:inline-flex;align-items:center;gap:5px;margin-left:8px;padding:4px 8px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:999px;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#30D158;vertical-align:middle">RAVEN Sweep ⓘ</button>` : ''}</div>
   <div class="card">
     ${owesRows}
     <div id="outstanding-footer" data-total-spend="${totalSpend.toFixed(2)}" style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:${grandTotal>0?'rgba(255,107,53,0.04)':'rgba(48,209,88,0.04)'};border-top:1px solid ${grandTotal>0?'rgba(255,107,53,0.15)':'rgba(48,209,88,0.12)'}">
@@ -5214,7 +5228,9 @@ ${coverHTML}
 //  Read all data from JSON  no user content ever touches JS source code 
 const D = JSON.parse(document.getElementById('page-data').textContent);
 const TRIP_ID    = D.tripId;
+${require('fs').readFileSync(require.resolve('./raven-quantities.js'),'utf8')}
 const TRIP_TOKEN = D.shareToken;
+${require('fs').readFileSync(require.resolve('./raven-unsend.js'),'utf8')}
 const BACKEND    = D.backendUrl;
 const TRIP_URL   = D.tripUrl;
 const INVITE_URL = D.inviteUrl;
@@ -5386,16 +5402,25 @@ document.addEventListener('DOMContentLoaded', () => {
   const _tripToken = ${JSON.stringify(trip.share_token || '')};
   let _realtimeDb = null;
   let _realtimeChannel = null;
-  let _reloadPending = false;
-  let _lastActivity = Date.now();
-
+  let _reloadPending = false, _refreshTimer=null, _knownHash=null, _checking=false;
+  function flushTripUpdate() {
+    _refreshTimer=null;
+    if(!_reloadPending)return;
+    const editing=document.querySelector('dialog[open],.modal.open,#member-profile-modal.open,[data-confirming]')||window._tripSending||document.getElementById('chat-modal')?.style.display==='flex';
+    const typing=document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+    if(document.hidden||editing||typing){_refreshTimer=setTimeout(flushTripUpdate,5000);return;}
+    _reloadPending=false;reloadPage(0);
+  }
   function doLiveReload() {
-    if (_reloadPending) return; // debounce
-    // Don't reload if a button is currently in mid-action (confirming state)
-    if (document.querySelector('[data-confirming="1"],[data-confirming="unsettle"],[disabled]')) return;
-    _reloadPending = true;
-    toast(' Live update...', true);
-    reloadPage(800);
+    if(_reloadPending)return;
+    _reloadPending=true;_refreshTimer=setTimeout(flushTripUpdate,60000);
+  }
+  async function checkTripChanges() {
+    if(_checking||document.hidden)return;_checking=true;
+    try{const response=await fetch('/trip-info/'+_tripId+'?token='+encodeURIComponent(_tripToken),{cache:'no-store'});
+      const data=await response.json();
+      if(data.success&&data._hash){if(_knownHash!==null&&data._hash!==_knownHash)doLiveReload();_knownHash=data._hash;}
+    }catch(e){}finally{_checking=false;}
   }
 
   async function initRealtime() {
@@ -5437,7 +5462,7 @@ document.addEventListener('DOMContentLoaded', () => {
             || n.reminder_last_sent_at !== o.reminder_last_sent_at;
           if (changed) {
             console.log('[Realtime] trips change (meaningful)');
-            doLiveReload();
+            checkTripChanges();
           }
         })
         .on('postgres_changes', {
@@ -5456,32 +5481,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     } catch(e) {
       console.warn('[Realtime] Could not init:', e.message);
-      // Fallback to polling if realtime fails
-      setInterval(async function() {
-        try {
-          const r = await fetch('/trip-info/' + _tripId + '?token=' + encodeURIComponent(_tripToken));
-          const d = await r.json();
-          if (d && d._hash) {
-            if (window._fallbackHash && d._hash !== window._fallbackHash) doLiveReload();
-            window._fallbackHash = d._hash;
-          }
-        } catch(e2) {}
-      }, 15000);
     }
   }
-
-  // Stop realtime when tab hidden, resume on focus
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      if (_realtimeChannel && _realtimeDb) {
-        _realtimeDb.removeChannel(_realtimeChannel);
-        _realtimeChannel = null;
-      }
-    } else {
-      // Reload once on return (data may have changed while away)
-      doLiveReload();
-    }
-  });
+  // Returning to the app checks for changes; it never reloads by itself.
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkTripChanges()});
+  checkTripChanges();
+  setInterval(checkTripChanges,30000);
 
   // Init realtime after a short delay so page renders first
   setTimeout(initRealtime, 1000);
@@ -5757,6 +5762,7 @@ function applyNameAndAvatar(firstName, avatarUrl) {
 // Fetch and apply profile pictures for ALL trip members
 // Cache of member avatar URLs, keyed by lowercase display names and first names
 const _memberAvatarCache = {};
+const sweepInfo=document.createElement('dialog');sweepInfo.id='sweep-info';sweepInfo.setAttribute('aria-label','About RAVENSWEEP');sweepInfo.style.cssText='width:min(420px,calc(100% - 40px));box-sizing:border-box;background:#13101d;color:#eee8fa;border:1px solid #7c3aed66;border-radius:22px;padding:24px;font-family:inherit;line-height:1.6';sweepInfo.innerHTML='<h3 style="margin-top:0;color:#30d158">What is RAVENSWEEP?</h3><p>RAVENSWEEP combines what everyone owes across the trip into a simpler settlement plan, so you can settle up with fewer payments instead of paying each receipt separately.</p><p>Your overall balance stays the same, but who you pay may change. It does not charge anyone or move money automatically.</p><form method="dialog"><button style="width:100%;padding:12px;border:0;border-radius:12px;background:#30d158;color:#07120a;font:inherit;font-weight:700">Got it</button></form>';document.body.append(sweepInfo);
 
 function setCachedMemberAvatar(name, avatarUrl) {
   if (!name) return;
@@ -5771,8 +5777,8 @@ function applyAvatarToMatchingElements(name, avatarUrl) {
     const nameProfile = resolveTripProfile(name);
     const sameProfile = targetProfile && nameProfile && tripProfileAliases(targetProfile, target).some(alias => tripProfileAliases(nameProfile, name).includes(alias));
     if (sameProfile || normalizeTripAlias(target) === normalizeTripAlias(name)) {
-      el.innerHTML = '<img src="' + avatarUrl + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%">';
-      el.style.background = 'transparent';
+      if(!/^(https:\/\/|data:image\/(?:png|jpe?g|webp|gif);base64,)/i.test(avatarUrl))return;
+      const img=document.createElement('img');img.src=avatarUrl;img.alt='';img.style.cssText='width:100%;height:100%;object-fit:cover;border-radius:50%';img.onerror=()=>{img.remove();el.textContent=target.charAt(0).toUpperCase()};el.replaceChildren(img);
     }
   });
 }
@@ -7261,6 +7267,8 @@ function renderItems() {
       btns.appendChild(b);
     });
     d.appendChild(row); d.appendChild(btns); container.appendChild(d);
+    const sharing=item.assignees.length?item.assignees:PEOPLE;
+    if(sharing.length>1){const adjust=document.createElement('button');adjust.textContent='Adjust quantities';adjust.style.cssText='margin-top:10px;background:#7c3aed18;color:#cba5ee;border:1px solid #7c3aed55;border-radius:8px;padding:7px 10px;font:inherit;font-size:12px';adjust.onclick=()=>RavenQuantities.edit(item,sharing,async q=>{item.quantity_split=q;renderItems()});d.append(adjust);if(RavenQuantities.valid(item,sharing)){const detail=document.createElement('p');detail.textContent=sharing.map(p=>p+': '+RavenQuantities.label(item,sharing,p)).join(' · ');detail.style.cssText='font-size:12px;color:#9896a8';d.append(detail)}}
   });
   updateItemizedSummary();
 }
@@ -7482,7 +7490,7 @@ async function saveReceipt() {
     total = finalTotal;
   } else {
     PEOPLE.forEach(p=>{splits[p]=0;});
-    tripItems.forEach(item=>{const as=item.assignees.length>0?item.assignees:PEOPLE;const sh=item.price/as.length;as.forEach(p=>{splits[p]=(splits[p]||0)+sh;});total+=item.price;});
+    tripItems.forEach(item=>{const as=item.assignees.length>0?item.assignees:PEOPLE;as.forEach(p=>{splits[p]=(splits[p]||0)+RavenQuantities.share(item,as,p);});total+=item.price;});
     if(total<=0){btn.textContent='Save Receipt';btn.disabled=false;toast('Add at least one item',false);return;}
     const subtotal = total;
     const tax = parseFloat((document.getElementById('r-tax') || {}).value) || 0;
@@ -7517,7 +7525,7 @@ async function saveReceipt() {
       token: TRIP_TOKEN,
       added_by: addedBy || null,
       photo_url: photoUrl,
-      items: splitType==='itemized'?tripItems:[],
+      items: splitType==='itemized'?tripItems.map(item=>({...item,assignees:item.assignees.length?item.assignees:PEOPLE})):[],
       paid_by: paidBy || null,
       discount: splitType === 'itemized'
         ? (parseFloat((document.getElementById('r-item-discount')||{}).value) || 0)
@@ -7713,6 +7721,7 @@ async function loadChatMsgs() {
 
   if (chatChannel) { chatDb.removeChannel(chatChannel); }
   chatChannel = chatDb.channel('trip-chat-' + TRIP_ID)
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'trip_messages', filter: 'trip_id=eq.' + TRIP_ID }, function(payload) {document.querySelectorAll('[data-msg-id]').forEach(el=>{if(el.dataset.msgId===String(payload.old.id))el.remove()})})
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'trip_messages', filter: 'trip_id=eq.' + TRIP_ID }, async function(payload) {
       const enriched = await enrichTripMessagesWithProfiles([payload.new]);
       const nextMsg = enriched[0] || payload.new;
@@ -7977,13 +7986,15 @@ function appendMsg(msg, scroll) {
   const container = document.getElementById('chat-msgs');
   if (msg.id && container.querySelector('[data-msg-id="' + String(msg.id).replace(/"/g, '\\"') + '"]')) return;
   const isConcierge = msg.user_id === 'raven-concierge' || msg.system_type === 'concierge';
-  const isMe = !isConcierge && msg.user_id === (window._ravenUserId || '');
+  let tripViewerId=window._ravenUserId||'';try{const pass=sessionStorage.getItem('raven_trip_access_'+TRIP_ID);if(pass)tripViewerId=JSON.parse(atob(pass.split('.')[0].replace(/-/g,'+').replace(/_/g,'/'))).user.id||tripViewerId}catch(e){}
+  const isMe = !isConcierge && msg.user_id === tripViewerId;
   const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const firstName = getTripProfileDisplayName(msg.sender_name || 'Member').split(' ')[0];
   const avatarUrl = getTripProfileAvatar(msg.sender_name || '') || msg.avatar_url || '';
 
   const outer = document.createElement('div');
   outer.setAttribute('data-msg-id', msg.id || '');
+  if(isMe&&msg.id)ravenBindUnsend(outer,async()=>{let token='';try{token=sessionStorage.getItem('raven_trip_access_'+TRIP_ID)||''}catch(e){}if(!token){await initChatDb();token=(await chatDb.auth.getSession()).data.session?.access_token||''}if(!token)throw Error('Reconnect to Raven to unsend your message.');const r=await fetch(BACKEND+'/trips/'+TRIP_ID+'/messages/'+encodeURIComponent(msg.id),{method:'DELETE',headers:{Authorization:'Bearer '+token}});const result=await r.json();if(!r.ok||!result.success)throw Error(result.error||'Could not unsend.');outer.remove()});
   if (isConcierge) {
     outer.style.cssText = 'display:flex;flex-direction:column;align-items:stretch;gap:4px;margin:2px 0';
     outer.innerHTML = '<div style="align-self:center;max-width:92%;padding:10px 12px;border-radius:14px;background:linear-gradient(135deg,rgba(124,58,237,0.18),rgba(48,209,88,0.1));border:1px solid rgba(168,85,247,0.22);color:#F0EEF8;font-size:12px;line-height:1.5;white-space:pre-line">'
@@ -9507,7 +9518,10 @@ app.get('/trip-info/:tripId', async (req, res) => {
     const settledRaw = trip.settled_people || []; 
     const settledHash = JSON.stringify(Array.isArray(settledRaw) ? settledRaw : (typeof settledRaw === 'string' ? JSON.parse(settledRaw) : []));
     const reminderStamp = trip.reminder_last_sent_at ? String(trip.reminder_last_sent_at) : '';
-    const _hash = (trip.receipt_count || 0) + ':' + (trip.total || 0) + ':' + settledHash.length + ':' + reminderStamp;
+    const {data:receiptState,error:receiptError}=await supabase.from('trip_receipts').select('id,name,total,splits,paid_by').eq('trip_id',tripId).order('id');
+    if(receiptError)throw receiptError;
+    const _hash = require('node:crypto').createHash('sha256').update(JSON.stringify([trip.name,trip.people,trip.settled_people,reminderStamp,receiptState])).digest('hex');
+    res.set('Cache-Control','private, no-store');
     res.json({ success: true, name: trip.name, people_count: people.length, total: trip.total || 0, receipt_count: trip.receipt_count || 0, settled_hash: settledHash, reminder_last_sent_at: trip.reminder_last_sent_at || null, _hash });
   } catch(err) { res.json({ success: false }); }
 });

@@ -19,6 +19,10 @@ module.exports=function registerTravel(app,db,authenticate){
  }
  const run=fn=>async(req,res)=>{try{const user=fromPass(req)||await authenticate(req);if(!user)deny(401,'Open this trip from your Raven dashboard to reconnect securely.');res.set('Cache-Control','private, no-store');const scope=await access(req.params.id,user);await fn(req,res,user,scope)}catch(e){res.status(e.status||503).json({success:false,error:e.status?e.message:(req.body?.message||req.body?.gif_url||req.body?.photo_url)?'Could not send your message. Please retry.':'Travel uploads are not ready. Ask the owner to run the travel-storage setup, or retry later.'})}};
  app.post('/trips/:id/travel-pass',async(req,res)=>{try{const user=await authenticate(req);if(!user)deny(401,'Sign in required.');await access(req.params.id,user);const data=Buffer.from(JSON.stringify({trip:req.params.id,user:{id:user.id,email:user.email},exp:Date.now()+2*60*60*1000})).toString('base64url');res.set('Cache-Control','private, no-store');res.json({success:true,pass:data+'.'+sign(data)})}catch(e){res.status(e.status||503).json({success:false,error:e.status?e.message:'Could not connect travel plans.'})}});
+ app.delete('/trips/:id/messages/:messageId',run(async(req,res,user,scope)=>{
+  const rows=await result(db.from('trip_messages').delete().eq('trip_id',scope.trip.id).eq('id',req.params.messageId).eq('user_id',user.id).select('id'));
+  if(!rows?.length)deny(404,'Message not found or it is not yours.');res.json({success:true});
+ }));
  app.post('/trips/:id/messages',run(async(req,res,user,scope)=>{
   const message=String(req.body.message||'').trim(),gif=req.body.gif_url||null,photo=req.body.photo_url||null;
   if(!message&&!gif&&!photo)deny(400,'Write a message or select a GIF/photo.');

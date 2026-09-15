@@ -31,6 +31,20 @@ module.exports = function registerRavenChats(app, db, authenticate) {
   }
   async function requireFriend(peer,user) {if(!UUID.test(peer)||peer===user)fail(400,'Choose a Raven friend.');if(!(await friends(user)).includes(peer))fail(403,'You must be accepted Raven friends first.');}
   const profileFields='id,first_name,last_name,raven_id,avatar_url';
+  async function removeAttachments(query){const rows=await result(query);if(rows?.length){await result(db.from('raven_chat_media').delete().in('id',rows.map(r=>r.id)));await result(db.storage.from(BUCKET).remove(rows.map(r=>r.object_path)))}}
+  app.delete('/chats/:chatId/messages/:messageId',run(async(req,res,user)=>{
+    await member(req.params.chatId,user.id);
+    const row=await result(db.from('raven_chat_messages').select('id').eq('id',req.params.messageId).eq('chat_id',req.params.chatId).eq('sender_id',user.id).maybeSingle());if(!row)fail(404,'Message not found or it is not yours.');
+    await removeAttachments(db.from('raven_chat_media').select('id,object_path').eq('message_id',row.id).eq('uploader_id',user.id));
+    await result(db.from('raven_chat_messages').delete().eq('id',row.id).eq('sender_id',user.id));res.json({success:true});
+  }));
+  app.delete('/chat-dms/:peer/messages/:messageId',run(async(req,res,user)=>{
+    if(!UUID.test(req.params.peer))fail(400,'Invalid conversation.');
+    const row=await result(db.from('direct_messages').select('id,body').eq('id',req.params.messageId).eq('sender_id',user.id).eq('receiver_id',req.params.peer).maybeSingle());if(!row)fail(404,'Message not found or it is not yours.');
+    const mediaId=String(row.body||'').match(/^\[RAVEN_PHOTO:([0-9a-f-]+)\]$/i)?.[1];
+    if(mediaId)await removeAttachments(db.from('raven_chat_media').select('id,object_path').eq('id',mediaId).eq('uploader_id',user.id).eq('dm_peer_id',req.params.peer));
+    await result(db.from('direct_messages').delete().eq('id',row.id).eq('sender_id',user.id));res.json({success:true});
+  }));
   app.get('/chats/friends',run(async(req,res,user)=>{
     const ids=await friends(user.id);const profiles=ids.length?await result(db.from('profiles').select(profileFields).in('id',ids)):[];
     res.json({success:true,friends:profiles});
