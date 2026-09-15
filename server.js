@@ -2539,7 +2539,10 @@ ${items.length > 0 ? `
         <div class="item-name-text" style="font-size:14px;font-weight:600">${item.name||'Item'}</div>
         <div id="claimers-${item.id}" style="font-size:11px;color:#6E6B80;margin-top:2px"></div>
       </div>
-      <div style="font-size:15px;font-weight:700;color:#F0EEF8;font-family:monospace;flex-shrink:0">$${parseFloat(item.price||0).toFixed(2)}</div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0">
+        <div id="item-price-${item.id}" style="font-size:15px;font-weight:700;color:#F0EEF8;font-family:monospace">$${parseFloat(item.price||0).toFixed(2)}</div>
+        <div id="quantity-action-${item.id}" style="display:flex;justify-content:flex-end"></div>
+      </div>
     </div>`).join('')}
   </div>
   ${bill.tax || bill.tip || bill.service_fee || bill.misc ? `
@@ -3192,6 +3195,8 @@ function renderState(d) {
     }
 
     const claimersEl = document.getElementById('claimers-' + item.id);
+    const quantityActionEl = document.getElementById('quantity-action-' + item.id);
+    if (quantityActionEl) quantityActionEl.replaceChildren();
     if (claimersEl) {
       if (claimers.length === 0) {
         const actingName = getActiveClaimName();
@@ -3204,7 +3209,43 @@ function renderState(d) {
           return '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;background:' + (isYou?'rgba(48,209,88,0.18)':'rgba(255,255,255,0.08)') + ';border:1px solid ' + (isYou?'rgba(48,209,88,0.4)':'rgba(255,255,255,0.12)') + ';border-radius:20px;font-size:10px;font-weight:700;color:' + (isYou?'#30D158':'#9896A8') + '">' + c + (isPayer ? ' (Paid)' : '') + '</span>';
         }).join('');
         claimersEl.innerHTML = nameHtml + (isSplit ? ' <span style="font-size:10px;color:#FF9A3C;font-weight:600;margin-left:2px">' + claimers.length + '-way split</span>' : '');
-        if(isSplit){const adjust=document.createElement('button');adjust.type='button';adjust.dataset.itemControl='quantity';adjust.textContent='Adjust quantities';adjust.style.cssText='display:block;margin-top:7px;padding:5px 9px;border:1px solid #7c3aed55;border-radius:8px;background:#7c3aed18;color:#cba5ee;font:inherit;font-size:11px;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent';adjust.onclick=event=>{event.stopPropagation();RavenQuantities.edit(item,claimers,async quantity_split=>{const response=await fetch('/bill/'+BID+'/items/'+item.id+'/quantities',{method:'POST',headers:{'Content-Type':'application/json','x-raven-bill-token':BILL_TOKEN},body:JSON.stringify({quantity_split})});const result=await response.json();if(!result.success)throw Error(result.error);await refreshAll()})};claimersEl.append(adjust)}
+        if (isSplit && quantityActionEl) {
+          const adjust = document.createElement('button');
+          adjust.type = 'button';
+          adjust.dataset.itemControl = 'quantity';
+          adjust.textContent = 'Adjust split';
+          adjust.setAttribute('aria-label', 'Adjust split quantities');
+          adjust.style.cssText = 'padding:4px 7px;border:1px solid #7c3aed55;border-radius:7px;background:#7c3aed18;color:#cba5ee;font:inherit;font-size:10px;font-weight:700;white-space:nowrap;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent';
+          adjust.onclick = event => {
+            event.preventDefault();
+            event.stopPropagation();
+            const original = item.quantity_split
+              ? { total: item.quantity_split.total, amounts: { ...item.quantity_split.amounts } }
+              : null;
+            const restore = () => {
+              if (original) item.quantity_split = { total: original.total, amounts: { ...original.amounts } };
+              else delete item.quantity_split;
+              renderState(d);
+            };
+            RavenQuantities.edit(item, claimers, async quantity_split => {
+              const response = await fetch('/bill/' + BID + '/items/' + item.id + '/quantities', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-raven-bill-token': BILL_TOKEN },
+                body: JSON.stringify({ quantity_split })
+              });
+              const result = await response.json();
+              if (!result.success) throw Error(result.error);
+              await refreshAll();
+            }, {
+              preview: quantity_split => {
+                item.quantity_split = { total: quantity_split.total, amounts: { ...quantity_split.amounts } };
+                renderState(d);
+              },
+              cancel: restore
+            });
+          };
+          quantityActionEl.append(adjust);
+        }
       }
     }
   });
@@ -7254,10 +7295,11 @@ function renderItems() {
     nameInput.addEventListener('focus',()=>{ nameInput.style.borderColor='rgba(124,58,237,0.6)'; });
     nameInput.addEventListener('blur',()=>{ nameInput.style.borderColor='rgba(255,255,255,0.15)'; item.name=nameInput.value.trim()||item.name; });
     nameInput.addEventListener('input',()=>{ item.name=nameInput.value; });
-    const priceSpan=document.createElement('span'); priceSpan.style.cssText='font-family:monospace;font-size:13px;color:#9896A8;flex-shrink:0'; priceSpan.textContent='$'+item.price.toFixed(2);
+    const priceStack=document.createElement('div'); priceStack.style.cssText='display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0';
+    const priceSpan=document.createElement('span'); priceSpan.style.cssText='font-family:monospace;font-size:13px;color:#9896A8'; priceSpan.textContent='$'+item.price.toFixed(2); priceStack.append(priceSpan);
     const del=document.createElement('button'); del.textContent=''; del.style.cssText='background:none;border:none;color:#6E6B80;cursor:pointer;font-size:16px;flex-shrink:0';
     del.addEventListener('click',()=>{ tripItems=tripItems.filter(i=>i.id!==item.id); renderItems(); });
-    row.appendChild(nameInput); row.appendChild(priceSpan); row.appendChild(del);
+    row.appendChild(nameInput); row.appendChild(priceStack); row.appendChild(del);
     const btns=document.createElement('div'); btns.style.cssText='display:flex;gap:6px;flex-wrap:wrap';
     PEOPLE.forEach(p => {
       const on=item.assignees.includes(p);
@@ -7272,7 +7314,7 @@ function renderItems() {
     });
     d.appendChild(row); d.appendChild(btns); container.appendChild(d);
     const sharing=item.assignees.length?item.assignees:PEOPLE;
-    if(sharing.length>1){const adjust=document.createElement('button');adjust.type='button';adjust.dataset.itemControl='quantity';adjust.textContent='Adjust quantities';adjust.style.cssText='margin-top:10px;background:#7c3aed18;color:#cba5ee;border:1px solid #7c3aed55;border-radius:8px;padding:7px 10px;font:inherit;font-size:12px;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent';adjust.onclick=()=>RavenQuantities.edit(item,sharing,async q=>{item.quantity_split=q;renderItems()});d.append(adjust);if(RavenQuantities.valid(item,sharing)){const detail=document.createElement('p');detail.textContent=sharing.map(p=>p+': '+RavenQuantities.label(item,sharing,p)).join(' · ');detail.style.cssText='font-size:12px;color:#9896a8';d.append(detail)}}
+    if(sharing.length>1){const adjust=document.createElement('button');adjust.type='button';adjust.dataset.itemControl='quantity';adjust.textContent='Adjust split';adjust.setAttribute('aria-label','Adjust split quantities');adjust.style.cssText='background:#7c3aed18;color:#cba5ee;border:1px solid #7c3aed55;border-radius:7px;padding:4px 7px;font:inherit;font-size:10px;font-weight:700;white-space:nowrap;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent';adjust.onclick=()=>RavenQuantities.edit(item,sharing,async q=>{item.quantity_split=q;renderItems()});priceStack.append(adjust);if(RavenQuantities.valid(item,sharing)){const detail=document.createElement('p');detail.textContent=sharing.map(p=>p+': '+RavenQuantities.label(item,sharing,p)).join(' · ');detail.style.cssText='font-size:12px;color:#9896a8';d.append(detail)}}
   });
   updateItemizedSummary();
 }
