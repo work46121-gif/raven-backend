@@ -4623,7 +4623,7 @@ app.get('/trip/:tripId', async (req, res) => {
       : '';
 
     // data-is-settled used for accurate settled count
-    return `<div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)" id="row-${personId}" data-trip-member-row="1" data-trip-person="${esc(p)}" data-is-settled="${effectiveIsSettled?'1':'0'}" data-is-debtor="${effectiveAmtOwed>0.02?'1':'0'}">
+    return `<div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)" id="row-${personId}" data-trip-member-row="1" data-trip-person="${esc(p)}" data-trip-member-display="${esc(displayName)}" data-is-settled="${effectiveIsSettled?'1':'0'}" data-is-debtor="${effectiveAmtOwed>0.02?'1':'0'}">
       <div style="display:flex;align-items:center;justify-content:space-between;${(payerEntries.length>0&&!isSettled)?'margin-bottom:4px':''}">
         <div style="display:flex;align-items:center;gap:10px;cursor:pointer" data-open-profile="${esc(p)}" title="View ${esc(displayName)}'s profile">
           <div data-person-avatar="${esc(p)}" style="width:34px;height:34px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;overflow:hidden">${profile?.avatar_url ? `<img src="${esc(profile.avatar_url)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : esc(displayName[0].toUpperCase())}</div>
@@ -4908,7 +4908,7 @@ app.get('/trip/:tripId', async (req, res) => {
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--black:#06060A;--dark:#0C0C12;--dark2:#13131A;--border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);--white:#F0EEF8;--muted:#6E6B80;--muted2:#9896A8;--green:#30D158;--purple:#7C3AED;--purple2:#A855F7;--orange:#FF6B35}
 body{font-family:'Epilogue',sans-serif;background:var(--black);color:var(--white);min-height:100vh;padding-bottom:60px}@media(min-width:860px){.sec{max-width:820px;margin:0 auto}.hdr-i{max-width:820px!important}}
-.hdr{position:sticky;top:0;background:rgba(6,6,10,0.95);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);z-index:100}
+.hdr{position:relative;background:rgba(6,6,10,0.98);border-bottom:1px solid var(--border);z-index:1}
 .hdr-inner{max-width:560px;margin:0 auto;height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 20px}
 .sec{max-width:560px;margin:20px auto 0;padding:0 20px}
 .sec-lbl{font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:var(--muted);font-weight:700;margin-bottom:10px}
@@ -4988,7 +4988,7 @@ ${coverHTML}
 
 <div class="sec" style="margin-top:16px">${countdownHTML}</div>
 <div class="sec" style="margin-top:12px"><button id="trip-travel-action" type="button" style="display:flex;align-items:center;justify-content:space-between;width:100%;box-sizing:border-box;padding:13px 16px;background:linear-gradient(110deg,#7c3aed18,#30d1580c);border:1px solid #7c3aed44;border-radius:13px;color:#d8c5f5;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer"><span>Trip Center</span><span style="font-size:12px;color:#9896a8">View / upload &#8599;</span></button></div>
-<script defer src="https://ravensplit.com/raven-travel-ui.js?v=20260915-2"></script>
+<script defer src="https://ravensplit.com/raven-travel-ui.js?v=20261004-1"></script>
 
 <div class="sec" style="margin-top:16px">
   <div id="trip-reminder-wrap" style="display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 16px;background:linear-gradient(135deg,rgba(255,193,7,0.12),rgba(255,193,7,0.04));border:1px solid rgba(255,193,7,0.24);border-radius:16px">
@@ -5977,12 +5977,13 @@ function openReceiptPhoto(src, caption) {
   const ov = document.createElement('div');
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.97);z-index:9999;overflow:hidden;touch-action:none';
 
-  // Close button
+  // A clear, labeled exit keeps the preview easy to dismiss on a phone.
+  // This is intentionally not a floating X: the preview can fill the entire screen.
   const closeBtn = document.createElement('button');
-  closeBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>';
-  closeBtn.setAttribute('aria-label', 'Close receipt photo');
-  closeBtn.setAttribute('title', 'Close receipt photo');
-  closeBtn.style.cssText = 'position:absolute;top:16px;right:16px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.15);color:#fff;width:44px;height:44px;border-radius:50%;cursor:pointer;font-size:18px;z-index:10000;display:flex;align-items:center;justify-content:center;pointer-events:auto;touch-action:manipulation';
+  closeBtn.innerHTML = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Close preview</span>';
+  closeBtn.setAttribute('aria-label', 'Close preview');
+  closeBtn.setAttribute('title', 'Close preview');
+  closeBtn.style.cssText = 'position:absolute;top:max(14px, env(safe-area-inset-top));left:max(14px, env(safe-area-inset-left));min-height:42px;padding:0 14px 0 11px;background:rgba(19,19,26,0.94);border:1px solid rgba(192,132,252,0.44);box-shadow:0 10px 30px rgba(0,0,0,0.45);color:#E8D7FF;border-radius:12px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:700;z-index:10000;display:flex;align-items:center;gap:7px;pointer-events:auto;touch-action:manipulation;-webkit-tap-highlight-color:transparent';
   closeBtn.addEventListener('click', () => ov.remove());
   closeBtn.addEventListener('touchend', (e) => { e.preventDefault(); e.stopPropagation(); ov.remove(); });
 
@@ -6821,13 +6822,61 @@ function normalizeTripViewerIdentity(value) {
   return String(value || '').trim().replace(/^@/, '').toLowerCase();
 }
 
-function getTripViewerProfile() {
-  let local = {};
-  try { local = JSON.parse(localStorage.getItem('raven_profile') || '{}') || {}; } catch(e) {}
-  if (!Object.keys(local).length) {
-    try { local = JSON.parse(sessionStorage.getItem('raven_profile') || '{}') || {}; } catch(e) {}
+function readTripViewerProfile(storage) {
+  try {
+    const profile = JSON.parse(storage.getItem('raven_profile') || '{}');
+    return profile && typeof profile === 'object' ? profile : {};
+  } catch(e) {
+    return {};
   }
-  return local;
+}
+
+function getTripViewerPassUserId() {
+  let pass = '';
+  try {
+    const hash = new URLSearchParams(window.location.hash.slice(1));
+    pass = hash.get('raven_travel') || '';
+  } catch(e) {}
+  if (!pass) {
+    try { pass = sessionStorage.getItem('raven_trip_access_' + TRIP_ID) || ''; } catch(e) {}
+  }
+  if (!pass) return '';
+  try {
+    const encoded = String(pass).split('.')[0] || '';
+    let payload = encoded.replace(/-/g, '+').replace(/_/g, '/');
+    while (payload.length % 4) payload += '=';
+    const data = JSON.parse(atob(payload));
+    return String(data?.user?.id || data?.user_id || data?.sub || '').trim();
+  } catch(e) {
+    return '';
+  }
+}
+
+function getTripViewerProfile() {
+  const local = readTripViewerProfile(localStorage);
+  const session = readTripViewerProfile(sessionStorage);
+  let handedOff = {};
+  try {
+    const params = new URLSearchParams(window.location.search);
+    handedOff = {
+      first_name: params.get('name') || params.get('first_name') || '',
+      display_name: params.get('display_name') || '',
+      email: params.get('acct') || params.get('email') || '',
+      raven_id: params.get('ravenid') || params.get('raven_id') || params.get('rid') || '',
+      username: params.get('username') || ''
+    };
+  } catch(e) {}
+
+  // The native app opens this page on a different origin, so it cannot read
+  // the dashboard's local profile. The short-lived trip pass is the most
+  // reliable identity source there and is intentionally scoped to this trip.
+  const passUserId = getTripViewerPassUserId();
+  const profile = { ...handedOff, ...session, ...local };
+  if (passUserId) {
+    profile.user_id = passUserId;
+    if (!profile.id) profile.id = passUserId;
+  }
+  return profile;
 }
 
 function getTripViewerAliases(profile) {
@@ -6870,9 +6919,9 @@ function ensureTripViewerFocusStyles() {
 
 function syncTripViewerIdentity() {
   const profile = getTripViewerProfile();
-  const viewerLabel = String(profile.first_name || profile.display_name || profile.raven_id || profile.username || (profile.email || '').split('@')[0] || '').trim();
+  let viewerLabel = String(profile.first_name || profile.display_name || profile.raven_id || profile.username || (profile.email || '').split('@')[0] || '').trim();
   const rows = Array.from(document.querySelectorAll('[data-trip-member-row][data-trip-person]'));
-  if (!viewerLabel || !rows.length) return;
+  if (!getTripViewerAliases(profile).length || !rows.length) return;
   ensureTripViewerFocusStyles();
   let matched = false;
   rows.forEach(row => {
@@ -6881,6 +6930,7 @@ function syncTripViewerIdentity() {
     if (isViewer) {
       row.setAttribute('aria-current', 'true');
       matched = true;
+      if (!viewerLabel) viewerLabel = row.getAttribute('data-trip-member-display') || '';
     } else {
       row.removeAttribute('aria-current');
     }
@@ -6897,8 +6947,16 @@ function scheduleTripViewerIdentityFocus() {
   tripViewerFocusTimer = setTimeout(syncTripViewerIdentity, 0);
 }
 
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', scheduleTripViewerIdentityFocus, { once: true });
-else scheduleTripViewerIdentityFocus();
+function hydrateTripViewerIdentityFocus() {
+  scheduleTripViewerIdentityFocus();
+  // raven-travel-ui.js stores the app's trip pass shortly after this page is
+  // parsed. Recheck briefly so the green focus appears just as reliably in
+  // the app as it does in the browser, without showing any loading state.
+  [160, 650, 1400].forEach(delay => setTimeout(syncTripViewerIdentity, delay));
+}
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', hydrateTripViewerIdentityFocus, { once: true });
+else hydrateTripViewerIdentityFocus();
 
 async function tripFriendSessionInfo() {
   let currentUserId = '';
