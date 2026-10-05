@@ -8880,6 +8880,11 @@ app.post('/trip/:tripId/message', async (req, res) => {
   }
 });
 
+function isMissingTripCommentUserId(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  return message.includes('user_id') && (message.includes('trip_comments') || message.includes('schema cache') || message.includes('column'));
+}
+
 app.post('/trip/:tripId/comment', async (req, res) => {
   try {
     const { tripId } = req.params;
@@ -8905,14 +8910,21 @@ app.post('/trip/:tripId/comment', async (req, res) => {
         if (profile?.first_name) resolvedAuthor = profile.first_name;
       } catch(e) {}
     }
-    const { data: insertedComment, error: commentErr } = await supabase.from('trip_comments').insert({
+    // Older Trip Hub databases predate the optional profile link. Keep posting
+    // working during that schema upgrade instead of exposing a raw database error.
+    const commentPayload = {
       trip_id: tripId,
-      user_id: user_id || null,
       author_name: resolvedAuthor,
       body: body?.trim() || '',
       gif_url: gif_url || null,
       created_at: new Date().toISOString()
-    }).select('*').single();
+    };
+    let insertPayload = user_id ? { ...commentPayload, user_id } : commentPayload;
+    let { data: insertedComment, error: commentErr } = await supabase.from('trip_comments').insert(insertPayload).select('*').single();
+    if (commentErr && user_id && isMissingTripCommentUserId(commentErr)) {
+      console.warn('trip_comments.user_id is not available yet; posting compatible comment without the optional profile link.');
+      ({ data: insertedComment, error: commentErr } = await supabase.from('trip_comments').insert(commentPayload).select('*').single());
+    }
     if (commentErr) return res.json({ success: false, error: commentErr.message });
     res.json({ success: true, comment: insertedComment });
   } catch(err) { res.json({ success: false, error: err.message }); }
