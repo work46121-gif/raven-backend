@@ -95,9 +95,21 @@ module.exports=function registerTravel(app,db,authenticate){
   if(title.length>100)deny(400,'Use a title under 100 characters.');
   const photo=photoBytes(req.body.data_url),id=randomUUID(),path=scope.trip.id+'/'+id+'.'+photo.extension;
   await result(db.storage.from(BUCKET).upload(path,photo.bytes,{contentType:photo.mime,upsert:false}));
-  try{await result(db.from('raven_trip_media').insert({id,trip_id:scope.trip.id,kind,person_id:person,uploader_id:user.id,title,object_path:path}))}
+ try{await result(db.from('raven_trip_media').insert({id,trip_id:scope.trip.id,kind,person_id:person,uploader_id:user.id,title,object_path:path}))}
   catch(error){await db.storage.from(BUCKET).remove([path]);throw error}
   res.status(201).json({success:true});
+ }));
+ app.patch('/trips/:id/travel/:mediaId/flight',run(async(req,res,user,scope)=>{
+  const row=await result(db.from('raven_trip_media').select('*').eq('trip_id',scope.trip.id).eq('id',req.params.mediaId).maybeSingle());
+  if(!row)deny(404,'Flight upload not found.');
+  if(row.kind!=='flight')deny(400,'Only flight uploads can be tracked.');
+  const flight=flightNumber(req.body?.flight_number);
+  if(!validFlight(flight))deny(400,'Enter a flight number like AA100.');
+  // A flight number is shared trip information, so any linked member can
+  // attach it to an older screenshot without changing the image itself.
+  const title=storedFlightTitle(row.title,flight);
+  await result(db.from('raven_trip_media').update({title}).eq('id',row.id).eq('trip_id',scope.trip.id));
+  res.json({success:true,flight_number:flight});
  }));
  app.delete('/trips/:id/travel/:mediaId',run(async(req,res,user,scope)=>{
   const row=await result(db.from('raven_trip_media').select('*').eq('trip_id',scope.trip.id).eq('id',req.params.mediaId).maybeSingle());
