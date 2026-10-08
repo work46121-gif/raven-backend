@@ -7663,9 +7663,15 @@ async function saveReceipt() {
   const name=document.getElementById('r-name').value.trim()||'Receipt';
   const paidBy=(document.getElementById('r-paidby')||{}).value||'';
   let addedBy = '';
+  let addedByUserId = '';
   try {
     const localProfile = JSON.parse(localStorage.getItem('raven_profile') || '{}');
     addedBy = String(localProfile.first_name || localProfile.name || sessionStorage.getItem('raven_trip_name') || '').trim();
+    addedByUserId = String(localProfile.user_id || localProfile.id || '').trim();
+  } catch(e) {}
+  try {
+    const viewer = getTripViewerProfile();
+    addedByUserId = addedByUserId || String(viewer?.user_id || viewer?.id || '').trim();
   } catch(e) {}
   const btn=document.getElementById('r-save');
   btn.textContent='Saving...'; btn.disabled=true;
@@ -7717,6 +7723,7 @@ async function saveReceipt() {
       splits,
       token: TRIP_TOKEN,
       added_by: addedBy || null,
+      added_by_user_id: /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(addedByUserId) ? addedByUserId : null,
       photo_url: photoUrl,
       items: splitType==='itemized'?tripItems.map(item=>({...item,assignees:item.assignees.length?item.assignees:PEOPLE})):[],
       paid_by: paidBy || null,
@@ -9414,28 +9421,31 @@ app.post('/trip/:tripId/join', async (req, res) => {
 app.post('/trip/:tripId/receipt', async (req, res) => {
   try {
     const { tripId } = req.params;
-    const { name, total, splits, token, items, paid_by, tax, tip, service_fee, discount, added_by, photo_url } = req.body;
+    const { name, total, splits, token, items, paid_by, tax, tip, service_fee, discount, added_by, added_by_user_id, photo_url } = req.body;
     const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
     if (!trip) return res.json({ success: false, error: 'Trip not found' });
     if (trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
     const tripReceiptRow = { trip_id: tripId, name: name||'Receipt', total: parseFloat(total)||0, splits: JSON.stringify(splits||{}), items: JSON.stringify(items||[]), paid_by: paid_by||null, created_at: new Date().toISOString() };
     if (added_by) tripReceiptRow.added_by = String(added_by).trim().slice(0, 120);
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(added_by_user_id || ''))) {
+      tripReceiptRow.added_by_user_id = String(added_by_user_id).toLowerCase();
+    }
     if (photo_url) tripReceiptRow.photo_url = String(photo_url);
     if (parseFloat(tax) > 0) tripReceiptRow.tax = parseFloat(tax);
     if (parseFloat(tip) > 0) tripReceiptRow.tip = parseFloat(tip);
     if (parseFloat(service_fee) > 0) tripReceiptRow.service_fee = parseFloat(service_fee);
     if (parseFloat(discount) > 0) tripReceiptRow.discount = parseFloat(discount);
     let insertResult = await supabase.from('trip_receipts').insert(tripReceiptRow).select('id').single();
-    if (insertResult.error && tripReceiptRow.added_by) {
-      const msg = String(insertResult.error.message || '').toLowerCase();
-      const details = String(insertResult.error.details || '').toLowerCase();
-      const hint = String(insertResult.error.hint || '').toLowerCase();
-      const missingAddedBy = msg.includes('added_by') || details.includes('added_by') || hint.includes('added_by');
-      if (missingAddedBy) {
-        console.warn('[trip receipt] added_by column missing, retrying insert without added_by');
-        delete tripReceiptRow.added_by;
-        insertResult = await supabase.from('trip_receipts').insert(tripReceiptRow).select('id').single();
-      }
+    // Keep older Trip Hub installations working while the optional sender link
+    // rolls out. New installations retain it so the sender is not alerted about
+    // their own receipt.
+    for (const column of ['added_by_user_id', 'added_by']) {
+      if (!insertResult.error || !Object.prototype.hasOwnProperty.call(tripReceiptRow, column)) break;
+      const message = [insertResult.error.message, insertResult.error.details, insertResult.error.hint].filter(Boolean).join(' ').toLowerCase();
+      if (!message.includes(column)) break;
+      console.warn('[trip receipt] ' + column + ' column missing, retrying without it');
+      delete tripReceiptRow[column];
+      insertResult = await supabase.from('trip_receipts').insert(tripReceiptRow).select('id').single();
     }
     const { data: insertedReceipt, error: insertErr } = insertResult;
     if (insertErr) throw insertErr;
@@ -10412,6 +10422,9 @@ app.listen(PORT, async () => {
   } catch(e) {}
   try {
     await supabase.rpc('exec_sql', { sql: "ALTER TABLE trip_receipts ADD COLUMN IF NOT EXISTS added_by TEXT" });
+  } catch(e) {}
+  try {
+    await supabase.rpc('exec_sql', { sql: "ALTER TABLE trip_receipts ADD COLUMN IF NOT EXISTS added_by_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL" });
   } catch(e) {}
   try {
     await supabase.rpc('exec_sql', { sql: "ALTER TABLE bills ADD COLUMN IF NOT EXISTS live_mode BOOLEAN DEFAULT false" });
