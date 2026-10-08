@@ -197,14 +197,24 @@ function validToken(platform, token) {
 }
 
 module.exports = function registerPush(app, db, authenticate, env = process.env, send = sendPush) {
+ const publicSetupError = error => {
+  const code = String(error?.code || '');
+  const message = String(error?.message || '');
+  if (code === '42P01' || code === '42703' || /raven_push_devices|session_id|updated_at/i.test(message)) {
+   return 'Phone notifications need a one-time database update. Please run the notification setup query, then retry.';
+  }
+  if (code === '23502' || code === '23503') return 'Please sign out and back in, then retry phone notifications.';
+  return 'Phone notifications are not ready. Please retry later.';
+ };
  const run = fn => async (req, res) => {
   try {
    const user = await authenticate(req);
    if (!user) return res.status(401).json({ success: false, error: 'Sign in required.' });
    res.set('Cache-Control', 'private, no-store');
    await fn(req, res, user);
-  } catch (_) {
-   res.status(503).json({ success: false, error: 'Phone notifications are not ready. Please retry later.' });
+  } catch (error) {
+   console.error('[push] Request failed:', error?.code || '', error?.message || error);
+   res.status(503).json({ success: false, error: publicSetupError(error) });
   }
  };
  app.get('/push/status', run(async (_req, res) => {
@@ -218,9 +228,17 @@ module.exports = function registerPush(app, db, authenticate, env = process.env,
   const token = String(req.body.token || '').trim();
   if (!validToken(platform, token)) return res.status(400).json({ success: false, error: 'Invalid device.' });
   const jwt = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  const session = JSON.parse(Buffer.from(jwt.split('.')[1], 'base64url')).session_id;
+  let session = '';
+  try { session = JSON.parse(Buffer.from(jwt.split('.')[1], 'base64url')).session_id || ''; } catch (_) {}
   if (!/^[0-9a-f-]{36}$/i.test(session || '')) return res.status(400).json({ success: false, error: 'Please sign in again.' });
-  const { error } = await db.from('raven_push_devices').upsert({ token, platform, user_id: user.id, session_id: session, updated_at: new Date().toISOString() });
+  const device = { token, platform, user_id: user.id, session_id: session, updated_at: new Date().toISOString() };
+  let { error } = await db.from('raven_push_devices').upsert(device);
+  // Early notification installs did not have session_id. Keep them working
+  // while newer installs retain the session binding used for safe cleanup.
+  if (error?.code === '42703' && /session_id/i.test(String(error.message || ''))) {
+   const { session_id, ...legacyDevice } = device;
+   ({ error } = await db.from('raven_push_devices').upsert(legacyDevice));
+  }
   if (error) throw error;
   res.json({ success: true });
  }));
