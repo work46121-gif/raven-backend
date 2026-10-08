@@ -1842,6 +1842,10 @@ app.get('/bill/:billId', async (req, res) => {
   let selections = [];
   let participants = [];
   try {
+    // Bill pages contain live controls. Always fetch fresh markup so the app
+    // never holds onto an older version of those controls.
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
     const { billId } = req.params;
     const token = req.query.t || req.query.token;
     const viewToken = req.query.view;
