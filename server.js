@@ -1681,6 +1681,100 @@ app.post('/bill/:billId/items/:itemId/quantities',async(req,res)=>{
  await recalcBillAmounts(billId);res.json({success:true});
  }catch(e){res.status(503).json({success:false,error:'Could not save quantities. Check that the item-quantities SQL setup has been run, then retry.'})}
 });
+
+// Set everyone sharing one item in one protected request. This lets the bill
+// page start a split before it has two claimers, and clears an old quantity
+// ratio whenever its people change so nobody is charged from stale data.
+app.put('/bill/:billId/items/:itemId/split-participants', async (req, res) => {
+  try {
+    const { billId, itemId } = req.params;
+    const { data: bill, error: billError } = await supabase.from('bills')
+      .select('share_token,status').eq('id', billId).single();
+    if (billError || !bill || bill.status === 'deleted' || !bill.share_token || req.headers['x-raven-bill-token'] !== bill.share_token) {
+      return res.status(403).json({ success: false, error: 'Open the editable bill link to change this split.' });
+    }
+
+    const requestedByKey = new Map();
+    const requestedNames = Array.isArray(req.body?.participant_names) ? req.body.participant_names : [];
+    requestedNames.forEach(value => {
+      const name = normalizeBillParticipantName(value);
+      const key = billParticipantKey(name);
+      if (key && !requestedByKey.has(key)) requestedByKey.set(key, name);
+    });
+    if (!requestedByKey.size) return res.status(400).json({ success: false, error: 'Choose at least one person for this item.' });
+    if (requestedByKey.size > 50) return res.status(400).json({ success: false, error: 'Choose fewer people for this item.' });
+
+    const [participantsRes, selectionsRes, itemRes] = await Promise.all([
+      supabase.from('participants').select('*').eq('bill_id', billId).order('name'),
+      supabase.from('item_selections').select('*').eq('bill_id', billId),
+      supabase.from('receipt_items').select('id').eq('bill_id', billId).eq('id', itemId).maybeSingle()
+    ]);
+    if (participantsRes.error) throw participantsRes.error;
+    if (selectionsRes.error) throw selectionsRes.error;
+    if (itemRes.error) throw itemRes.error;
+    if (!itemRes.data) return res.status(404).json({ success: false, error: 'Item not found.' });
+
+    const canonical = await canonicalizeBillParticipantState(
+      billId,
+      participantsRes.data || [],
+      selectionsRes.data || []
+    );
+    const desiredNames = [];
+    for (const key of requestedByKey.keys()) {
+      const participant = canonical.canonicalByKey[key];
+      if (!participant?.name) {
+        return res.status(400).json({ success: false, error: 'Choose someone who has already joined this bill.' });
+      }
+      desiredNames.push(participant.name);
+    }
+
+    const currentRows = (canonical.selections || []).filter(row => String(row.item_id) === String(itemId));
+    const currentByKey = new Map();
+    currentRows.forEach(row => {
+      const key = billParticipantKey(row.participant_name);
+      if (key && !currentByKey.has(key)) currentByKey.set(key, row);
+    });
+    const rowsToRemove = [...currentByKey.entries()]
+      .filter(([key]) => !requestedByKey.has(key))
+      .map(([, row]) => row);
+    const namesToAdd = desiredNames.filter(name => !currentByKey.has(billParticipantKey(name)));
+    const changed = rowsToRemove.length > 0 || namesToAdd.length > 0;
+
+    if (rowsToRemove.length) {
+      const { error } = await supabase.from('item_selections').delete().in('id', rowsToRemove.map(row => row.id));
+      if (error) throw error;
+    }
+    if (namesToAdd.length) {
+      const { error } = await supabase.from('item_selections').insert(
+        namesToAdd.map(participant_name => ({ bill_id: billId, item_id: itemId, participant_name }))
+      );
+      if (error) throw error;
+    }
+
+    if (changed) {
+      const { error: splitClearError } = await supabase.from('receipt_items')
+        .update({ quantity_split: null }).eq('bill_id', billId).eq('id', itemId);
+      if (splitClearError) throw splitClearError;
+
+      const affectedNames = [...new Set([
+        ...currentRows.map(row => row.participant_name),
+        ...desiredNames
+      ])];
+      if (affectedNames.length) {
+        const { error: paidResetError } = await supabase.from('participants')
+          .update({ paid: false, paid_at: null, payment_method: null })
+          .eq('bill_id', billId).in('name', affectedNames);
+        if (paidResetError) throw paidResetError;
+      }
+      await recalcBillAmounts(billId);
+    }
+
+    res.json({ success: true, changed, participants: desiredNames });
+  } catch (error) {
+    console.error('split participants error:', error.message);
+    res.status(503).json({ success: false, error: 'Could not save this split. Please try again.' });
+  }
+});
 // Helper: recalculate each participant's amount from item_selections
 async function recalcBillAmounts(billId) {
   try {
@@ -3084,6 +3178,103 @@ async function toggleClaim(itemId, itemName) {
   } catch(e) { toast('Network error'); }
 }
 
+function openItemSplitPicker(item, currentClaimers, participants) {
+  const people = [];
+  const seenPeople = new Set();
+  const addPerson = value => {
+    const name = normalizeBillParticipantNameClient(value);
+    const key = billParticipantKeyClient(name);
+    if (key && !seenPeople.has(key)) {
+      seenPeople.add(key);
+      people.push(name);
+    }
+  };
+  (participants || []).forEach(participant => addPerson(participant?.name));
+  (currentClaimers || []).forEach(addPerson);
+  if (people.length < 2) {
+    toast('Add another person to this bill before splitting this item.', false);
+    return;
+  }
+
+  const dialog = document.createElement('dialog');
+  dialog.setAttribute('aria-label', 'Split item');
+  dialog.style.cssText = 'background:#121019;color:#eee8fa;border:1px solid #7c3aed66;border-radius:22px;padding:22px;width:min(460px,calc(100% - 28px));box-sizing:border-box;max-height:85dvh;overflow:auto;font-family:inherit';
+  const heading = document.createElement('h3');
+  heading.textContent = 'Split ' + (item.name || 'this item');
+  heading.style.cssText = 'margin:0 0 7px;font-size:19px';
+  const description = document.createElement('p');
+  description.textContent = 'Choose everyone sharing this item. You can adjust quantities after saving.';
+  description.style.cssText = 'margin:0 0 16px;color:#9896A8;font-size:13px;line-height:1.4';
+  const list = document.createElement('div');
+  list.style.cssText = 'display:flex;flex-direction:column;gap:8px';
+  const selected = new Set((currentClaimers || []).map(billParticipantKeyClient));
+  const inputs = [];
+
+  people.forEach(name => {
+    const key = billParticipantKeyClient(name);
+    const row = document.createElement('label');
+    row.style.cssText = 'display:flex;align-items:center;gap:11px;padding:12px 13px;background:#181622;border:1px solid rgba(255,255,255,0.1);border-radius:12px;cursor:pointer;font-size:14px;font-weight:700';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = selected.has(key);
+    input.value = name;
+    input.style.cssText = 'width:19px;height:19px;accent-color:#30D158;flex-shrink:0';
+    const label = document.createElement('span');
+    label.textContent = name;
+    row.append(input, label);
+    list.appendChild(row);
+    inputs.push(input);
+  });
+
+  const note = document.createElement('p');
+  note.style.cssText = 'min-height:18px;margin:14px 0 0;color:#FF9A3C;font-size:12px;line-height:1.35';
+  const buttons = document.createElement('div');
+  buttons.style.cssText = 'display:flex;gap:9px;margin-top:16px';
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.textContent = 'Cancel';
+  cancel.style.cssText = 'flex:1;padding:11px;border-radius:10px;border:1px solid rgba(255,255,255,0.14);background:transparent;color:#C9C5D5;font:inherit;font-size:13px;font-weight:700;cursor:pointer';
+  const save = document.createElement('button');
+  save.type = 'button';
+  save.textContent = 'Save split';
+  save.setAttribute('aria-label', 'Save item split');
+  save.style.cssText = 'flex:1;padding:11px;border-radius:10px;border:1px solid #30D158;background:#30D158;color:#07110B;font:inherit;font-size:13px;font-weight:800;cursor:pointer';
+  cancel.onclick = () => dialog.close();
+  save.onclick = async () => {
+    const nextNames = inputs.filter(input => input.checked).map(input => input.value);
+    if (!nextNames.length) {
+      note.textContent = 'Choose at least one person for this item.';
+      return;
+    }
+    save.disabled = true;
+    cancel.disabled = true;
+    note.textContent = 'Saving split...';
+    try {
+      const response = await fetch(BACKEND_URL + '/bill/' + BID + '/items/' + item.id + '/split-participants', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ participant_names: nextNames })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.success) throw Error(result.error || 'Could not save this split.');
+      _lastStateHash = '';
+      await refreshAll();
+      const savedNames = result.participants || nextNames;
+      toast(savedNames.length > 1 ? ('Split saved for ' + savedNames.join(' and ')) : 'Item assignment saved');
+      dialog.close();
+    } catch (error) {
+      note.textContent = error.message || 'Could not save this split. Please try again.';
+      save.disabled = false;
+      cancel.disabled = false;
+    }
+  };
+  buttons.append(cancel, save);
+  dialog.append(heading, description, list, note, buttons);
+  dialog.addEventListener('close', () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
+}
+
 async function renameMyBillName() {
   if (!myName) {
     document.getElementById('name-modal').style.display = 'flex';
@@ -3128,11 +3319,20 @@ async function refreshAll() {
     const r = await fetch(BACKEND_URL + '/bill/' + BID + '/state');
     const d = await r.json();
     if (!d.success) return;
-    // Hash: include selections sorted by item+person, participants, paid status, and amounts
+    // Hash: include selections, saved quantity splits, participants and paid status.
+    // Quantity-only changes must update every open bill page too.
     const selKey = d.selections.map(s => s.item_id + ':' + s.participant_name).sort().join('|');
+    const splitKey = (d.items || []).map(item => {
+      const split = item.quantity_split;
+      if (!split) return String(item.id) + ':';
+      const amounts = Object.entries(split.amounts || {})
+        .map(([name, amount]) => String(name).toLowerCase() + ':' + Number(amount))
+        .sort().join(',');
+      return String(item.id) + ':' + Number(split.total) + ':' + amounts;
+    }).sort().join('|');
     // Don't include p.amount in hash â€” it lags behind DB writes and causes missed updates
     const partsKey = d.participants.map(p => p.name.toLowerCase() + ':' + (p.paid?'1':'0') + ':' + (p.payment_method||'')).sort().join('|');
-    const hash = selKey + '##' + partsKey + '##' + d.participants.length;
+    const hash = selKey + '##' + splitKey + '##' + partsKey + '##' + d.participants.length;
     if (hash === _lastStateHash && !_firstRender) return; // nothing changed
     _lastStateHash = hash;
     _firstRender = false;
@@ -3197,55 +3397,70 @@ function renderState(d) {
     const claimersEl = document.getElementById('claimers-' + item.id);
     const quantityActionEl = document.getElementById('quantity-action-' + item.id);
     if (quantityActionEl) quantityActionEl.replaceChildren();
+    const isSplit = claimers.length > 1;
     if (claimersEl) {
       if (claimers.length === 0) {
         const actingName = getActiveClaimName();
         claimersEl.innerHTML = '<span style="color:#6E6B80;font-size:11px">' + (actingName ? ('Tap to claim for ' + actingName) : 'Tap to claim') + '</span>';
       } else {
-        const isSplit = claimers.length > 1;
         const nameHtml = claimers.map(c => {
           const isYou = c.toLowerCase() === myN;
           const isPayer = paidByLower && c.toLowerCase() === paidByLower;
           return '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;background:' + (isYou?'rgba(48,209,88,0.18)':'rgba(255,255,255,0.08)') + ';border:1px solid ' + (isYou?'rgba(48,209,88,0.4)':'rgba(255,255,255,0.12)') + ';border-radius:20px;font-size:10px;font-weight:700;color:' + (isYou?'#30D158':'#9896A8') + '">' + c + (isPayer ? ' (Paid)' : '') + '</span>';
         }).join('');
         claimersEl.innerHTML = nameHtml + (isSplit ? ' <span style="font-size:10px;color:#FF9A3C;font-weight:600;margin-left:2px">' + claimers.length + '-way split</span>' : '');
-        if (isSplit && quantityActionEl) {
-          const adjust = document.createElement('button');
-          adjust.type = 'button';
-          adjust.dataset.itemControl = 'quantity';
-          adjust.textContent = 'Adjust split';
-          adjust.setAttribute('aria-label', 'Adjust split quantities');
-          adjust.style.cssText = 'padding:4px 7px;border:1px solid #7c3aed55;border-radius:7px;background:#7c3aed18;color:#cba5ee;font:inherit;font-size:10px;font-weight:700;white-space:nowrap;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent';
-          adjust.onclick = event => {
-            event.preventDefault();
-            event.stopPropagation();
-            const original = item.quantity_split
-              ? { total: item.quantity_split.total, amounts: { ...item.quantity_split.amounts } }
-              : null;
-            const restore = () => {
-              if (original) item.quantity_split = { total: original.total, amounts: { ...original.amounts } };
-              else delete item.quantity_split;
-              renderState(d);
-            };
-            RavenQuantities.edit(item, claimers, async quantity_split => {
-              const response = await fetch('/bill/' + BID + '/items/' + item.id + '/quantities', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'x-raven-bill-token': BILL_TOKEN },
-                body: JSON.stringify({ quantity_split })
-              });
-              const result = await response.json();
-              if (!result.success) throw Error(result.error);
-              await refreshAll();
-            }, {
-              preview: quantity_split => {
-                item.quantity_split = { total: quantity_split.total, amounts: { ...quantity_split.amounts } };
-                renderState(d);
-              },
-              cancel: restore
-            });
+      }
+    }
+    if (quantityActionEl) {
+      if (!isSplit) {
+        const split = document.createElement('button');
+        split.type = 'button';
+        split.dataset.itemControl = 'split';
+        split.textContent = 'Split';
+        split.setAttribute('aria-label', 'Choose people to split this item with');
+        split.style.cssText = 'padding:4px 7px;border:1px solid #7c3aed55;border-radius:7px;background:#7c3aed18;color:#cba5ee;font:inherit;font-size:10px;font-weight:700;white-space:nowrap;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent';
+        split.onclick = event => {
+          event.preventDefault();
+          event.stopPropagation();
+          openItemSplitPicker(item, claimers, participants);
+        };
+        quantityActionEl.append(split);
+      } else {
+        const adjust = document.createElement('button');
+        adjust.type = 'button';
+        adjust.dataset.itemControl = 'quantity';
+        adjust.textContent = 'Adjust split';
+        adjust.setAttribute('aria-label', 'Adjust split quantities');
+        adjust.style.cssText = 'padding:4px 7px;border:1px solid #7c3aed55;border-radius:7px;background:#7c3aed18;color:#cba5ee;font:inherit;font-size:10px;font-weight:700;white-space:nowrap;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent';
+        adjust.onclick = event => {
+          event.preventDefault();
+          event.stopPropagation();
+          const original = item.quantity_split
+            ? { total: item.quantity_split.total, amounts: { ...item.quantity_split.amounts } }
+            : null;
+          const restore = () => {
+            if (original) item.quantity_split = { total: original.total, amounts: { ...original.amounts } };
+            else delete item.quantity_split;
+            renderState(d);
           };
-          quantityActionEl.append(adjust);
-        }
+          RavenQuantities.edit(item, claimers, async quantity_split => {
+            const response = await fetch('/bill/' + BID + '/items/' + item.id + '/quantities', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'x-raven-bill-token': BILL_TOKEN },
+              body: JSON.stringify({ quantity_split })
+            });
+            const result = await response.json();
+            if (!result.success) throw Error(result.error);
+            await refreshAll();
+          }, {
+            preview: quantity_split => {
+              item.quantity_split = { total: quantity_split.total, amounts: { ...quantity_split.amounts } };
+              renderState(d);
+            },
+            cancel: restore
+          });
+        };
+        quantityActionEl.append(adjust);
       }
     }
   });
