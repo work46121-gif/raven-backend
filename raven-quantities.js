@@ -70,6 +70,7 @@
     names.forEach(name => { amounts[key(name)] = quantity(item, names, name); });
     const note = node('p');
     let committed = false;
+    let saving = false;
 
     function candidate() {
       return { total: Number(totalInput.value), amounts: { ...amounts } };
@@ -135,19 +136,22 @@
     totalInput.onchange = equal.onclick;
     cancel.onclick = () => dialog.close();
     apply.onclick = async () => {
+      if (saving) return;
       const next = candidate();
       if (!valid({ quantity_split: next }, names)) {
         note.textContent = 'Assign exactly ' + totalInput.value + ' in total before saving.';
         return;
       }
-      apply.disabled = true;
+      saving = true;
+      dialog.querySelectorAll('button,input').forEach(element => { element.disabled = true; });
       try {
         await save(next);
         committed = true;
         dialog.close();
       } catch (error) {
         note.textContent = error.message || 'Could not save. Please retry.';
-        apply.disabled = false;
+        saving = false;
+        dialog.querySelectorAll('button,input').forEach(element => { element.disabled = false; });
       }
     };
 
@@ -159,6 +163,7 @@
       if (!committed && typeof options.cancel === 'function') options.cancel();
       dialog.remove();
     });
+    dialog.addEventListener('cancel', event => { if (saving) event.preventDefault(); });
     document.body.append(dialog);
     sync(false);
     dialog.showModal();
