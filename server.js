@@ -5193,10 +5193,6 @@ ${coverHTML}
 
 <div class="sec" style="margin-top:20px">
   <div class="sec-lbl">${owesHeading}${tripUsesSimpleSplit ? ` <button type="button" onclick="document.getElementById(\'sweep-info\').showModal()" aria-label="What is RAVENSWEEP?" style="display:inline-flex;align-items:center;gap:5px;margin-left:8px;padding:4px 8px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:999px;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#30D158;vertical-align:middle">RAVEN Sweep ⓘ</button>` : ''}</div>
-  <div id="trip-viewer-identity" aria-live="polite" style="display:none;align-items:center;gap:7px;width:max-content;max-width:100%;margin:-1px 0 10px;padding:7px 10px;border:1px solid rgba(48,209,88,0.24);border-radius:10px;background:rgba(48,209,88,0.07);color:#A6E8B9;font-size:11px;font-weight:700">
-    <span aria-hidden="true" style="width:7px;height:7px;border-radius:50%;background:#30D158;box-shadow:0 0 10px rgba(48,209,88,0.85);flex-shrink:0"></span>
-    <span>Viewing as <strong id="trip-viewer-identity-name" style="color:#30D158"></strong></span>
-  </div>
   <div class="card">
     ${owesRows}
     <div id="outstanding-footer" data-total-spend="${totalSpend.toFixed(2)}" style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:${grandTotal>0?'rgba(255,107,53,0.04)':'rgba(48,209,88,0.04)'};border-top:1px solid ${grandTotal>0?'rgba(255,107,53,0.15)':'rgba(48,209,88,0.12)'}">
@@ -5316,6 +5312,12 @@ ${coverHTML}
   <div class="card" id="comments-card">
     <div id="comments-loading" style="padding:24px;text-align:center;color:#6E6B80;font-size:13px">Loading comments...</div>
   </div>
+  <div id="comments-status" role="status" aria-live="polite" style="margin-top:8px;font-size:12px;color:#FFB04A"></div>
+  <nav id="comments-pagination" aria-label="Comment pages" style="display:none;align-items:center;justify-content:space-between;gap:10px;margin-top:12px">
+    <button id="comments-previous" class="btn-o" type="button" onclick="loadTripComments(true, tripCommentsPage - 1)" style="width:auto;min-height:44px;padding:10px 14px" disabled>Previous</button>
+    <span id="comments-page-label" aria-live="polite" style="font-size:12px;color:#9896A8;text-align:center"></span>
+    <button id="comments-next" class="btn-p" type="button" onclick="loadTripComments(true, tripCommentsPage + 1)" style="width:auto;min-height:44px;padding:10px 14px">Next</button>
+  </nav>
   <div style="margin-top:12px;background:#0C0C12;border:1px solid var(--border2);border-radius:14px;overflow:hidden">
     <!-- Name row with avatar -->
     <div id="comment-name-row" style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border)">
@@ -5705,7 +5707,7 @@ document.addEventListener('DOMContentLoaded', () => {
           filter: 'trip_id=eq.' + _tripId
         }, function(payload) {
           console.log('[Realtime] trip_comments change:', payload.eventType);
-          doLiveReload();
+          loadTripComments(true);
         })
         .subscribe(function(status) {
           console.log('[Realtime] channel status:', status);
@@ -5838,6 +5840,8 @@ let splitType = 'even', tripItems = [], imgBase64 = null, newMembers = [];
 let tripScanCharges = { tax: 0, tip: 0, service_fee: 0 };
 let gifUrl = null, gifTimer = null, gifPanelOpen = false;
 let tripCommentsLoaded = false;
+const TRIP_COMMENTS_PAGE_SIZE = 5;
+let tripCommentsPage = 1, tripCommentsPageCount = 1, tripCommentsRequest = 0;
 
 function escapeHtml(value) {
   return String(value || '')
@@ -5861,12 +5865,20 @@ function formatTripCommentTime(value) {
   }
 }
 
-function renderTripComments(comments) {
+function renderTripComments(comments, pagination) {
   const heading = document.getElementById('comments-heading');
   const card = document.getElementById('comments-card');
   if (!card) return;
-  const rows = Array.isArray(comments) ? comments : [];
-  if (heading) heading.textContent = 'Comments (' + rows.length + ')';
+  const rows = (Array.isArray(comments) ? comments : []).slice(0, TRIP_COMMENTS_PAGE_SIZE);
+  const total = Number(pagination && pagination.total) || 0;
+  tripCommentsPage = Number(pagination && pagination.page) || 1;
+  tripCommentsPageCount = Math.max(1, Math.ceil(total / TRIP_COMMENTS_PAGE_SIZE));
+  if (heading) heading.textContent = 'Comments (' + total + ') · Newest first';
+  const pager = document.getElementById('comments-pagination');
+  if (pager) pager.style.display = total > TRIP_COMMENTS_PAGE_SIZE ? 'flex' : 'none';
+  const label = document.getElementById('comments-page-label');
+  if (label) label.textContent = 'Page ' + tripCommentsPage + ' of ' + tripCommentsPageCount;
+  updateTripCommentPaging(false);
   if (!rows.length) {
     card.innerHTML = '<div style="padding:24px;text-align:center;color:#6E6B80;font-size:13px">' + escapeHtml(COMMENTS_EMPTY_LABEL) + '</div>';
     return;
@@ -5886,7 +5898,7 @@ function renderTripComments(comments) {
     const avatarHtml = avatarUrl
       ? '<img src="' + escapeHtml(avatarUrl) + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%">'
       : initials;
-    return '<div style="display:flex;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)">'
+    return '<div data-trip-comment="' + escapeHtml(c.id) + '" style="display:flex;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)">'
       + '<div data-person-avatar="' + escapeHtml(profileTarget) + '" data-open-profile="' + escapeHtml(profileTarget) + '" title="' + profileTitle + '" style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#30D158);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden;cursor:pointer">' + avatarHtml + '</div>'
       + '<div style="flex:1;min-width:0">'
       + '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px"><span data-open-profile="' + escapeHtml(profileTarget) + '" title="' + profileTitle + '" style="font-size:13px;font-weight:700;cursor:pointer">' + authorName + '</span><span style="font-size:11px;color:#6E6B80">' + timeStr + '</span></div>'
@@ -5897,35 +5909,53 @@ function renderTripComments(comments) {
   }).join('');
 }
 
-async function loadTripComments(force) {
+function updateTripCommentPaging(loading) {
+  const previous = document.getElementById('comments-previous');
+  const next = document.getElementById('comments-next');
+  if (previous) { previous.disabled = loading || tripCommentsPage <= 1; previous.style.opacity = previous.disabled ? '0.4' : '1'; }
+  if (next) { next.disabled = loading || tripCommentsPage >= tripCommentsPageCount; next.style.opacity = next.disabled ? '0.4' : '1'; }
+}
+
+async function loadTripComments(force, page) {
   if (tripCommentsLoaded && !force) return;
   const card = document.getElementById('comments-card');
   if (!card) return;
-  if (!force && !document.getElementById('comments-loading')) {
-    tripCommentsLoaded = true;
-    return;
-  }
-  if (!force) {
-    const loading = document.getElementById('comments-loading');
-    if (loading) loading.style.display = 'block';
-  }
+  const requestedPage = Math.max(1, Number(page) || tripCommentsPage);
+  const requestId = ++tripCommentsRequest;
+  const status = document.getElementById('comments-status');
+  if (status) status.textContent = '';
+  updateTripCommentPaging(true);
+  card.setAttribute('aria-busy', 'true');
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
   try {
     // A hard timeout on the fetch itself — a stalled network request (not
     // just a thrown error) shouldn't be able to leave "Loading comments..."
     // stuck forever either.
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
-    const r = await fetch(BACKEND + '/trip/' + TRIP_ID + '/comments?token=' + encodeURIComponent(TRIP_TOKEN), { signal: controller.signal });
-    clearTimeout(timeoutId);
+    const r = await fetch(BACKEND + '/trip/' + TRIP_ID + '/comments?token=' + encodeURIComponent(TRIP_TOKEN) + '&page=' + requestedPage, { signal: controller.signal, cache: 'no-store' });
     const d = await r.json();
-    renderTripComments((d && d.success === false) ? [] : (d.comments || []));
+    if (requestId !== tripCommentsRequest) return;
+    if (!r.ok || !d || d.success === false) throw new Error('Could not load comments');
+    renderTripComments(d.comments || [], d.pagination);
     tripCommentsLoaded = true;
     try {
       const profile = JSON.parse(sessionStorage.getItem('raven_profile') || localStorage.getItem('raven_profile') || '{}');
       applyNameAndAvatar(profile.first_name || '', profile.avatar_url || '');
     } catch(e) {}
   } catch(e) {
-    renderTripComments([]);
+    if (requestId !== tripCommentsRequest) return;
+    if (!tripCommentsLoaded) card.innerHTML = '<div style="padding:24px;text-align:center;color:#9896A8;font-size:13px">Comments could not be loaded.</div>';
+    if (status) {
+      status.textContent = 'Could not load comments. ';
+      const retry = document.createElement('button');
+      retry.type = 'button'; retry.textContent = 'Retry';
+      retry.style.cssText = 'background:none;border:0;color:#C084FC;font:inherit;text-decoration:underline;cursor:pointer;padding:8px';
+      retry.addEventListener('click', () => loadTripComments(true, requestedPage));
+      status.appendChild(retry);
+    }
+  } finally {
+    clearTimeout(timeoutId);
+    if (requestId === tripCommentsRequest) { card.setAttribute('aria-busy', 'false'); updateTripCommentPaging(false); }
   }
 }
 
@@ -7105,26 +7135,18 @@ function ensureTripViewerFocusStyles() {
 
 function syncTripViewerIdentity() {
   const profile = getTripViewerProfile();
-  let viewerLabel = String(profile.first_name || profile.display_name || profile.raven_id || profile.username || (profile.email || '').split('@')[0] || '').trim();
   const rows = Array.from(document.querySelectorAll('[data-trip-member-row][data-trip-person]'));
   if (!getTripViewerAliases(profile).length || !rows.length) return;
   ensureTripViewerFocusStyles();
-  let matched = false;
   rows.forEach(row => {
     const isViewer = tripViewerMatchesMember(profile, row.getAttribute('data-trip-person') || '');
     row.classList.toggle('raven-current-trip-member', isViewer);
     if (isViewer) {
       row.setAttribute('aria-current', 'true');
-      matched = true;
-      if (!viewerLabel) viewerLabel = row.getAttribute('data-trip-member-display') || '';
     } else {
       row.removeAttribute('aria-current');
     }
   });
-  const identity = document.getElementById('trip-viewer-identity');
-  const identityName = document.getElementById('trip-viewer-identity-name');
-  if (identity) identity.style.display = matched ? 'inline-flex' : 'none';
-  if (identityName && matched) identityName.textContent = viewerLabel;
 }
 
 let tripViewerFocusTimer = null;
@@ -7527,7 +7549,7 @@ document.getElementById('post-comment-btn').addEventListener('click', async func
   try {
     const r = await fetch(BACKEND+'/trip/'+TRIP_ID+'/comment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:TRIP_TOKEN,author_name:author,user_id:authorUserId||null,body,gif_url:gifUrl||null})});
     const d = await r.json();
-    if (d.success) { document.getElementById('comment-body').value=''; clearGif(); toast(' Posted!'); reloadPage(900); }
+    if (d.success) { document.getElementById('comment-body').value=''; clearGif(); toast(' Posted!'); await loadTripComments(true, 1); }
     else toast(d.error||'Error',false);
   } catch(e) { toast('Network error',false); }
   this.textContent=' Post'; this.disabled=false;
@@ -8700,7 +8722,29 @@ app.get('/trip/:tripId/comments', async (req, res) => {
     if (!trip || (trip.share_token !== token && trip.invite_token !== token)) {
       return res.json({ success: false, comments: [], error: 'Invalid token' });
     }
-    let { data: comments } = await supabase.from('trip_comments').select('*').eq('trip_id', tripId).order('created_at', { ascending: true });
+    // Older clients may still request the complete list. New Trip Hub pages
+    // request five at a time, ordered consistently even for matching timestamps.
+    const paged = req.query.page !== undefined;
+    const pageSize = 5;
+    let page = Math.max(1, Math.min(1000000, Math.floor(Number(req.query.page) || 1)));
+    const commentQuery = () => supabase.from('trip_comments').select('*', { count: 'exact' }).eq('trip_id', tripId)
+      .order('created_at', { ascending: false }).order('id', { ascending: false });
+    let query = commentQuery();
+    if (paged) query = query.range((page - 1) * pageSize, page * pageSize - 1);
+    let { data: comments, error: commentsError, count } = await query;
+    // PostgREST can reject a page beyond the current count after deletions.
+    // Recover the count from page one before clamping to the new last page.
+    if (paged && commentsError?.code === 'PGRST103') {
+      ({ data: comments, error: commentsError, count } = await commentQuery().range(0, pageSize - 1));
+    }
+    if (commentsError) throw commentsError;
+    const total = Number(count) || 0;
+    const lastPage = Math.max(1, Math.ceil(total / pageSize));
+    if (paged && page > lastPage) {
+      page = lastPage;
+      ({ data: comments, error: commentsError } = await commentQuery().range((page - 1) * pageSize, page * pageSize - 1));
+      if (commentsError) throw commentsError;
+    }
     if (comments && comments.length > 0) {
       const userIds = [...new Set(comments.map(c => String(c.user_id || '').trim()).filter(Boolean))];
       if (userIds.length > 0) {
@@ -8713,7 +8757,8 @@ app.get('/trip/:tripId/comments', async (req, res) => {
         });
       }
     }
-    res.json({ success: true, comments: comments || [] });
+    res.set('Cache-Control', 'no-store');
+    res.json({ success: true, comments: comments || [], ...(paged ? { pagination: { page, page_size: pageSize, total } } : {}) });
   } catch(err) { res.json({ success: false, comments: [], error: err.message }); }
 });
 

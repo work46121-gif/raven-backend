@@ -222,7 +222,24 @@ const SAFE_PROVIDER_REASONS = new Set([
  'UnknownPlatform', 'UNREGISTERED', 'UNAUTHENTICATED', 'PERMISSION_DENIED',
  'RESOURCE_EXHAUSTED', 'INVALID_ARGUMENT', 'INTERNAL', 'UNAVAILABLE', 'NOT_FOUND'
 ]);
-const safeErrorCode = error => SAFE_ERROR_CODES.has(error?.code) ? error.code : 'UNKNOWN';
+const databaseErrorCode = code => typeof code === 'string' && (
+ /^PGRST[0-9]{3}$/.test(code) || /^(?:[0-9][0-9A-Z]|P0|F0|HV|XX)[0-9A-Z]{3}$/.test(code)
+);
+const safeErrorCode = error => {
+ for (const code of [error?.code, error?.cause?.code]) {
+  if (SAFE_ERROR_CODES.has(code) || databaseErrorCode(code)) return code;
+ }
+ return 'UNKNOWN';
+};
+const SAFE_ERROR_NAMES = new Set(['Error', 'TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'URIError', 'EvalError', 'AbortError', 'TimeoutError', 'FetchError']);
+const safeErrorKind = error => {
+ if (databaseErrorCode(error?.code)) return 'DatabaseError';
+ if (SAFE_ERROR_NAMES.has(error?.name)) return error.name;
+ // Supabase may return a plain object containing a fetch exception. Inspect
+ // only its built-in error prefix and emit a fixed label, never the message.
+ const prefix = typeof error?.message === 'string' ? /^(TypeError|RangeError|ReferenceError|SyntaxError|AbortError|TimeoutError|FetchError):/.exec(error.message) : null;
+ return prefix ? prefix[1] : 'UnknownError';
+};
 const safePlatform = platform => platform === 'ios' || platform === 'android' ? platform : 'unknown';
 
 module.exports = function registerPush(app, db, authenticate, env = process.env, send = sendPush) {
@@ -234,35 +251,44 @@ module.exports = function registerPush(app, db, authenticate, env = process.env,
   if (code === '23502' || code === '23503') return 'Please sign out and back in, then retry phone notifications.';
   return 'Phone notifications are not ready. Please retry later.';
  };
- const run = fn => async (req, res) => {
+ const run = (operation, fn) => async (req, res) => {
+  let stage = 'authenticate';
+  const atStage = value => { stage = value; };
   try {
    const user = await authenticate(req);
    if (!user) return res.status(401).json({ success: false, error: 'Sign in required.' });
    res.set('Cache-Control', 'private, no-store');
-   await fn(req, res, user);
+   stage = 'prepare-response';
+   await fn(req, res, user, atStage);
   } catch (error) {
-   console.error('[push] Request failed:', safeErrorCode(error));
+   console.error('[push] Request failed:', operation, stage, safeErrorCode(error), safeErrorKind(error));
    res.status(503).json({ success: false, error: publicSetupError(error) });
   }
  };
- app.get('/push/status', run(async (_req, res) => {
+ app.get('/push/status', run('status', async (_req, res, _user, atStage) => {
+  atStage('provider-configuration');
   const available = platforms(env);
   res.json({ success: true, enabled: available.ios || available.android, platforms: available });
  }));
- app.post('/push/device', run(async (req, res, user) => {
+ app.post('/push/device', run('register-device', async (req, res, user, atStage) => {
+  atStage('validate-device');
   const platform = String(req.body.platform || 'ios').toLowerCase();
   if (platform !== 'ios' && platform !== 'android') return res.status(400).json({ success: false, error: 'Invalid device.' });
+  atStage('provider-configuration');
   const available = platforms(env);
   if (!available[platform]) {
    console.warn('[push] Registration unavailable:', platform, 'PROVIDER_NOT_CONFIGURED');
    return res.status(503).json({ success: false, error: 'Phone notifications are awaiting activation.' });
   }
+  atStage('validate-token');
   const token = String(req.body.token || '').trim();
   if (!validToken(platform, token)) return res.status(400).json({ success: false, error: 'Invalid device.' });
+  atStage('validate-session');
   const jwt = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
   let session = '';
   try { session = JSON.parse(Buffer.from(jwt.split('.')[1], 'base64url')).session_id || ''; } catch (_) {}
   if (!/^[0-9a-f-]{36}$/i.test(session || '')) return res.status(400).json({ success: false, error: 'Please sign in again.' });
+  atStage('lookup-device');
   const { data: existing, error: lookupError } = await db.from('raven_push_devices')
    .select('user_id,platform,session_id,updated_at').eq('token', token).maybeSingle();
   if (lookupError) throw lookupError;
@@ -272,12 +298,15 @@ module.exports = function registerPush(app, db, authenticate, env = process.env,
    && existing?.session_id === session && Number.isFinite(Date.parse(existing?.updated_at));
   const device = { token, platform, user_id: user.id, session_id: session,
    updated_at: unchanged ? existing.updated_at : new Date().toISOString() };
+  atStage('save-device');
   const { error } = await db.from('raven_push_devices').upsert(device);
   if (error) throw error;
   res.json({ success: true });
  }));
- app.delete('/push/device', run(async (req, res, user) => {
+ app.delete('/push/device', run('unregister-device', async (req, res, user, atStage) => {
+  atStage('validate-token');
   const token = String(req.body.token || '').trim();
+  atStage('delete-device');
   const { error } = await db.from('raven_push_devices').delete().eq('token', token).eq('user_id', user.id);
   if (error) throw error;
   res.json({ success: true });
@@ -287,11 +316,13 @@ module.exports = function registerPush(app, db, authenticate, env = process.env,
  async function tick() {
   if (busy || !configured(env)) return;
   busy = true;
+  let stage = 'claim-events';
   try {
    const { data: events, error } = await db.rpc('raven_claim_phone_alerts');
    if (error) throw error;
    for (const event of events || []) {
     let retry = false;
+    stage = 'lookup-devices';
     const { data: devices, error: lookupError } = await db.from('raven_push_devices').select('token,platform,session_id,updated_at').eq('user_id', event.user_id);
     if (lookupError) throw lookupError;
     await Promise.all((devices || []).map(async device => {
@@ -314,10 +345,11 @@ module.exports = function registerPush(app, db, authenticate, env = process.env,
        retry = true;
       }
      } catch (error) {
-      console.warn('[push] Delivery retry:', safePlatform(device.platform || 'ios'), safeErrorCode(error));
+      console.warn('[push] Delivery retry:', safePlatform(device.platform || 'ios'), safeErrorCode(error), safeErrorKind(error));
       retry = true;
      }
     }));
+    stage = 'save-delivery';
     const { error: saveError } = await db.from('raven_push_events').update({
      done: !retry,
      available_at: new Date(Date.now() + 60000 * Math.min(30, 2 ** event.attempts)).toISOString()
@@ -325,7 +357,7 @@ module.exports = function registerPush(app, db, authenticate, env = process.env,
     if (saveError) throw saveError;
    }
   } catch (error) {
-   console.warn('[push] Worker pending:', safeErrorCode(error));
+   console.warn('[push] Worker pending:', stage, safeErrorCode(error), safeErrorKind(error));
   } finally {
    busy = false;
   }
