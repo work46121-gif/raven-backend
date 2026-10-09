@@ -20,7 +20,8 @@ let cachedProvider, cachedAt = 0, cachedKey, appleClient, appleHost;
 let cachedFcmToken, cachedFcmUntil = 0, cachedFcmKey;
 
 function iosConfigured(env) {
- return env.RAVEN_PUSH_ENABLED === '1' && !!(env.APNS_KEY_ID && env.APNS_TEAM_ID && env.APNS_PRIVATE_KEY);
+ if (env.RAVEN_PUSH_ENABLED !== '1' || !(env.APNS_KEY_ID && env.APNS_TEAM_ID && env.APNS_PRIVATE_KEY)) return false;
+ try { providerToken(env); return true; } catch (_) { return false; }
 }
 
 function firebaseServiceAccount(env) {
@@ -52,11 +53,20 @@ function configured(env) {
 function providerToken(env) {
  const key = env.APNS_KEY_ID + env.APNS_TEAM_ID + env.APNS_PRIVATE_KEY;
  if (cachedProvider && cachedKey === key && Date.now() - cachedAt < 3000000) return cachedProvider;
+ let privateKey;
+ try {
+  privateKey = crypto.createPrivateKey(String(env.APNS_PRIVATE_KEY || '').replace(/\\n/g, '\n'));
+  if (privateKey.asymmetricKeyType !== 'ec' || privateKey.asymmetricKeyDetails?.namedCurve !== 'prime256v1') throw Error();
+ } catch (_) {
+  const error = Error('Apple push signing key is not a valid P-256 private key.');
+  error.code = 'PUSH_APNS_KEY_INVALID';
+  throw error;
+ }
  const head = Buffer.from(JSON.stringify({ alg: 'ES256', kid: env.APNS_KEY_ID })).toString('base64url');
  const body = Buffer.from(JSON.stringify({ iss: env.APNS_TEAM_ID, iat: Math.floor(Date.now() / 1000) })).toString('base64url');
  const input = head + '.' + body;
  const signature = crypto.sign('sha256', Buffer.from(input), {
-  key: env.APNS_PRIVATE_KEY.replace(/\\n/g, '\n'),
+  key: privateKey,
   dsaEncoding: 'ieee-p1363'
  }).toString('base64url');
  cachedKey = key;
@@ -196,11 +206,29 @@ function validToken(platform, token) {
   : /^[A-Za-z0-9_:-]{32,4096}$/.test(token);
 }
 
+// Provider/database errors can contain device tokens, SQL row contents or
+// credentials. Log only known diagnostic labels, never their raw messages.
+const SCHEMA_ERRORS = new Set(['42P01', '42703', '42883', 'PGRST202', 'PGRST204', 'PGRST205']);
+const SAFE_ERROR_CODES = new Set([...SCHEMA_ERRORS, '23502', '23503', '23505', '42501',
+ 'PUSH_APNS_KEY_INVALID', 'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND',
+ 'EAI_AGAIN', 'ERR_HTTP2_STREAM_CANCEL', 'ERR_HTTP2_GOAWAY_SESSION', 'ERR_HTTP2_INVALID_SESSION']);
+const SAFE_PROVIDER_REASONS = new Set([
+ 'BadDeviceToken', 'DeviceTokenNotForTopic', 'InvalidProviderToken', 'ExpiredProviderToken',
+ 'TopicDisallowed', 'Forbidden', 'MissingTopic', 'BadTopic', 'BadCertificateEnvironment',
+ 'BadCertificate', 'BadEnvironmentKeyInToken', 'Unregistered', 'TooManyRequests', 'TooManyProviderTokenUpdates',
+ 'InternalServerError', 'ServiceUnavailable', 'Shutdown', 'IdleTimeout', 'BadMessageId',
+ 'BadExpirationDate', 'BadPriority', 'BadCollapseId', 'BadPayload', 'PayloadEmpty',
+ 'PayloadTooLarge', 'MissingDeviceToken', 'BadPath', 'MethodNotAllowed', 'MissingProviderToken',
+ 'UnknownPlatform', 'UNREGISTERED', 'UNAUTHENTICATED', 'PERMISSION_DENIED',
+ 'RESOURCE_EXHAUSTED', 'INVALID_ARGUMENT', 'INTERNAL', 'UNAVAILABLE', 'NOT_FOUND'
+]);
+const safeErrorCode = error => SAFE_ERROR_CODES.has(error?.code) ? error.code : 'UNKNOWN';
+const safePlatform = platform => platform === 'ios' || platform === 'android' ? platform : 'unknown';
+
 module.exports = function registerPush(app, db, authenticate, env = process.env, send = sendPush) {
  const publicSetupError = error => {
   const code = String(error?.code || '');
-  const message = String(error?.message || '');
-  if (code === '42P01' || code === '42703' || /raven_push_devices|session_id|updated_at/i.test(message)) {
+  if (SCHEMA_ERRORS.has(code)) {
    return 'Phone notifications need a one-time database update. Please run the notification setup query, then retry.';
   }
   if (code === '23502' || code === '23503') return 'Please sign out and back in, then retry phone notifications.';
@@ -213,7 +241,7 @@ module.exports = function registerPush(app, db, authenticate, env = process.env,
    res.set('Cache-Control', 'private, no-store');
    await fn(req, res, user);
   } catch (error) {
-   console.error('[push] Request failed:', error?.code || '', error?.message || error);
+   console.error('[push] Request failed:', safeErrorCode(error));
    res.status(503).json({ success: false, error: publicSetupError(error) });
   }
  };
@@ -223,22 +251,28 @@ module.exports = function registerPush(app, db, authenticate, env = process.env,
  }));
  app.post('/push/device', run(async (req, res, user) => {
   const platform = String(req.body.platform || 'ios').toLowerCase();
+  if (platform !== 'ios' && platform !== 'android') return res.status(400).json({ success: false, error: 'Invalid device.' });
   const available = platforms(env);
-  if (!available[platform]) return res.status(503).json({ success: false, error: 'Phone notifications are awaiting activation.' });
+  if (!available[platform]) {
+   console.warn('[push] Registration unavailable:', platform, 'PROVIDER_NOT_CONFIGURED');
+   return res.status(503).json({ success: false, error: 'Phone notifications are awaiting activation.' });
+  }
   const token = String(req.body.token || '').trim();
   if (!validToken(platform, token)) return res.status(400).json({ success: false, error: 'Invalid device.' });
   const jwt = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
   let session = '';
   try { session = JSON.parse(Buffer.from(jwt.split('.')[1], 'base64url')).session_id || ''; } catch (_) {}
   if (!/^[0-9a-f-]{36}$/i.test(session || '')) return res.status(400).json({ success: false, error: 'Please sign in again.' });
-  const device = { token, platform, user_id: user.id, session_id: session, updated_at: new Date().toISOString() };
-  let { error } = await db.from('raven_push_devices').upsert(device);
-  // Early notification installs did not have session_id. Keep them working
-  // while newer installs retain the session binding used for safe cleanup.
-  if (error?.code === '42703' && /session_id/i.test(String(error.message || ''))) {
-   const { session_id, ...legacyDevice } = device;
-   ({ error } = await db.from('raven_push_devices').upsert(legacyDevice));
-  }
+  const { data: existing, error: lookupError } = await db.from('raven_push_devices')
+   .select('user_id,platform,session_id,updated_at').eq('token', token).maybeSingle();
+  if (lookupError) throw lookupError;
+  // Relaunching an already opted-in app must not erase pending activity. A
+  // different account, session or platform starts a new opt-in window.
+  const unchanged = existing?.user_id === user.id && existing?.platform === platform
+   && existing?.session_id === session && Number.isFinite(Date.parse(existing?.updated_at));
+  const device = { token, platform, user_id: user.id, session_id: session,
+   updated_at: unchanged ? existing.updated_at : new Date().toISOString() };
+  const { error } = await db.from('raven_push_devices').upsert(device);
   if (error) throw error;
   res.json({ success: true });
  }));
@@ -258,19 +292,29 @@ module.exports = function registerPush(app, db, authenticate, env = process.env,
    if (error) throw error;
    for (const event of events || []) {
     let retry = false;
-    const { data: devices, error: lookupError } = await db.from('raven_push_devices').select('token,platform,updated_at').eq('user_id', event.user_id);
+    const { data: devices, error: lookupError } = await db.from('raven_push_devices').select('token,platform,session_id,updated_at').eq('user_id', event.user_id);
     if (lookupError) throw lookupError;
     await Promise.all((devices || []).map(async device => {
+     // Legacy rows without a session cannot be invalidated safely on sign-out.
+     // Keep the row for a future app registration, but do not deliver to it.
+     if (!/^[0-9a-f-]{36}$/i.test(device.session_id || '')) return;
      // Opting in now must not deliver activity from before that registration.
-     if (device.updated_at > event.created_at) return;
+     if (Date.parse(device.updated_at) > Date.parse(event.created_at)) return;
      try {
       const result = await send(env, device, event);
+      if (result.status < 200 || result.status >= 300) {
+       const status = Number.isInteger(result.status) && result.status >= 100 && result.status <= 599 ? result.status : 0;
+       const reason = SAFE_PROVIDER_REASONS.has(result.reason) ? result.reason : 'UNKNOWN';
+       console.warn('[push] Provider rejected delivery:', safePlatform(device.platform || 'ios'), status, reason);
+      }
       if (result.status === 410 || result.reason === 'BadDeviceToken' || result.reason === 'Unregistered' || result.reason === 'UNREGISTERED') {
-       await db.from('raven_push_devices').delete().eq('token', device.token).eq('user_id', event.user_id);
+       const { error: deleteError } = await db.from('raven_push_devices').delete().eq('token', device.token).eq('user_id', event.user_id);
+       if (deleteError) throw deleteError;
       } else if (result.status < 200 || result.status >= 300) {
        retry = true;
       }
-     } catch (_) {
+     } catch (error) {
+      console.warn('[push] Delivery retry:', safePlatform(device.platform || 'ios'), safeErrorCode(error));
       retry = true;
      }
     }));
@@ -280,8 +324,8 @@ module.exports = function registerPush(app, db, authenticate, env = process.env,
     }).eq('id', event.id).eq('lease', event.lease);
     if (saveError) throw saveError;
    }
-  } catch (_) {
-   console.warn('[push] Delivery pending; check notification migration and provider configuration.');
+  } catch (error) {
+   console.warn('[push] Worker pending:', safeErrorCode(error));
   } finally {
    busy = false;
   }

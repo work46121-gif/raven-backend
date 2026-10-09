@@ -1739,12 +1739,6 @@ async function saveBillItemSplit(req, res) {
       const key = billParticipantKey(row.participant_name);
       if (key && !currentByKey.has(key)) currentByKey.set(key, row);
     });
-    if (Array.isArray(req.body?.expected_participants)) {
-      const expected = [...new Set(req.body.expected_participants.map(billParticipantKey))].sort();
-      if (JSON.stringify(expected) !== JSON.stringify([...currentByKey.keys()].sort())) {
-        return res.status(409).json({ success: false, error: 'Someone changed this item. Close and reopen Adjust split to see the latest shares.' });
-      }
-    }
     const rowsToRemove = [...currentByKey.entries()]
       .filter(([key]) => !requestedByKey.has(key))
       .map(([, row]) => row);
@@ -1755,6 +1749,15 @@ async function saveBillItemSplit(req, res) {
       || savedSplit.total !== quantitySplit.total
       || desiredNames.some(name => savedSplit.amounts[billParticipantKey(name)] !== quantitySplit.amounts[billParticipantKey(name)]));
     const changed = peopleChanged || quantitiesChanged;
+    const expectedKeys = Array.isArray(req.body?.expected_participants)
+      ? [...new Set(req.body.expected_participants.map(billParticipantKey))].sort()
+      : null;
+    // A retry may arrive after claims saved but clearing Paid failed. Accept
+    // the old roster only when this exact requested allocation already exists.
+    const alreadySaved = !peopleChanged && (hasQuantities ? !quantitiesChanged : savedSplit == null);
+    if (expectedKeys && JSON.stringify(expectedKeys) !== JSON.stringify([...currentByKey.keys()].sort()) && !alreadySaved) {
+      return res.status(409).json({ success: false, error: 'Someone changed this item. Close and reopen Adjust split to see the latest shares.' });
+    }
 
     // Validate and write the allocation before changing claims. A missing
     // quantity column must fail without changing who owes for the item.
@@ -1775,19 +1778,20 @@ async function saveBillItemSplit(req, res) {
       if (error) throw error;
     }
 
-    if (changed) {
-      const affectedNames = [...new Set([
-        ...currentRows.map(row => row.participant_name),
-        ...desiredNames
-      ])];
-      if (affectedNames.length) {
-        const { error: paidResetError } = await supabase.from('participants')
-          .update({ paid: false, paid_at: null, payment_method: null })
-          .eq('bill_id', billId).in('name', affectedNames);
-        if (paidResetError) throw paidResetError;
-      }
-      await recalcBillAmounts(billId);
+    // Finish these steps on every explicit Save, including an unchanged
+    // retry. Include the original claimers so removed people are reset too.
+    const affectedNames = [...new Set([
+      ...currentRows.map(row => row.participant_name),
+      ...desiredNames,
+      ...(expectedKeys || []).map(key => canonical.canonicalByKey[key]?.name).filter(Boolean)
+    ])];
+    if (affectedNames.length) {
+      const { error: paidResetError } = await supabase.from('participants')
+        .update({ paid: false, paid_at: null, payment_method: null })
+        .eq('bill_id', billId).in('name', affectedNames);
+      if (paidResetError) throw paidResetError;
     }
+    await recalcBillAmounts(billId);
 
     res.json({ success: true, changed, participants: desiredNames });
   } catch (error) {
