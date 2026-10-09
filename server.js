@@ -1675,6 +1675,8 @@ app.post('/bill/:billId/rename', async (req, res) => {
 });
 
 const RavenQuantities=require('./raven-quantities');
+const RavenTripSplits=require('./raven-trip-splits');
+const RavenTripReceipts=require('./raven-trip-receipts');
 app.post('/bill/:billId/items/:itemId/quantities',async(req,res)=>{
  try{const {billId,itemId}=req.params;const {data:bill,error:billError}=await supabase.from('bills').select('share_token,status').eq('id',billId).single();
  if(billError||!bill||bill.status==='deleted'||!bill.share_token||req.headers['x-raven-bill-token']!==bill.share_token)return res.status(403).json({success:false,error:'Open the editable bill link to adjust quantities.'});
@@ -4886,7 +4888,7 @@ app.get('/trip/:tripId', async (req, res) => {
           ${items.map((item,i) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:${i<items.length-1?'1px solid rgba(255,255,255,0.05)':'none'}">
             <span style="font-size:13px;color:#E0DEF0">${esc(item.name||'Item')}</span>
             <div style="display:flex;align-items:center;gap:8px">
-              ${item.assignees&&item.assignees.length>0?`<span style="font-size:11px;color:#6E6B80">${item.assignees.map(a=>esc(a)+(RavenQuantities.label(item,item.assignees,a)?' ('+RavenQuantities.label(item,item.assignees,a)+')':'')).join(', ')}</span>`:''}
+              ${item.assignees&&item.assignees.length>0?`<span style="font-size:11px;color:#6E6B80">${item.assignees.map(a=>esc(a)+' '+esc(RavenTripSplits.label(item,item.assignees,a)||RavenQuantities.label(item,item.assignees,a))).join(', ')}</span>`:''}
               <span style="font-family:monospace;font-size:13px;color:#9896A8">$${parseFloat(item.price||0).toFixed(2)}</span>
             </div>
           </div>`).join('')}
@@ -4919,7 +4921,7 @@ app.get('/trip/:tripId', async (req, res) => {
               </div>
               ${(()=>{ 
                 const _rKey = (person+'::receipt::'+(r.id||receiptId)).toLowerCase().replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"');
-                const _rcptSettled = !!settledPeopleRaw[_rKey];
+                const _rcptSettled = (parseFloat(settledPeopleRaw[_rKey])||0) >= parseFloat(amount)-0.005;
                 const _raw = totals[person]||0;
                 const _cred = Math.min(settledCredits[person.toLowerCase()]||0,_raw);
                 const _fullSettled = _raw>0.02 && Math.max(0,_raw-_cred)<=0.02;
@@ -4996,9 +4998,11 @@ app.get('/trip/:tripId', async (req, res) => {
         </div>
       </div>
       <div id="${receiptId}" style="display:none;padding:0 16px 20px;margin-top:-4px">
+        <button type="button" class="btn-o" data-receipt-id="${esc(r.id)}" onclick="openEditReceipt(this.dataset.receiptId)" style="margin:8px 0 12px">Adjust split · % or $</button>
         <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:0">
           ${r.photo_url ? `<div style="margin-bottom:14px"><img src="${esc(r.photo_url)}" onclick="openReceiptPhoto('${esc(r.photo_url)}','${esc(r.name)}')" style="width:100%;max-height:200px;object-fit:cover;border-radius:10px;cursor:zoom-in;border:1px solid rgba(255,255,255,0.1);display:block"></div>` : ''}
           ${itemsHtml}
+          ${items.length && r.split_settings?.mode==='bill' ? '<p style="font-size:12px;color:#9896a8">Whole-bill split overrides item shares.</p>' : ''}
           ${personBreakdownHtml}
           ${totalsHtml}
           ${receiptAddedByHtml}
@@ -5071,6 +5075,10 @@ app.get('/trip/:tripId', async (req, res) => {
         added_by: r.added_by || '',
         total: parseFloat(r.total||0),
         splits: splitsData,
+        items: RavenTripReceipts.parse(r.items, []),
+        tax: r.tax || 0, tip: r.tip || 0, service_fee: r.service_fee || 0, discount: r.discount || 0,
+        split_settings: r.split_settings || null,
+        version: RavenTripReceipts.version(r),
         photo_url: r.photo_url || '',
         created_at: r.created_at || ''
       };
@@ -5246,9 +5254,10 @@ ${coverHTML}
       <div id="r-scan-status" style="display:none"></div>
       <div>
         <div style="font-size:12px;color:#6E6B80;margin-bottom:8px;font-weight:600">Split type</div>
-          <div style="display:flex;gap:8px"><button class="spl ae" id="r-btn-e" id="r-btn-e">Even</button><button class="spl" id="r-btn-i">Itemized</button></div>
+          <div style="display:flex;gap:8px"><button class="spl ae" id="r-btn-e">Whole bill</button><button class="spl" id="r-btn-i">Itemized</button></div>
       </div>
       <div id="r-even-sec">
+        <button type="button" class="btn-o" onclick="adjustNewTripBill()" style="margin-bottom:12px">Adjust split · % or $</button>
         <div style="font-size:12px;color:#6E6B80;margin-bottom:6px;font-weight:600">Total Amount</div>
         <div style="position:relative"><span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#6E6B80">$</span><input id="r-total" type="number" placeholder="0.00" step="0.01" style="padding-left:28px"></div>
         <div style="margin-top:10px">
@@ -5393,8 +5402,10 @@ ${coverHTML}
       <div>
         <div style="font-size:12px;color:#6E6B80;font-weight:600;margin-bottom:10px">${editPeopleLabel}</div>
         <div id="edit-r-people" style="display:flex;flex-direction:column;gap:8px"></div>
-        <div style="font-size:11px;color:#6E6B80;margin-top:8px">Unchecked people are removed from the split. Amounts are recalculated evenly among checked people.</div>
+        <div style="font-size:12px;color:#9896A8;margin-top:8px">Changing the people or total requires reviewing the split. The payer's own share is included, but they do not owe themselves.</div>
+        <button type="button" class="btn-o" onclick="adjustExistingTripBill()" style="margin-top:12px">Adjust split · % or $</button>
       </div>
+      <div id="edit-r-items"></div>
       <div id="edit-r-split-preview" style="display:none;background:#0C0C12;border:1px solid rgba(48,209,88,0.15);border-radius:10px;padding:12px 14px">
         <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:8px">Split Preview</div>
         <div id="edit-r-split-rows" style="display:flex;flex-direction:column;gap:4px"></div>
@@ -7243,130 +7254,9 @@ function openMemberProfile(name) {
 }
 function closeMemberProfile(){const m=document.getElementById("member-profile-modal");if(m)m.classList.remove("open");}
 
-//  EDIT RECEIPT 
-let _editReceiptId = null;
-function openEditReceipt(id) {
-  const r = receiptsDataMap[id];
-  if (!r) { toast('Receipt data not found', false); return; }
-  _editReceiptId = id;
-  document.getElementById('edit-r-name').value = r.name;
-  document.getElementById('edit-r-total').value = r.total;
-  const addedByEl = document.getElementById('edit-r-added-by');
-  if (addedByEl) {
-    if (r.added_by) {
-      addedByEl.textContent = r.added_by + ' added this receipt';
-      addedByEl.style.display = 'block';
-    } else {
-      addedByEl.textContent = '';
-      addedByEl.style.display = 'none';
-    }
-  }
-  const sel = document.getElementById('edit-r-paidby');
-  sel.value = r.paid_by || '';
-
-  // Build people checkboxes
-  const peopleContainer = document.getElementById('edit-r-people');
-  peopleContainer.innerHTML = '';
-  const currentSplitNames = Object.keys(r.splits || {}).map(k => k.toLowerCase());
-  const avatarColors = ['#7C3AED','#E8633A','#0EA5E9','#30D158','#F59E0B','#EC4899','#14B8A6','#84CC16'];
-
-  PEOPLE.forEach((person, i) => {
-    const isOnReceipt = currentSplitNames.includes(person.toLowerCase());
-    const currentAmt  = Object.entries(r.splits || {}).find(([k]) => k.toLowerCase() === person.toLowerCase());
-    const amt = currentAmt ? parseFloat(currentAmt[1]).toFixed(2) : '0.00';
-
-    const row = document.createElement('label');
-    row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:12px 14px;background:#0C0C12;border:1px solid rgba(255,255,255,0.08);border-radius:10px;cursor:pointer;transition:border-color 0.15s';
-    row.innerHTML =
-      '<input type="checkbox" name="edit-person" value="' + person + '" ' + (isOnReceipt ? 'checked' : '') + ' style="width:18px;height:18px;accent-color:#30D158;cursor:pointer;flex-shrink:0">' +
-      '<div style="width:30px;height:30px;border-radius:50%;background:' + avatarColors[i % avatarColors.length] + ';display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">' + person[0].toUpperCase() + '</div>' +
-      '<span style="font-size:14px;font-weight:600;flex:1">' + person + '</span>' +
-      '<span style="font-size:12px;color:#6E6B80">' + (isOnReceipt ? '$' + amt : 'not included') + '</span>';
-
-    const cb = row.querySelector('input');
-    cb.addEventListener('change', () => {
-      row.style.borderColor = cb.checked ? 'rgba(48,209,88,0.3)' : 'rgba(255,255,255,0.08)';
-      updateEditSplitPreview();
-    });
-    if (isOnReceipt) row.style.borderColor = 'rgba(48,209,88,0.3)';
-    peopleContainer.appendChild(row);
-  });
-
-  updateEditSplitPreview();
-  document.getElementById('edit-receipt-modal').classList.add('open');
-}
-
-function updateEditSplitPreview() {
-  const total = parseFloat(document.getElementById('edit-r-total').value) || 0;
-  const checked = [...document.querySelectorAll('input[name="edit-person"]:checked')].map(cb => cb.value);
-  const paidBy = (document.getElementById('edit-r-paidby').value || '').toLowerCase();
-  const preview = document.getElementById('edit-r-split-preview');
-  const rows    = document.getElementById('edit-r-split-rows');
-  if (!preview || !rows) return;
-  if (checked.length === 0 || total === 0) { preview.style.display = 'none'; return; }
-
-  // Get current splits from the receipt data
-  const r = _editReceiptId ? receiptsDataMap[_editReceiptId] : null;
-  const existingSplits = r ? (r.splits || {}) : {};
-
-  // Build a lookup of existing split amounts (case-insensitive)
-  const splitLookup = {};
-  Object.entries(existingSplits).forEach(([k, v]) => { splitLookup[k.toLowerCase()] = parseFloat(v) || 0; });
-
-  // Show all PEOPLE on the receipt (checked or not), using their actual split amount
-  // Payer always shows $0.00 (they paid, they don't owe themselves)
-  // Checked non-payers show their actual split amount from the data
-  // Unchecked people show $0.00
-  preview.style.display = 'block';
-  rows.innerHTML = PEOPLE.map(p => {
-    const pLower = p.toLowerCase();
-    const isPayer = pLower === paidBy;
-    const isChecked = checked.map(c => c.toLowerCase()).includes(pLower);
-    let amt, color;
-    if (isPayer) {
-      amt = '0.00'; color = '#6E6B80';
-    } else if (isChecked) {
-      amt = (splitLookup[pLower] || 0).toFixed(2); color = '#30D158';
-    } else {
-      return ''; // not on receipt, skip
-    }
-    return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:13px">' +
-      '<span style="color:#9896A8">' + p + (isPayer ? ' <span style="font-size:11px;color:#6E6B80">(paid)</span>' : '') + '</span>' +
-      '<span style="color:' + color + ';font-weight:600">$' + amt + '</span></div>';
-  }).join('');
-}
-
-function closeEditReceipt() {
-  document.getElementById('edit-receipt-modal').classList.remove('open');
-  _editReceiptId = null;
-}
-
-async function saveEditReceipt() {
-  if (!_editReceiptId) return;
-  const name   = document.getElementById('edit-r-name').value.trim() || 'Receipt';
-  const paidBy = document.getElementById('edit-r-paidby').value;
-  const total  = parseFloat(document.getElementById('edit-r-total').value) || 0;
-  const btn    = document.getElementById('edit-r-save');
-
-  // Build new splits from checked people
-  const checked = [...document.querySelectorAll('input[name="edit-person"]:checked')].map(cb => cb.value);
-  if (checked.length === 0) { toast('Select at least one person', false); return; }
-  const per = total / checked.length;
-  const splits = {};
-  checked.forEach(p => { splits[p] = per; });
-
-  btn.textContent = 'Saving...'; btn.disabled = true;
-  try {
-    const r = await fetch(BACKEND + '/trip/' + TRIP_ID + '/receipt/' + _editReceiptId + '/edit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: TRIP_TOKEN, name, paid_by: paidBy || null, total, splits })
-    });
-    const d = await r.json();
-    if (d.success) { closeEditReceipt(); toast(' Receipt updated!'); reloadPage(900); }
-    else { toast(d.error || 'Error saving', false); btn.textContent = 'Save Changes'; btn.disabled = false; }
-  } catch(e) { toast('Network error', false); btn.textContent = 'Save Changes'; btn.disabled = false; }
-}
+// Trip bill editors share one validated percentage / dollar calculator.
+${require('fs').readFileSync(require.resolve('./raven-trip-splits.js'),'utf8')}
+${require('fs').readFileSync(require.resolve('./raven-trip-bill-editor.js'),'utf8')}
 
 //  MODAL HELPERS 
 function openModal(id)  { document.getElementById(id).classList.add('open'); }
@@ -7584,27 +7474,9 @@ function setSplit(t) {
   updateItemizedSummary();
 }
 function updateEven() {
-  const v=parseFloat(document.getElementById('r-total').value)||0;
-  const discount=parseFloat((document.getElementById('r-discount')||{}).value)||0;
-  const net=Math.max(0,v-discount);
-  const paidByEl = document.getElementById('r-paidby');
-  const paidByT = paidByEl ? paidByEl.value.trim() : '';
-  const paidByL = paidByT.toLowerCase();
-  // Exclude payer  all non-payers split evenly
-  // Split evenly across ALL people  payer fronted their own share too
-  const per = PEOPLE.length > 0 ? net / PEOPLE.length : 0;
-  const prevEl = document.getElementById('r-even-prev');
-  if (!prevEl) return;
-  prevEl.style.display = net > 0 ? 'block' : 'none';
-  let html = '<div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:8px">Per Person</div>';
-  PEOPLE.forEach(p => {
-    const isPayer = paidByT && p.trim().toLowerCase() === paidByL;
-    const amt = '$' + per.toFixed(2);
-    const color = isPayer ? '#A855F7' : '#30D158';
-    const label = isPayer ? amt + ' <span style="font-size:10px;opacity:0.7">(their share, pre-paid)</span>' : amt;
-    html += '<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px"><span style="color:#9896A8">' + p + '</span><span style="color:' + color + ';font-weight:600">' + label + '</span></div>';
-  });
-  prevEl.innerHTML = html;
+  const preview=document.getElementById('r-even-prev');preview.style.display='block';
+  try{const total=tripBillNet();preview.innerHTML=tripBillPreview(RavenTripSplits.allocation(total,PEOPLE,tripBillSplit),document.getElementById('r-paidby').value);}
+  catch(error){preview.textContent=error.message+' Choose Adjust split to review.';}
 }
 function updateItemizedSummary() {
   const summaryEl = document.getElementById('r-item-summary');
@@ -7667,6 +7539,7 @@ function renderItems() {
       b.textContent=(on?' ':'')+p;
       b.style.cssText='padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;background:'+(on?'rgba(48,209,88,0.15)':'rgba(255,255,255,0.05)')+';border:1px solid '+(on?'rgba(48,209,88,0.3)':'rgba(255,255,255,0.1)')+';color:'+(on?'#30D158':'#9896A8');
       b.addEventListener('click',()=>{
+        if(item.custom_split){toast('Adjust this item’s split to review the changed people before saving.');}
         if(item.assignees.includes(p)) item.assignees=item.assignees.filter(a=>a!==p); else item.assignees.push(p);
         renderItems();
       });
@@ -7674,7 +7547,15 @@ function renderItems() {
     });
     d.appendChild(row); d.appendChild(btns); container.appendChild(d);
     const sharing=item.assignees.length?item.assignees:PEOPLE;
-    if(sharing.length>1){const adjust=document.createElement('button');adjust.type='button';adjust.dataset.itemControl='quantity';adjust.textContent='Adjust split';adjust.setAttribute('aria-label','Adjust split quantities');adjust.style.cssText='background:#7c3aed18;color:#cba5ee;border:1px solid #7c3aed55;border-radius:7px;padding:4px 7px;font:inherit;font-size:10px;font-weight:700;white-space:nowrap;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent';adjust.onclick=()=>RavenQuantities.edit(item,sharing,async q=>{item.quantity_split=q;renderItems()});priceStack.append(adjust);if(RavenQuantities.valid(item,sharing)){const detail=document.createElement('p');detail.textContent=sharing.map(p=>p+': '+RavenQuantities.label(item,sharing,p)).join(' · ');detail.style.cssText='font-size:12px;color:#9896a8';d.append(detail)}}
+    if(sharing.length>0){
+      const adjust=document.createElement('button');adjust.type='button';adjust.textContent='Adjust split · % or $';adjust.dataset.itemControl='financial';adjust.className='btn-o';adjust.style.cssText='padding:7px;font-size:11px;white-space:nowrap';
+      adjust.onclick=()=>editTripItemSplit(item,sharing,renderItems);priceStack.append(adjust);
+      const quantity=document.createElement('button');quantity.type='button';quantity.textContent='Quantities';quantity.dataset.itemControl='quantity';quantity.className='btn-o';quantity.style.cssText='padding:7px;font-size:11px';
+      quantity.onclick=()=>RavenQuantities.edit(item,sharing,async q=>{item.quantity_split=q;delete item.custom_split;renderItems()});priceStack.append(quantity);
+    }
+    const detail=document.createElement('p');detail.style.cssText='font-size:12px;color:#9896a8';
+    try{detail.textContent=Object.entries(RavenTripSplits.itemShares(item,sharing,RavenQuantities)).map(([name,value])=>name+': $'+value.toFixed(2)).join(' · ')}catch(error){detail.textContent=error.message}
+    d.append(detail);
   });
   updateItemizedSummary();
 }
@@ -7889,51 +7770,24 @@ async function saveReceipt() {
   const btn=document.getElementById('r-save');
   btn.textContent='Saving...'; btn.disabled=true;
   let total=0, splits={};
-  if(splitType==='even'){
-    total=parseFloat(document.getElementById('r-total').value)||0;
-    const discount=parseFloat((document.getElementById('r-discount')||{}).value)||0;
-    if(total<=0){btn.textContent='Save Receipt';btn.disabled=false;toast('Enter a total amount',false);return;}
-    const finalTotal = Math.max(0, total - discount);
-    const paidByT2=(paidBy||'').trim();
-    const paidByL2=paidByT2.toLowerCase();
-    // Split evenly across ALL people  payer's share is $0 owed (they already fronted it)
-    const per=PEOPLE.length>0?finalTotal/PEOPLE.length:0;
-    PEOPLE.forEach(p=>{splits[p]=(paidByT2&&p.trim().toLowerCase()===paidByL2)?0:per;});
-    total = finalTotal;
-  } else {
-    PEOPLE.forEach(p=>{splits[p]=0;});
-    tripItems.forEach(item=>{const as=item.assignees.length>0?item.assignees:PEOPLE;as.forEach(p=>{splits[p]=(splits[p]||0)+RavenQuantities.share(item,as,p);});total+=item.price;});
-    if(total<=0){btn.textContent='Save Receipt';btn.disabled=false;toast('Add at least one item',false);return;}
-    const subtotal = total;
-    const tax = parseFloat((document.getElementById('r-tax') || {}).value) || 0;
-    const tip = parseFloat((document.getElementById('r-tip') || {}).value) || 0;
-    const serviceFee = parseFloat((document.getElementById('r-service') || {}).value) || 0;
-    const discount = parseFloat((document.getElementById('r-item-discount') || {}).value) || 0;
-    if (subtotal > 0) {
-      Object.keys(splits).forEach(person => {
-        const baseShare = parseFloat(splits[person]) || 0;
-        const proportion = baseShare / subtotal;
-        if (tax > 0) splits[person] += tax * proportion;
-        if (tip > 0) splits[person] += tip * proportion;
-        if (serviceFee > 0) splits[person] += serviceFee * proportion;
-      });
-      const preDiscountTotal = subtotal + tax + tip + serviceFee;
-      if (discount > 0 && preDiscountTotal > 0) {
-        Object.keys(splits).forEach(person => {
-          const currentShare = parseFloat(splits[person]) || 0;
-          const discountShare = discount * (currentShare / preDiscountTotal);
-          splits[person] = Math.max(0, currentShare - discountShare);
-        });
-      }
+  try{
+    if(splitType==='even'){total=tripBillNet();splits=RavenTripSplits.allocation(total,PEOPLE,tripBillSplit);}
+    else{
+      const result=RavenTripSplits.receipt(tripItems,PEOPLE,{
+        tax:document.getElementById('r-tax').value||0,tip:document.getElementById('r-tip').value||0,
+        service_fee:document.getElementById('r-service').value||0,discount:document.getElementById('r-item-discount').value||0
+      },RavenQuantities);total=result.total;splits=result.splits;
     }
-    total = Math.max(0, subtotal + tax + tip + serviceFee - discount);
-  }
+    if(total<=0)throw Error('Enter a total greater than zero.');
+  }catch(error){btn.textContent='Save Receipt';btn.disabled=false;toast(error.message,false);return}
   try{
     const photoUrl = imgBase64 ? ('data:image/jpeg;base64,' + imgBase64) : null;
     const payload = {
       name,
       total,
       splits,
+      split_format: 1,
+      split_settings: splitType==='itemized'?{mode:'items'}:{mode:'bill',people:PEOPLE,split:tripBillSplit},
       token: TRIP_TOKEN,
       added_by: addedBy || null,
       added_by_user_id: /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(addedByUserId) ? addedByUserId : null,
@@ -7982,7 +7836,7 @@ async function saveReceipt() {
       document.getElementById('r-service').value='';
       document.getElementById('r-item-discount').value='';
       tripScanCharges = { tax: 0, tip: 0, service_fee: 0 };
-      tripItems=[]; imgBase64=null; splitType='even';
+      tripItems=[]; tripBillSplit={mode:'equal'}; imgBase64=null; splitType='even';
       window._currentPendingId = null;
       setSplit('even'); renderItems(); updateItemizedSummary();
       reloadPage(1200);
@@ -9662,6 +9516,11 @@ app.post('/trip/:tripId/receipt', async (req, res) => {
     if (!trip) return res.json({ success: false, error: 'Trip not found' });
     if (trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
     const tripReceiptRow = { trip_id: tripId, name: name||'Receipt', total: parseFloat(total)||0, splits: JSON.stringify(splits||{}), items: JSON.stringify(items||[]), paid_by: paid_by||null, created_at: new Date().toISOString() };
+    if (req.body.split_format === 1 || req.body.split_settings || (Array.isArray(items) && items.some(item=>item.custom_split))) {
+      try { RavenTripReceipts.validate(req.body, trip); }
+      catch (error) { return res.status(400).json({success:false,error:error.message}); }
+      tripReceiptRow.split_settings=req.body.split_settings;
+    }
     if (added_by) tripReceiptRow.added_by = String(added_by).trim().slice(0, 120);
     if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(added_by_user_id || ''))) {
       tripReceiptRow.added_by_user_id = String(added_by_user_id).toLowerCase();
@@ -9764,14 +9623,17 @@ app.post('/trip/:tripId/receipt/:receiptId/edit', async (req, res) => {
   try {
     const { tripId, receiptId } = req.params;
     const { token, name, paid_by, total, splits } = req.body;
-    const { data: trip } = await supabase.from('trips').select('share_token').eq('id', tripId).single();
+    const { data: trip } = await supabase.from('trips').select('share_token,people').eq('id', tripId).single();
     if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
-    const updates = {};
-    if (name    !== undefined) updates.name    = name || 'Receipt';
-    if (paid_by !== undefined) updates.paid_by = paid_by || null;
-    if (total   !== undefined) updates.total   = parseFloat(total) || 0;
-    if (splits  !== undefined) updates.splits  = JSON.stringify(splits);
-    await supabase.from('trip_receipts').update(updates).eq('id', receiptId).eq('trip_id', tripId);
+    const {data: current,error: readError}=await supabase.from('trip_receipts').select('*').eq('id',receiptId).eq('trip_id',tripId).single();
+    if(readError||!current)return res.status(404).json({success:false,error:'Receipt not found. Refresh the trip.'});
+    if(req.body.expected_version!==RavenTripReceipts.version(current))return res.status(409).json({success:false,error:'This bill changed, or this page is out of date. Refresh before editing again.'});
+    let validated;
+    try{validated=RavenTripReceipts.validate(req.body,trip)}catch(error){return res.status(400).json({success:false,error:error.message})}
+    const updates={name:name||'Receipt',paid_by:paid_by||null,total:validated.total,splits:JSON.stringify(validated.splits),items:JSON.stringify(validated.items),split_settings:validated.split_settings};
+    for(const field of ['tax','tip','service_fee','discount'])updates[field]=Number(req.body[field]||0);
+    const saved=await supabase.rpc('raven_edit_trip_split',{p_trip:String(tripId),p_receipt:String(receiptId),p_token:token,p_expected:RavenTripReceipts.snapshot(current),p_updates:updates});
+    if(saved.error)return res.status(409).json({success:false,error:saved.error.code==='P0001'?saved.error.message:'Could not save the bill safely. Please retry shortly.'});
     // Recalculate trip total = outstanding (not total spend)
     const { data: allR } = await supabase.from('trip_receipts').select('total').eq('trip_id', tripId);
     const rcptCount = (allR||[]).length;
