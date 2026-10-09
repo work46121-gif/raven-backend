@@ -16,6 +16,32 @@ const TEXT = {
  friend_request: 'You have a new friend request.'
 };
 
+function alertText(event) {
+ // Names only, never message/comment bodies or amounts on the lock screen.
+ const clean = (value, max) => String(value || '').replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, '').trim().slice(0, max);
+ const first = clean(event.actor_name, 60) || 'Someone';
+ if (['dm', 'group', 'trip_message'].includes(event.kind)) return first + ' sent you a message on RAVEN';
+ if (event.kind === 'trip_comment') return first + ' added a comment on trip ' + (clean(event.trip_name, 100) || 'your trip');
+ if (event.kind === 'trip_overdue') return 'You have an unpaid balance for ' + (clean(event.trip_name, 100) || 'your trip') + '. Open RAVEN to review your bill.';
+ return TEXT[event.kind] || 'You have a new RAVEN update.';
+}
+
+async function registrationStatus(db, userIds, env = process.env) {
+ const result = Object.fromEntries(userIds.map(id => [id, { state: 'unavailable', deviceCount: 0, platforms: [] }]));
+ if (!userIds.length) return result;
+ // Admin needs counts, not registration tokens or session identifiers.
+ const { data, error } = await db.from('raven_push_devices').select('user_id,platform')
+  .in('user_id', userIds).not('session_id', 'is', null);
+ if (error) return result;
+ const providers = platforms(env);
+ for (const id of userIds) {
+  const devices = (data || []).filter(d => d.user_id === id);
+  const types = [...new Set(devices.map(d => d.platform))].filter(p => p === 'ios' || p === 'android');
+  result[id] = { state: !devices.length ? 'not_registered' : types.some(p => providers[p]) ? 'enabled' : 'service_unavailable', deviceCount: devices.length, platforms: types };
+ }
+ return result;
+}
+
 let cachedProvider, cachedAt = 0, cachedKey, appleClient, appleHost;
 let cachedFcmToken, cachedFcmUntil = 0, cachedFcmKey;
 
@@ -119,7 +145,7 @@ function sendApple(env, token, event) {
     finish(null, { status, reason });
    });
    stream.end(JSON.stringify({
-    aps: { alert: { title: 'RAVEN', body: TEXT[event.kind] || 'You have a new RAVEN update.' }, sound: 'default' },
+    aps: { alert: { title: 'RAVEN', body: alertText(event) }, sound: 'default' },
     kind: event.kind,
     source_id: event.source_id,
     recipient_id: event.user_id
@@ -177,7 +203,7 @@ async function sendFcm(env, token, event) {
  const body = JSON.stringify({
   message: {
    token,
-   notification: { title: 'RAVEN', body: TEXT[event.kind] || 'You have a new RAVEN update.' },
+   notification: { title: 'RAVEN', body: alertText(event) },
    data: {
     kind: String(event.kind || ''), source_id: String(event.source_id || ''), recipient_id: String(event.user_id || '')
    },
@@ -242,7 +268,7 @@ const safeErrorKind = error => {
 };
 const safePlatform = platform => platform === 'ios' || platform === 'android' ? platform : 'unknown';
 
-module.exports = function registerPush(app, db, authenticate, env = process.env, send = sendPush) {
+module.exports = function registerPush(app, db, authenticate, env = process.env, send = sendPush, reminders = null) {
  const publicSetupError = error => {
   const code = String(error?.code || '');
   if (SCHEMA_ERRORS.has(code)) {
@@ -322,6 +348,16 @@ module.exports = function registerPush(app, db, authenticate, env = process.env,
    if (error) throw error;
    for (const event of events || []) {
     let retry = false;
+    // Recheck the live balance and trip membership on every delivery attempt;
+    // a payment after enqueueing cancels the reminder, including retries.
+    if (event.kind === 'trip_overdue') {
+     stage = 'verify-overdue-balance';
+     if (!reminders || !await reminders.eligible(event)) {
+      const { error } = await db.from('raven_push_events').update({ done: true }).eq('id', event.id).eq('lease', event.lease);
+      if (error) throw error;
+      continue;
+     }
+    }
     stage = 'lookup-devices';
     const { data: devices, error: lookupError } = await db.from('raven_push_devices').select('token,platform,session_id,updated_at').eq('user_id', event.user_id);
     if (lookupError) throw lookupError;
@@ -372,3 +408,5 @@ module.exports.configured = configured;
 module.exports.platforms = platforms;
 module.exports.firebaseServiceAccount = firebaseServiceAccount;
 module.exports.sendFcm = sendFcm;
+module.exports.alertText = alertText;
+module.exports.registrationStatus = registrationStatus;

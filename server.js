@@ -113,7 +113,8 @@ async function requireRavenAdmin(req, res, next) {
 }
 
 require('./raven-chat-routes')(app, supabase, getAuthenticatedRavenUser);
-require('./raven-push')(app, supabase, getAuthenticatedRavenUser);
+const tripPushReminders = require('./raven-push-reminders')(supabase, (trip, receipts) => buildTripConciergePayload(trip, receipts).debtors);
+require('./raven-push')(app, supabase, getAuthenticatedRavenUser, process.env, undefined, tripPushReminders);
 require('./raven-trip-travel')(app, supabase, getAuthenticatedRavenUser);
 
 async function provisionCreatorWelcome(user) {
@@ -885,7 +886,9 @@ app.get('/admin/recent-members', requireRavenAdmin, async (req, res) => {
       .range(offset, offset + pageSize);
     if (error) throw error;
     res.set('Cache-Control', 'private, no-store');
-    res.json({ success: true, members: (data || []).slice(0, pageSize), hasMore: (data || []).length > pageSize, nextOffset: offset + pageSize });
+    const members = (data || []).slice(0, pageSize);
+    const pushStatus = await require('./raven-push').registrationStatus(supabase, members.map(member => member.id));
+    res.json({ success: true, members: members.map(member => ({ ...member, push_notifications: pushStatus[member.id] })), hasMore: (data || []).length > pageSize, nextOffset: offset + pageSize });
   } catch (error) {
     console.error('[admin] recent members:', error.message);
     res.status(500).json({ success: false, error: 'Could not load recent members.' });
@@ -905,6 +908,8 @@ app.get('/admin/profile/:ravenId', requireRavenAdmin, async (req, res) => {
     if (profileError) throw profileError;
     if (!rawProfile?.id) return res.status(404).json({ success: false, error: '@' + ravenId + ' was not found.' });
     const profile = toAdminProfile(rawProfile);
+    profile.push_notifications = (await require('./raven-push').registrationStatus(supabase, [profile.id]))[profile.id];
+    res.set('Cache-Control', 'private, no-store');
 
     const [createdBillsResult, participantResult, friendshipsResult, messagesResult] = await Promise.all([
       supabase.from('bills').select('id,name,total,status,created_at,creator_phone').eq('creator_phone', profile.email).neq('status', 'deleted').order('created_at', { ascending: false }).limit(100),
