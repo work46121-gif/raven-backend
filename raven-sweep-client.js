@@ -8,8 +8,9 @@ async function saveSweepAction(url,body,button){
 }
 function recordSweepPayment(name,button){
   const amount=Number(button.dataset.settleAmount);
-  if(!confirm('Confirm '+name+' already sent the displayed payment'+(amount?' of $'+amount.toFixed(2):'')+'? This only records it; RAVEN does not transfer money.'))return;
-  return saveSweepAction('/trip/'+TRIP_ID+'/mark-settled',{name,amount},button);
+  const to=button.dataset.sweepTo;
+  if(!confirm('Confirm '+name+' already paid '+to+' $'+amount.toFixed(2)+'? This only records it; RAVEN does not transfer money.'))return;
+  return saveSweepAction('/trip/'+TRIP_ID+'/mark-settled',{name,to,amount},button);
 }
 function undoSweepPayment(button){
   if(!confirm('Undo this payment record? Balances will be recalculated. This does not reverse an actual money transfer.'))return;

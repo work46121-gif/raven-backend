@@ -7,7 +7,8 @@ function ledger(trip){const v=parse(trip.sweep_payments,[]);return Array.isArray
 function active(trip){return !!trip.simple_split||ledger(trip).some(p=>!p.reversed_at)}
 function snapshot(trip,receipts){return{people:trip.people??null,simple_split:trip.simple_split??null,settled_people:trip.settled_people??null,sweep_payments:trip.sweep_payments??[],receipts:receipts.map(r=>({id:String(r.id),paid_by:r.paid_by??null,total:r.total==null?null:Number(r.total),splits:r.splits??null})).sort((a,b)=>a.id.localeCompare(b.id))}}
 function stable(v){if(Array.isArray(v))return v.map(stable);if(v&&typeof v==='object')return Object.fromEntries(Object.keys(v).sort().map(k=>[k,stable(v[k])]));return v}
-function version(trip,receipts){return crypto.createHash('sha256').update(JSON.stringify(stable(snapshot(trip,receipts)))).digest('hex')}
+// A cached page must not record a payment using the previous intermediary plan.
+function version(trip,receipts){return crypto.createHash('sha256').update(JSON.stringify(stable({rule:'direct-net-v2',...snapshot(trip,receipts)}))).digest('hex')}
 function plan(people,detailed,fronted={},payments=[]){
  const canon=new Map(people.map(n=>[key(n),n]));
  const net=Object.fromEntries(people.map(n=>[n,0]));
@@ -24,13 +25,21 @@ function plan(people,detailed,fronted={},payments=[]){
    if(!from||!to||from===to||value<=0)throw Error('A recorded Sweep payment no longer matches the trip members. Review payment history.');
    net[from]+=value;net[to]-=value;
  }
- // A single clearing person: debtors pay the largest original payer, who
- // forwards only the other creditors' net reimbursements. Never route cycles.
- const hub=[...people].sort((a,b)=>cents(fronted[b])-cents(fronted[a])||originalNet[b]-originalNet[a]||a.localeCompare(b))[0]||null;
- for(const name of people){
-   if(name===hub)continue;
-   if(net[name]<0)payoutsByPerson[name][hub]=-net[name]/100;
-   if(net[name]>0)payoutsByPerson[hub][name]=net[name]/100;
+ // Only net debtors pay; only net creditors receive. No intermediary or
+ // forwarding payments. Prefer exact matches, then largest remaining balances.
+ const debtors=people.filter(n=>net[n]<0).map(name=>({name,left:-net[name]}));
+ const creditors=people.filter(n=>net[n]>0).map(name=>({name,left:net[name]}));
+ const rank=(a,b)=>b.left-a.left||people.indexOf(a.name)-people.indexOf(b.name);
+ while(debtors.length&&creditors.length){
+   debtors.sort(rank);creditors.sort(rank);
+   let debtor=debtors[0],creditor=creditors[0];
+   const exact=debtors.map(d=>({debtor:d,creditor:creditors.find(c=>c.left===d.left)})).find(pair=>pair.creditor);
+   if(exact){debtor=exact.debtor;creditor=exact.creditor;}
+   const amount=Math.min(debtor.left,creditor.left);
+   payoutsByPerson[debtor.name][creditor.name]=(cents(payoutsByPerson[debtor.name][creditor.name])+amount)/100;
+   debtor.left-=amount;creditor.left-=amount;
+   if(!debtor.left)debtors.splice(debtors.indexOf(debtor),1);
+   if(!creditor.left)creditors.splice(creditors.indexOf(creditor),1);
  }
  const receivableByPerson=Object.fromEntries(people.map(n=>[n,0])),payableByPerson={};
  for(const [from,targets]of Object.entries(payoutsByPerson)){
@@ -38,7 +47,7 @@ function plan(people,detailed,fronted={},payments=[]){
    for(const [to,value]of Object.entries(targets))receivableByPerson[to]=(cents(receivableByPerson[to])+cents(value))/100;
  }
  const netByPerson=Object.fromEntries(people.map(n=>[n,net[n]/100]));
- return{hub,payoutsByPerson,receivableByPerson,payableByPerson,netByPerson,originalNetByPerson:Object.fromEntries(people.map(n=>[n,originalNet[n]/100])),outstanding:people.reduce((s,n)=>s+Math.max(0,-net[n]),0)/100};
+ return{payoutsByPerson,receivableByPerson,payableByPerson,netByPerson,originalNetByPerson:Object.fromEntries(people.map(n=>[n,originalNet[n]/100])),outstanding:people.reduce((s,n)=>s+Math.max(0,-net[n]),0)/100};
 }
 function build(trip,receipts){
  const people=parse(trip.people,[]),canon=new Map(people.map(n=>[key(n),n]));
@@ -67,12 +76,15 @@ function build(trip,receipts){
  }
  return{...plan(people,detailed,fronted,ledger(trip)),version:version(trip,receipts)};
 }
-function record(trip,receipts,{name,amount,expected_version}){
+function record(trip,receipts,{name,to,amount,expected_version}){
  const current=build(trip,receipts),person=parse(trip.people,[]).find(n=>key(n)===key(name));
  if(expected_version!==current.version)throw Error('Balances changed. Refresh the trip before recording payment.');
- if(!person||cents(amount)<=0||cents(amount)!==cents(current.payableByPerson[person]))throw Error('Record only the current displayed payout amount.');
+ const targets=Object.entries(current.payoutsByPerson[person]||{});
+ const target=to?targets.find(([n])=>key(n)===key(to)):targets.length===1?targets[0]:null;
+ if(!target)throw Error('Choose the specific payment you sent before recording it.');
+ if(!person||cents(amount)<=0||cents(amount)!==cents(target[1]))throw Error('Record only the current displayed payout amount.');
  const now=new Date().toISOString();
- return [...ledger(trip),...Object.entries(current.payoutsByPerson[person]).map(([to,amount])=>({id:crypto.randomUUID(),from:person,to,amount,created_at:now}))];
+ return [...ledger(trip),{id:crypto.randomUUID(),from:person,to:target[0],amount:target[1],created_at:now}];
 }
 function reverse(trip,receipts,{id,expected_version}){
  if(expected_version!==version(trip,receipts))throw Error('Balances changed. Refresh before undoing payment.');

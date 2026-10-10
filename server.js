@@ -4404,11 +4404,17 @@ app.get('/trip/:tripId', async (req, res) => {
       const payer = r.paid_by || '';
       const payerKey = payer ? Object.keys(frontedTotals).find(k => k.toLowerCase() === payer.toLowerCase()) : null;
       if (payerKey) frontedTotals[payerKey] = Math.round((frontedTotals[payerKey] + (parseFloat(r.total) || 0)) * 100) / 100;
+      // Legacy receipts may omit the payer's own share. They bear the bill
+      // remainder after everyone else's assigned amounts, including rounding.
+      if(payerKey){
+        const others=Object.entries(splits).reduce((sum,[n,v])=>n.toLowerCase()===payer.toLowerCase()?sum:sum+Math.round((Number(v)||0)*100),0);
+        assignedTotals[payerKey]=Math.round((assignedTotals[payerKey]+Math.max(0,Math.round((Number(r.total)||0)*100)-others)/100)*100)/100;
+      }
       Object.entries(splits).forEach(([person, amt]) => {
         const key = Object.keys(totals).find(k => k.toLowerCase() === person.toLowerCase());
         if (key === undefined) return;
         const amtNum = Math.round((parseFloat(amt) || 0) * 100) / 100;
-        assignedTotals[key] = Math.round((assignedTotals[key] + amtNum) * 100) / 100;
+        if(key!==payerKey)assignedTotals[key] = Math.round((assignedTotals[key] + amtNum) * 100) / 100;
         // If this person IS the payer, they don't owe themselves  skip
         if (payer && key.toLowerCase() === payer.toLowerCase()) return;
         totals[key] = Math.round((totals[key] + amtNum) * 100) / 100;
@@ -4727,32 +4733,33 @@ app.get('/trip/:tripId', async (req, res) => {
     const effectiveIsPartiallySettled = settledCredit > 0 && effectiveAmtOwed > 0.02;
     const effectiveIsCreditor = amtReceivable > 0 && effectiveAmtOwed === 0;
     const sweepNet = tripUsesSimpleSplit ? simpleSettlementPlan.netByPerson[p] : 0;
-    const sweepStatus = tripUsesSimpleSplit ? [amtReceivable>0?'collect $'+amtReceivable.toFixed(2):'',effectiveAmtOwed>0?(p===simpleSettlementPlan.hub?'forward $':'pay $')+effectiveAmtOwed.toFixed(2):''].filter(Boolean).join(' · ')||'all settled' : '';
+    const sweepStatus = tripUsesSimpleSplit ? (sweepNet>0?'Gets back':sweepNet<0?'Owes':'Settled') : '';
     const assignedTotal = Math.round((assignedTotals[p] || 0) * 100) / 100;
     const frontedTotal = Math.round((frontedTotals[p] || 0) * 100) / 100;
     const spendMetaParts = [];
-    if (assignedTotal > 0.005) spendMetaParts.push('assigned $' + assignedTotal.toFixed(2));
-    if (frontedTotal > 0.005) spendMetaParts.push('fronted $' + frontedTotal.toFixed(2));
-    const spendMeta = spendMetaParts.join('  ');
+    if (assignedTotal > 0.005) spendMetaParts.push('Share $' + assignedTotal.toFixed(2));
+    if (frontedTotal > 0.005) spendMetaParts.push('Paid $' + frontedTotal.toFixed(2));
+    const spendMeta = spendMetaParts.join(' · ');
 
     const personId = 'person-' + p.replace(/[^a-z0-9]/gi,'_');
 
     // Build pay slot buttons for top-level "Who Owes What"
     // Each entry = one row: "Pay [payer] $X" button + "Mark as Paid" 
     const payBtnsHtml = payerEntries.map(([payerName, amt]) =>
-      `<div class="pay-slot" data-payer="${esc(payerName)}" data-amount="${amt.toFixed(2)}" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;padding:8px 10px;background:rgba(255,255,255,0.03);border-radius:8px">
+      `<div class="pay-slot" data-payer="${esc(payerName)}" data-amount="${amt.toFixed(2)}" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:6px;padding:8px 10px;background:rgba(255,255,255,0.03);border-radius:8px">
         <div>
-          <div style="font-size:11px;color:#6E6B80">Owes <b style="color:#F0EEF8">${esc(payerName)}</b></div>
+          <div style="font-size:11px;color:#6E6B80">${tripUsesSimpleSplit?'Pay':'Owes'} <b style="color:#F0EEF8">${esc(payerName)}</b></div>
           <div style="font-size:16px;font-weight:800;font-family:monospace;color:#FF9A3C">$${amt.toFixed(2)}</div>
         </div>
         <div class="pay-btns" style="display:flex;gap:6px;align-items:center">
           <span style="font-size:11px;color:#6E6B80;font-style:italic">Loading...</span>
         </div>
+        ${tripUsesSimpleSplit?'<button type="button" class="sweep-record-payment" data-name="'+esc(p)+'" data-sweep-to="'+esc(payerName)+'" data-settle-amount="'+amt.toFixed(2)+'" onclick="recordSweepPayment(this.dataset.name,this)" style="width:100%;padding:7px 10px;border:1px solid #30d15844;border-radius:8px;background:#30d1580d;color:#30d158;font:inherit;font-size:12px;cursor:pointer">Record as paid</button>':''}
       </div>`
     ).join('');
 
     // "Mark as Paid" button for the whole person (settles all their debt at once)
-    const markPaidBtnHtml = payerEntries.length > 0
+    const markPaidBtnHtml = !tripUsesSimpleSplit && payerEntries.length > 0
       ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.06)">
           <button class="mark-settled-btn" data-person="${personId}" data-name="${esc(p)}" id="markpaid-${personId}" data-settle-amount="${effectiveAmtOwed.toFixed(2)}" style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:9px;color:#30D158;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer">${tripUsesSimpleSplit?'Record payment':'Settle balance'} - $${effectiveAmtOwed.toFixed(2)}</button>
         </div>`
@@ -4772,7 +4779,7 @@ app.get('/trip/:tripId', async (req, res) => {
         </div>
         <div style="text-align:right">
           <div class="person-balance-display" data-original-owed="${rawOwed.toFixed(2)}" data-raw-owed="${effectiveAmtOwed.toFixed(2)}" style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${effectiveIsSettled?'#30D158':tripUsesSimpleSplit&&sweepNet>0?'#A855F7':effectiveAmtOwed>0?'#FF9A3C':effectiveIsCreditor?'#A855F7':'#9896A8'}">
-            ${tripUsesSimpleSplit ? (sweepNet<0?'-$':sweepNet>0?'+$':'$')+Math.abs(sweepNet).toFixed(2)+' net' : effectiveIsSettled ? '$0.00' : effectiveAmtOwed>0 ? '-$'+effectiveAmtOwed.toFixed(2) : effectiveIsCreditor ? '+$'+amtReceivable.toFixed(2) : '$0.00'}
+            ${tripUsesSimpleSplit ? '$'+Math.abs(sweepNet).toFixed(2) : effectiveIsSettled ? '$0.00' : effectiveAmtOwed>0 ? '-$'+effectiveAmtOwed.toFixed(2) : effectiveIsCreditor ? '+$'+amtReceivable.toFixed(2) : '$0.00'}
           </div>
           ${spendMeta ? `<div style="margin-top:3px;font-size:10px;color:#6E6B80">${spendMeta}</div>` : ''}
         </div>
@@ -5152,7 +5159,6 @@ ${coverHTML}
 <div class="sec" style="margin-top:20px">
   <div class="sec-lbl">${owesHeading}${tripUsesSimpleSplit ? ` <button type="button" onclick="document.getElementById(\'sweep-info\').showModal()" aria-label="What is RAVENSWEEP?" style="display:inline-flex;align-items:center;gap:5px;margin-left:8px;padding:4px 8px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:999px;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#30D158;vertical-align:middle">RAVEN Sweep ⓘ</button>` : ''}</div>
   <div class="card">
-    ${tripUsesSimpleSplit ? '<p style="padding:14px 16px;font-size:12px;line-height:1.6;color:#b8b1c7">RAVEN Sweep nets everyone’s shares. Pay '+esc(simpleSettlementPlan.hub||'the main payer')+', who paid the most and forwards the other payers’ net reimbursements. Record payments only after sending them; RAVEN does not move money.</p>' : ''}
     ${owesRows}
     ${tripUsesSimpleSplit && RavenSweep.ledger(trip).some(p=>!p.reversed_at) ? '<details style="padding:14px 16px"><summary>Recorded Sweep payments</summary>'+RavenSweep.ledger(trip).filter(p=>!p.reversed_at).map(p=>'<div style="padding:10px 0;font-size:12px">'+esc(p.from)+' → '+esc(p.to)+' · $'+Number(p.amount).toFixed(2)+' <button type="button" data-sweep-payment="'+esc(p.id)+'" onclick="undoSweepPayment(this)">Undo record</button></div>').join('')+'</details>' : ''}
     <div id="outstanding-footer" data-total-spend="${totalSpend.toFixed(2)}" style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:${grandTotal>0?'rgba(255,107,53,0.04)':'rgba(48,209,88,0.04)'};border-top:1px solid ${grandTotal>0?'rgba(255,107,53,0.15)':'rgba(48,209,88,0.12)'}">
@@ -5991,7 +5997,7 @@ function applyNameAndAvatar(firstName, avatarUrl) {
 // Fetch and apply profile pictures for ALL trip members
 // Cache of member avatar URLs, keyed by lowercase display names and first names
 const _memberAvatarCache = {};
-const sweepInfo=document.createElement('dialog');sweepInfo.id='sweep-info';sweepInfo.setAttribute('aria-label','About RAVENSWEEP');sweepInfo.style.cssText='width:min(420px,calc(100% - 40px));box-sizing:border-box;background:#13101d;color:#eee8fa;border:1px solid #7c3aed66;border-radius:22px;padding:24px;font-family:inherit;line-height:1.6';sweepInfo.innerHTML='<h3 style="margin-top:0;color:#30d158">What is RAVENSWEEP?</h3><p>RAVENSWEEP combines what everyone owes across the trip into a simpler settlement plan, so you can settle up with fewer payments instead of paying each receipt separately.</p><p>Your overall balance stays the same, but who you pay may change. It does not charge anyone or move money automatically.</p><form method="dialog"><button style="width:100%;padding:12px;border:0;border-radius:12px;background:#30d158;color:#07120a;font:inherit;font-weight:700">Got it</button></form>';document.body.append(sweepInfo);
+const sweepInfo=document.createElement('dialog');sweepInfo.id='sweep-info';sweepInfo.setAttribute('aria-label','About RAVENSWEEP');sweepInfo.style.cssText='width:min(420px,calc(100% - 40px));box-sizing:border-box;margin:auto;background:#13101d;color:#eee8fa;border:1px solid #7c3aed66;border-radius:22px;padding:24px;max-height:85dvh;overflow:auto;font-family:inherit;line-height:1.6';sweepInfo.innerHTML='<h3 style="margin-top:0;color:#30d158">What is RAVENSWEEP?</h3><p>RAVEN Sweep combines all trip bills and subtracts what each person owes from what they are owed. For example, owing $10 and being owed $5 becomes one $5 payment.</p><p><strong>Owes</strong> means the amount still to pay. <strong>Gets back</strong> means the amount still to receive. Payments go directly to people who are owed money, without anyone collecting and forwarding it.</p><p>Paying the largest bill does not make someone the only person owed money. A balance may need payments to more than one person so everyone is reimbursed correctly.</p><p>Record a payment only after sending it. RAVEN does not charge anyone or move money automatically.</p><form method="dialog"><button style="width:100%;padding:12px;border:0;border-radius:12px;background:#30d158;color:#07120a;font:inherit;font-weight:700">Got it</button></form>';sweepInfo.querySelectorAll('p').forEach(p=>p.style.margin='0 0 12px');document.body.append(sweepInfo);
 
 function setCachedMemberAvatar(name, avatarUrl) {
   if (!name) return;

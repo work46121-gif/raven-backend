@@ -7,16 +7,16 @@ assert.equal(S.build(own,shared).payoutsByPerson.Me.Him,2.5,'shared costs use as
 const trip={people:['Andrew','Arsalan','Mel','Will','Nicholas'],simple_split:true,settled_people:{},sweep_payments:[]};
 const receipts=[{id:1,paid_by:'Andrew',total:1500,splits:{Andrew:300,Arsalan:300,Mel:300,Will:300,Nicholas:300}},{id:2,paid_by:'Arsalan',total:1000,splits:{Andrew:200,Arsalan:200,Mel:200,Will:200,Nicholas:200}}];
 const start=S.build(trip,receipts);
-assert.equal(start.hub,'Andrew');assert.deepEqual(start.netByPerson,{Andrew:1000,Arsalan:500,Mel:-500,Will:-500,Nicholas:-500});
-assert.deepEqual(start.payoutsByPerson,{Andrew:{Arsalan:500},Arsalan:{},Mel:{Andrew:500},Will:{Andrew:500},Nicholas:{Andrew:500}});
-assert.equal(start.receivableByPerson.Andrew,1500);assert.equal(start.payableByPerson.Andrew,500);assert.equal(start.outstanding,1500);
-function addPayment(t,name){const plan=S.build(t,receipts);return{...t,sweep_payments:S.record(t,receipts,{name,amount:plan.payableByPerson[name],expected_version:plan.version})}}
-for(const order of [['Andrew','Mel','Will','Nicholas'],['Mel','Will','Nicholas','Andrew'],['Will','Andrew','Mel','Nicholas']]){
+assert.deepEqual(start.netByPerson,{Andrew:1000,Arsalan:500,Mel:-500,Will:-500,Nicholas:-500});
+assert.deepEqual(start.payoutsByPerson,{Andrew:{},Arsalan:{},Mel:{Arsalan:500},Will:{Andrew:500},Nicholas:{Andrew:500}});
+assert.equal(start.receivableByPerson.Andrew,1000);assert.equal(start.payableByPerson.Andrew,0);assert.equal(start.outstanding,1500);
+function addPayment(t,name){let plan=S.build(t,receipts);while(plan.payableByPerson[name]>0){const [to,amount]=Object.entries(plan.payoutsByPerson[name])[0];t={...t,sweep_payments:S.record(t,receipts,{name,to,amount,expected_version:plan.version})};plan=S.build(t,receipts)}return t}
+for(const order of [['Mel','Will','Nicholas'],['Nicholas','Will','Mel'],['Will','Mel','Nicholas']]){
  let t=trip;
- for(const name of order){const before=S.build(t,receipts);t=addPayment(t,name);const after=S.build(t,receipts);assert.equal(Object.values(after.netByPerson).reduce((s,n)=>s+Math.round(n*100),0),0);assert.equal(after.hub,'Andrew');assert.equal(after.payableByPerson[name],0);assert.ok(after.outstanding<=before.outstanding);}
+ for(const name of order){const before=S.build(t,receipts);t=addPayment(t,name);const after=S.build(t,receipts);assert.equal(Object.values(after.netByPerson).reduce((s,n)=>s+Math.round(n*100),0),0);assert.equal(after.payableByPerson.Andrew,0);assert.equal(after.payableByPerson.Arsalan,0);assert.equal(after.payableByPerson[name],0);assert.ok(after.outstanding<=before.outstanding);}
  assert.equal(S.build(t,receipts).outstanding,0);assert.ok(Object.values(S.build(t,receipts).netByPerson).every(v=>v===0));
  const one=t.sweep_payments.find(p=>p.from==='Mel');const undone={...t,sweep_payments:S.reverse(t,receipts,{id:one.id,expected_version:S.version(t,receipts)})};
- assert.deepEqual(S.build(undone,receipts).payoutsByPerson.Mel,{Andrew:500});assert.equal(S.build(undone,receipts).netByPerson.Andrew,500);
+ assert.deepEqual(S.build(undone,receipts).payoutsByPerson.Mel,{[one.to]:500});assert.equal(S.build(undone,receipts).netByPerson[one.to],500);
  assert.throws(()=>S.reverse(undone,receipts,{id:one.id,expected_version:S.version(undone,receipts)}),/already undone/);
 }
 assert.throws(()=>S.record(trip,receipts,{name:'Mel',amount:499,expected_version:start.version}),/current displayed/);
@@ -24,7 +24,22 @@ const once=addPayment(trip,'Mel');assert.throws(()=>S.record(once,receipts,{name
 const old={...trip,settled_people:{'mel::receipt::1':300}};assert.equal(S.build(old,receipts).netByPerson.Mel,-200);assert.equal(S.build(old,receipts).netByPerson.Andrew,700);
 assert.equal(S.build({...trip,settled_people:['Mel']},receipts).netByPerson.Mel,0);
 assert.deepEqual(S.plan(['a','b'],{a:{b:.01},b:{}},{b:1}).payoutsByPerson,{a:{b:.01},b:{}},'one cent is not dropped');
-console.log('PASS Sweep: mutual offset, assigned versus gross costs, one recipient for debtors, net reimbursements, exact cents, no cycles, all payment orders, legacy credits, undo and stale/double-submit rejection.');
+// Synthetic legacy bills with the payer share omitted and a rounding remainder.
+const screenshotReceipts=[{id:11,total:1300.07,paid_by:'Andrew',splits:{Arsalan:260.01,Mel:260.01,Will:260.01,Nicholas:260.01}},{id:12,total:900.03,paid_by:'Arsalan',splits:{Andrew:180.01,Mel:180.01,Will:180.01,Nicholas:180.01}}];
+const example=S.build(trip,screenshotReceipts);
+assert.equal(example.receivableByPerson.Andrew,860.03);assert.equal(example.receivableByPerson.Arsalan,460.03);
+assert.deepEqual(example.payoutsByPerson.Andrew,{});assert.deepEqual(example.payoutsByPerson.Arsalan,{});
+assert.deepEqual(example.payoutsByPerson.Nicholas,{Andrew:420.01,Arsalan:20.01});
+assert.throws(()=>S.record(trip,screenshotReceipts,{name:'Nicholas',amount:440.02,expected_version:example.version}),/specific payment/);
+const partial={...trip,sweep_payments:S.record(trip,screenshotReceipts,{name:'Nicholas',to:'Andrew',amount:420.01,expected_version:example.version})};
+assert.equal(S.build(partial,screenshotReceipts).payableByPerson.Nicholas,20.01);
+assert.throws(()=>S.record(trip,receipts,{name:'Andrew',to:'Arsalan',amount:500,expected_version:start.version}),/specific payment/);
+const previouslyForwarded={...trip,sweep_payments:[{id:'old',from:'Andrew',to:'Arsalan',amount:500}]};
+assert.equal(S.build(previouslyForwarded,receipts).receivableByPerson.Andrew,1500);assert.equal(S.build(previouslyForwarded,receipts).netByPerson.Arsalan,0);
+const canonical=v=>Array.isArray(v)?v.map(canonical):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().map(k=>[k,canonical(v[k])])):v;
+const oldVersion=require('node:crypto').createHash('sha256').update(JSON.stringify(canonical(S.snapshot(trip,receipts)))).digest('hex');
+assert.throws(()=>S.record(trip,receipts,{name:'Mel',amount:500,expected_version:oldVersion}),/changed/);
+console.log('PASS Sweep: direct debtors-to-creditors only, mutual offset, exact matches/cents, screenshot allocations, individual recipient recording, old transfers preserved, undo, and stale intermediary-page rejection.');
 (async()=>{
  const {PGlite}=require('./push-test-runtime/node_modules/@electric-sql/pglite');const pg=new PGlite();
  try{
