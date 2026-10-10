@@ -1677,6 +1677,7 @@ app.post('/bill/:billId/rename', async (req, res) => {
 const RavenQuantities=require('./raven-quantities');
 const RavenTripSplits=require('./raven-trip-splits');
 const RavenTripReceipts=require('./raven-trip-receipts');
+const RavenSweep=require('./raven-sweep');
 app.post('/bill/:billId/items/:itemId/quantities',async(req,res)=>{
  try{const {billId,itemId}=req.params;const {data:bill,error:billError}=await supabase.from('bills').select('share_token,status').eq('id',billId).single();
  if(billError||!bill||bill.status==='deleted'||!bill.share_token||req.headers['x-raven-bill-token']!==bill.share_token)return res.status(403).json({success:false,error:'Open the editable bill link to adjust quantities.'});
@@ -4115,76 +4116,16 @@ function roundMoney(value) {
   return Math.round((parseFloat(value) || 0) * 100) / 100;
 }
 
-function computeSimpleSettlementPlan(people, detailedOwesByPerson) {
-  const personList = Array.isArray(people) ? people : [];
-  const incomingByPerson = {};
-  const outgoingByPerson = {};
-  const payoutsByPerson = {};
-  personList.forEach(name => {
-    incomingByPerson[name] = 0;
-    outgoingByPerson[name] = 0;
-    payoutsByPerson[name] = {};
-  });
-
-  Object.entries(detailedOwesByPerson || {}).forEach(([debtor, payers]) => {
-    Object.entries(payers || {}).forEach(([payer, amount]) => {
-      const amt = roundMoney(amount);
-      if (amt <= 0.02) return;
-      outgoingByPerson[debtor] = roundMoney((outgoingByPerson[debtor] || 0) + amt);
-      incomingByPerson[payer] = roundMoney((incomingByPerson[payer] || 0) + amt);
-    });
-  });
-
-  const netByPerson = {};
-  personList.forEach(name => {
-    netByPerson[name] = roundMoney((incomingByPerson[name] || 0) - (outgoingByPerson[name] || 0));
-  });
-
-  const debtors = personList.map(name => ({
-    name,
-    amount: roundMoney(Math.max(0, -netByPerson[name]))
-  })).filter(entry => entry.amount > 0.02);
-
-  const creditors = personList.map(name => ({
-    name,
-    amount: roundMoney(Math.max(0, netByPerson[name]))
-  })).filter(entry => entry.amount > 0.02);
-
-  while (debtors.length > 0 && creditors.length > 0) {
-    debtors.sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name));
-    creditors.sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name));
-    const debtor = debtors[0];
-    const creditor = creditors[0];
-    if (debtor.name === creditor.name) {
-      if (debtor.amount >= creditor.amount) creditors.shift();
-      else debtors.shift();
-      continue;
-    }
-    const transfer = roundMoney(Math.min(debtor.amount, creditor.amount));
-    if (transfer <= 0.02) break;
-    payoutsByPerson[debtor.name][creditor.name] = roundMoney((payoutsByPerson[debtor.name][creditor.name] || 0) + transfer);
-    debtor.amount = roundMoney(debtor.amount - transfer);
-    creditor.amount = roundMoney(creditor.amount - transfer);
-    if (debtor.amount <= 0.02) debtors.shift();
-    if (creditor.amount <= 0.02) creditors.shift();
-  }
-
-  const receivableByPerson = {};
-  personList.forEach(name => { receivableByPerson[name] = 0; });
-  Object.values(payoutsByPerson).forEach(payers => {
-    Object.entries(payers || {}).forEach(([payer, amount]) => {
-      receivableByPerson[payer] = roundMoney((receivableByPerson[payer] || 0) + (parseFloat(amount) || 0));
-    });
-  });
-
-  return { payoutsByPerson, receivableByPerson };
+function computeSimpleSettlementPlan(people, detailedOwesByPerson, fronted = {}, payments = []) {
+  return RavenSweep.plan(people, detailedOwesByPerson, fronted, payments);
 }
 
 async function computeOutstanding(tripId) {
   try {
     const { data: receipts } = await supabase.from('trip_receipts').select('id,splits,paid_by,total').eq('trip_id', tripId);
-    const { data: trip } = await supabase.from('trips').select('settled_people,people').eq('id', tripId).single();
+    const { data: trip } = await supabase.from('trips').select('settled_people,people,simple_split,sweep_payments').eq('id', tripId).single();
     if (!receipts || !trip) return null;
+    if(RavenSweep.active(trip))return RavenSweep.build(trip,receipts).outstanding;
     const validReceiptIds = new Set((receipts || []).map(r => String(r.id)));
     const settledCreds = aggregateSettledCredits(trip.settled_people, validReceiptIds);
     const people = (() => { try { return Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people||'[]'); } catch(e){ return []; } })();
@@ -4489,10 +4430,11 @@ app.get('/trip/:tripId', async (req, res) => {
     return (!Array.isArray(parsed) && parsed && typeof parsed === 'object') ? parsed : {};
   })();
   const settledCredits = aggregateSettledCredits(trip.settled_people, validReceiptIds);
-
+  const tripUsesSimpleSplit = RavenSweep.active(trip);
+  const simpleSettlementPlan = tripUsesSimpleSplit ? RavenSweep.build(trip,receipts||[]) : null;
 
   // grandTotal = outstanding (after settled credits, capped so 999999 sentinel never over-reduces)
-  const grandTotal = Math.round(Object.entries(totals).reduce((s, [person, raw]) => {
+  const grandTotal = tripUsesSimpleSplit ? simpleSettlementPlan.outstanding : Math.round(Object.entries(totals).reduce((s, [person, raw]) => {
     const credit = Math.min(settledCredits[person.toLowerCase()] || 0, raw); // cap at rawOwed
     const net = Math.round(Math.max(0, raw - credit) * 100) / 100;
     return s + (net <= 0.02 ? 0 : net); // ignore sub-2 rounding drift
@@ -4503,8 +4445,9 @@ app.get('/trip/:tripId', async (req, res) => {
   const totalSpend = (receipts||[]).reduce((s, r) => s + parseFloat(r.total||0), 0);
   // Count debtors (people who owe money) and how many of those are settled.
   // Cap credit at rawOwed so 999999 sentinel values don't over-count.
-  const debtorCount  = people.filter(p => (totals[p] || 0) > 0.02).length;
+  const debtorCount  = people.filter(p => tripUsesSimpleSplit ? simpleSettlementPlan.originalNetByPerson[p]<0 : (totals[p] || 0) > 0.02).length;
   const settledCount = people.filter(p => {
+    if(tripUsesSimpleSplit)return simpleSettlementPlan.originalNetByPerson[p]<0 && simpleSettlementPlan.netByPerson[p]>=0;
     const raw    = totals[p] || 0;
     if (raw <= 0.02) return false; // not a debtor
     const credit = Math.min(settledCredits[p.toLowerCase()] || 0, raw); // cap at rawOwed
@@ -4512,6 +4455,7 @@ app.get('/trip/:tripId', async (req, res) => {
   }).length;
   // For display: count people who are fully settled (debtors who paid + non-debtors like payers)
   const settledPeopleCount = people.filter(p => {
+    if(tripUsesSimpleSplit)return !simpleSettlementPlan.payableByPerson[p]&&!simpleSettlementPlan.receivableByPerson[p];
     const raw = totals[p] || 0;
     if (raw <= 0.02) return true; // payer or zero-balance person = settled
     const credit = Math.min(settledCredits[p.toLowerCase()] || 0, raw);
@@ -4708,7 +4652,6 @@ app.get('/trip/:tripId', async (req, res) => {
     countdownHTML = `<div style="background:#13131A;border:1px dashed rgba(255,255,255,0.08);border-radius:14px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><div style="font-size:13px;color:#6E6B80">${countdownEmptyLabel}</div><div style="font-size:11px;color:#6E6B80;font-style:italic">${countdownEmptyHint}</div></div>`;
   }
 
-  const tripUsesSimpleSplit = !!trip.simple_split;
   const detailedOwesByPerson = {};
   people.forEach(p => {
     const rawOwed = totals[p] || 0;
@@ -4761,8 +4704,6 @@ app.get('/trip/:tripId', async (req, res) => {
     }
     detailedOwesByPerson[p] = owesPerPayer;
   });
-  const simpleSettlementPlan = tripUsesSimpleSplit ? computeSimpleSettlementPlan(people, detailedOwesByPerson) : null;
-
   const owesRows = people.map((p, i) => {
     const displayName = getMemberDisplayName(p);
     const profile = getMemberProfile(p);
@@ -4782,9 +4723,11 @@ app.get('/trip/:tripId', async (req, res) => {
       : (detailedOwesByPerson[p] || {});
     const payerEntries = Object.entries(owesPerPayer);
     const effectiveAmtOwed = Math.round(payerEntries.reduce((sum, [, amt]) => sum + (parseFloat(amt) || 0), 0) * 100) / 100;
-    const effectiveIsSettled = rawOwed > 0.02 && effectiveAmtOwed <= 0.02;
+    const effectiveIsSettled = tripUsesSimpleSplit ? effectiveAmtOwed===0 && amtReceivable===0 : rawOwed>0.02 && effectiveAmtOwed<=0.02 && amtReceivable<=0.02;
     const effectiveIsPartiallySettled = settledCredit > 0 && effectiveAmtOwed > 0.02;
     const effectiveIsCreditor = amtReceivable > 0 && effectiveAmtOwed === 0;
+    const sweepNet = tripUsesSimpleSplit ? simpleSettlementPlan.netByPerson[p] : 0;
+    const sweepStatus = tripUsesSimpleSplit ? [amtReceivable>0?'collect $'+amtReceivable.toFixed(2):'',effectiveAmtOwed>0?(p===simpleSettlementPlan.hub?'forward $':'pay $')+effectiveAmtOwed.toFixed(2):''].filter(Boolean).join(' · ')||'all settled' : '';
     const assignedTotal = Math.round((assignedTotals[p] || 0) * 100) / 100;
     const frontedTotal = Math.round((frontedTotals[p] || 0) * 100) / 100;
     const spendMetaParts = [];
@@ -4811,7 +4754,7 @@ app.get('/trip/:tripId', async (req, res) => {
     // "Mark as Paid" button for the whole person (settles all their debt at once)
     const markPaidBtnHtml = payerEntries.length > 0
       ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.06)">
-          <button class="mark-settled-btn" data-person="${personId}" data-name="${esc(p)}" id="markpaid-${personId}" data-settle-amount="${effectiveAmtOwed.toFixed(2)}" style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:9px;color:#30D158;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer">Settle balance - $${effectiveAmtOwed.toFixed(2)}</button>
+          <button class="mark-settled-btn" data-person="${personId}" data-name="${esc(p)}" id="markpaid-${personId}" data-settle-amount="${effectiveAmtOwed.toFixed(2)}" style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:9px;color:#30D158;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer">${tripUsesSimpleSplit?'Record payment':'Settle balance'} - $${effectiveAmtOwed.toFixed(2)}</button>
         </div>`
       : '';
 
@@ -4823,13 +4766,13 @@ app.get('/trip/:tripId', async (req, res) => {
           <div>
             <div data-trip-member-name="1" style="font-weight:600;font-size:14px;display:flex;align-items:center;gap:6px">${esc(displayName)} <span data-trip-member-you="1" style="display:none;font-size:11px;color:#30D158;font-weight:700">(you)</span><span style="font-size:11px;color:#6E6B80;font-weight:400">&gt;</span></div>
             <div class="person-status-display" style="font-size:11px;color:${effectiveIsSettled?'#30D158':effectiveAmtOwed>0?'#FF9A3C':effectiveIsCreditor?'#A855F7':'#30D158'}">
-              ${effectiveIsSettled ? 'all settled' : effectiveAmtOwed>0 ? (effectiveIsPartiallySettled ? 'still owes $' + effectiveAmtOwed.toFixed(2) : 'owes $' + effectiveAmtOwed.toFixed(2)) : effectiveIsCreditor ? 'collecting $' + amtReceivable.toFixed(2) : 'all settled'}
+              ${tripUsesSimpleSplit ? sweepStatus : effectiveIsSettled ? 'all settled' : effectiveAmtOwed>0 ? (effectiveIsPartiallySettled ? 'still owes $' + effectiveAmtOwed.toFixed(2) : 'owes $' + effectiveAmtOwed.toFixed(2)) : effectiveIsCreditor ? 'collecting $' + amtReceivable.toFixed(2) : 'all settled'}
             </div>
           </div>
         </div>
         <div style="text-align:right">
-          <div class="person-balance-display" data-original-owed="${rawOwed.toFixed(2)}" data-raw-owed="${effectiveAmtOwed.toFixed(2)}" style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${effectiveIsSettled?'#30D158':effectiveAmtOwed>0?'#FF9A3C':effectiveIsCreditor?'#A855F7':'#9896A8'}">
-            ${effectiveIsSettled ? '$0.00' : effectiveAmtOwed>0 ? '-$'+effectiveAmtOwed.toFixed(2) : effectiveIsCreditor ? '+$'+amtReceivable.toFixed(2) : '$0.00'}
+          <div class="person-balance-display" data-original-owed="${rawOwed.toFixed(2)}" data-raw-owed="${effectiveAmtOwed.toFixed(2)}" style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${effectiveIsSettled?'#30D158':tripUsesSimpleSplit&&sweepNet>0?'#A855F7':effectiveAmtOwed>0?'#FF9A3C':effectiveIsCreditor?'#A855F7':'#9896A8'}">
+            ${tripUsesSimpleSplit ? (sweepNet<0?'-$':sweepNet>0?'+$':'$')+Math.abs(sweepNet).toFixed(2)+' net' : effectiveIsSettled ? '$0.00' : effectiveAmtOwed>0 ? '-$'+effectiveAmtOwed.toFixed(2) : effectiveIsCreditor ? '+$'+amtReceivable.toFixed(2) : '$0.00'}
           </div>
           ${spendMeta ? `<div style="margin-top:3px;font-size:10px;color:#6E6B80">${spendMeta}</div>` : ''}
         </div>
@@ -4926,6 +4869,7 @@ app.get('/trip/:tripId', async (req, res) => {
                 const _cred = Math.min(settledCredits[person.toLowerCase()]||0,_raw);
                 const _fullSettled = _raw>0.02 && Math.max(0,_raw-_cred)<=0.02;
                 if (!payer) return '';
+                if(tripUsesSimpleSplit)return '<div style="font-size:12px;color:#9896a8;padding-top:8px">Included in RAVEN Sweep. Use the net payment plan above, not a separate payment for this receipt.</div>';
                 // FIRST: check if this specific receipt is already settled
                 if (_rcptSettled || _fullSettled) {
                   return '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px"><button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" data-settled="1" style="padding:7px 14px;background:rgba(48,209,88,0.15);border:1px solid rgba(48,209,88,0.4);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">Settled - tap to undo</button></div>';
@@ -5057,7 +5001,8 @@ app.get('/trip/:tripId', async (req, res) => {
     dueDate: trip.due_date || '',
     endDate: trip.end_date || '',
     reminderLastSentAt: trip.reminder_last_sent_at || '',
-    simpleSplit: !!trip.simple_split,
+    simpleSplit: tripUsesSimpleSplit,
+    sweepVersion: simpleSettlementPlan?.version || '',
     creatorEmail: trip.creator_email || '',
     coAdmins: (() => { try { return Array.isArray(trip.co_admins) ? trip.co_admins : JSON.parse(trip.co_admins || '[]'); } catch(e) { return []; } })(),
     // settledPeople kept for backward compat but rendering is fully server-side
@@ -5207,7 +5152,9 @@ ${coverHTML}
 <div class="sec" style="margin-top:20px">
   <div class="sec-lbl">${owesHeading}${tripUsesSimpleSplit ? ` <button type="button" onclick="document.getElementById(\'sweep-info\').showModal()" aria-label="What is RAVENSWEEP?" style="display:inline-flex;align-items:center;gap:5px;margin-left:8px;padding:4px 8px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:999px;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#30D158;vertical-align:middle">RAVEN Sweep ⓘ</button>` : ''}</div>
   <div class="card">
+    ${tripUsesSimpleSplit ? '<p style="padding:14px 16px;font-size:12px;line-height:1.6;color:#b8b1c7">RAVEN Sweep nets everyone’s shares. Pay '+esc(simpleSettlementPlan.hub||'the main payer')+', who paid the most and forwards the other payers’ net reimbursements. Record payments only after sending them; RAVEN does not move money.</p>' : ''}
     ${owesRows}
+    ${tripUsesSimpleSplit && RavenSweep.ledger(trip).some(p=>!p.reversed_at) ? '<details style="padding:14px 16px"><summary>Recorded Sweep payments</summary>'+RavenSweep.ledger(trip).filter(p=>!p.reversed_at).map(p=>'<div style="padding:10px 0;font-size:12px">'+esc(p.from)+' → '+esc(p.to)+' · $'+Number(p.amount).toFixed(2)+' <button type="button" data-sweep-payment="'+esc(p.id)+'" onclick="undoSweepPayment(this)">Undo record</button></div>').join('')+'</details>' : ''}
     <div id="outstanding-footer" data-total-spend="${totalSpend.toFixed(2)}" style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:${grandTotal>0?'rgba(255,107,53,0.04)':'rgba(48,209,88,0.04)'};border-top:1px solid ${grandTotal>0?'rgba(255,107,53,0.15)':'rgba(48,209,88,0.12)'}">
       <div>
         <div id='outstanding-sublabel'>
@@ -6699,6 +6646,9 @@ function markReceiptItemPaid(personName, receiptId, amount, btn) {
 }
 
 function updatePersonBalanceDisplay(personName) {
+  // Sweep has both receivables and forwarding payments. The legacy display
+  // updater only understands gross debts and would erase creditor balances.
+  if(D.simpleSplit)return;
   const personId = 'person-' + personName.replace(/[^a-z0-9]/gi, '_');
   const row = document.getElementById('row-' + personId);
   if (!row) return;
@@ -6783,10 +6733,12 @@ function updatePersonBalanceDisplay(personName) {
   people.forEach(p => updatePersonBalanceDisplay(p));
 })();
 
+${require('fs').readFileSync(require.resolve('./raven-sweep-client.js'),'utf8')}
 // Mark a person as settled in the trip hub
 function markTripPersonPaid(personName, personId, btn) {
   if (!btn) btn = document.getElementById('markpaid-' + personId);
   if (!btn) return;
+  if(D.simpleSplit){recordSweepPayment(personName,btn);return;}
 
   //  UNSETTLE path  button is currently showing Settled 
   if (btn.dataset.settled === '1') {
@@ -8693,6 +8645,10 @@ function buildTripConciergePayload(trip, receipts) {
     const net = Math.round(Math.max(0, raw - credit) * 100) / 100;
     outstanding[person] = net <= 0.02 ? 0 : net;
   });
+  if(RavenSweep.active(trip)){
+    const plan=RavenSweep.build(trip,receipts||[]);
+    people.forEach(name=>{outstanding[name]=Math.max(0,-plan.netByPerson[name])});
+  }
   const debtors = Object.entries(outstanding)
     .filter(([, amount]) => amount > 0.01)
     .map(([name, amount]) => ({ name, amount: Math.round(amount * 100) / 100 }))
@@ -9054,6 +9010,7 @@ app.post('/trip/:tripId/remove-member', async (req, res) => {
     const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
     if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
     const targetName = String(name || '').trim();
+    if(RavenSweep.ledger(trip).some(p=>!p.reversed_at&&(RavenSweep.key(p.from)===RavenSweep.key(targetName)||RavenSweep.key(p.to)===RavenSweep.key(targetName))))return res.status(409).json({success:false,error:'This member has recorded Sweep payments. Reconcile those payments before removing them.'});
     const targetEmail = String(email || user_email || '').trim().toLowerCase();
     const targetRavenId = String(raven_id || '').trim().replace(/^@/, '').toLowerCase();
     const people = (Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people || '[]'))
@@ -9099,6 +9056,23 @@ app.post('/trip/:tripId/remove-member', async (req, res) => {
 });
 
 // â”€â”€ MARK PERSON AS SETTLED â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+async function saveRavenSweepPayment(req,res,trip,undo=false) {
+  try {
+    if(req.body.receipt_id)return res.status(409).json({success:false,error:'RAVEN Sweep is active. Record the net payment above instead of settling this receipt separately.'});
+    const {data:receipts,error}=await supabase.from('trip_receipts').select('id,splits,paid_by,total').eq('trip_id',req.params.tripId);
+    if(error)throw error;
+    const payments=undo ? RavenSweep.reverse(trip,receipts||[],{id:req.params.paymentId,expected_version:req.body.expected_version}) : RavenSweep.record(trip,receipts||[],req.body);
+    const plan=RavenSweep.build({...trip,sweep_payments:payments},receipts||[]);
+    const saved=await supabase.rpc('raven_save_sweep_payments',{p_trip:String(req.params.tripId),p_token:req.body.token,p_expected:RavenSweep.snapshot(trip,receipts||[]),p_payments:payments,p_outstanding:plan.outstanding});
+    if(saved.error)throw Error(saved.error.code==='P0001'?saved.error.message:'Could not save the payment record safely. Please retry.');
+    return res.json({success:true,outstanding:plan.outstanding,sweep:true});
+  }catch(error){return res.status(409).json({success:false,error:error.message||'Payment was not recorded. Please retry.'})}
+}
+app.post('/trip/:tripId/sweep-payment/:paymentId/undo',async(req,res)=>{
+  const {data:trip}=await supabase.from('trips').select('*').eq('id',req.params.tripId).single();
+  if(!trip||trip.share_token!==req.body.token)return res.status(403).json({success:false,error:'Invalid trip token'});
+  return saveRavenSweepPayment(req,res,trip,true);
+});
 app.post('/trip/:tripId/mark-settled', async (req, res) => {
   try {
     const { tripId } = req.params;
@@ -9106,6 +9080,7 @@ app.post('/trip/:tripId/mark-settled', async (req, res) => {
     const { token, name, amount } = req.body;
     const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
     if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
+    if(RavenSweep.active(trip))return saveRavenSweepPayment(req,res,trip);
     // Parse existing credits â€” new format: { "name_lower": amountSettled }
     let credits = {};
     try {
@@ -9259,6 +9234,7 @@ app.post('/trip/:tripId/partial-unsettle', async (req, res) => {
     const { token, name, amount } = req.body;
     const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
     if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
+    if(RavenSweep.ledger(trip).some(p=>!p.reversed_at))return res.status(409).json({success:false,error:'Use Recorded Sweep payments to undo the payment record.'});
     let credits = {};
     try {
       let raw = trip.settled_people;
@@ -9341,6 +9317,7 @@ app.post('/trip/:tripId/unsettle', async (req, res) => {
     const { token, name } = req.body;
     const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single();
     if (!trip || trip.share_token !== token) return res.json({ success: false, error: 'Invalid token' });
+    if(RavenSweep.ledger(trip).some(p=>!p.reversed_at))return res.status(409).json({success:false,error:'Use Recorded Sweep payments to undo the payment record.'});
     let credits = {};
     try {
       let raw = trip.settled_people;
@@ -9659,7 +9636,7 @@ app.post('/trip/:tripId/send-reminder', async (req, res) => {
       return res.json({ success: false, error: 'A reminder was already sent today for this trip.' });
     }
 
-    const { data: receipts } = await supabase.from('trip_receipts').select('id,splits,paid_by').eq('trip_id', tripId);
+    const { data: receipts } = await supabase.from('trip_receipts').select('id,splits,paid_by,total').eq('trip_id', tripId);
     const people = (() => { try { return Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people || '[]'); } catch(e) { return []; } })();
     const validReceiptIds = new Set((receipts || []).map(r => String(r.id)));
 
@@ -9680,7 +9657,9 @@ app.post('/trip/:tripId/send-reminder', async (req, res) => {
 
     const settledCredits = aggregateSettledCredits(trip.settled_people, validReceiptIds);
 
+    const sweepForReminder=RavenSweep.active(trip)?RavenSweep.build(trip,receipts||[]):null;
     const debtors = people.map(name => {
+      if(sweepForReminder)return{name,amount:Math.max(0,-sweepForReminder.netByPerson[name])};
       const raw = owedTotals[name] || 0;
       const credit = Math.min(settledCredits[name.toLowerCase()] || 0, raw);
       const amount = Math.round(Math.max(0, raw - credit) * 100) / 100;
@@ -9824,7 +9803,7 @@ app.get('/trip-info/:tripId', async (req, res) => {
   try {
     const { tripId } = req.params;
     const { token } = req.query;
-    const { data: trip } = await supabase.from('trips').select('name, invite_token, share_token, people, total, receipt_count, settled_people, reminder_last_sent_at').eq('id', tripId).single();
+    const { data: trip } = await supabase.from('trips').select('name, invite_token, share_token, people, total, receipt_count, settled_people, reminder_last_sent_at, simple_split, sweep_payments').eq('id', tripId).single();
     if (!trip) return res.json({ success: false });
     if (trip.invite_token !== token && trip.share_token !== token) return res.json({ success: false });
     const people = Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people || '[]');
@@ -9833,7 +9812,7 @@ app.get('/trip-info/:tripId', async (req, res) => {
     const reminderStamp = trip.reminder_last_sent_at ? String(trip.reminder_last_sent_at) : '';
     const {data:receiptState,error:receiptError}=await supabase.from('trip_receipts').select('id,name,total,splits,paid_by').eq('trip_id',tripId).order('id');
     if(receiptError)throw receiptError;
-    const _hash = require('node:crypto').createHash('sha256').update(JSON.stringify([trip.name,trip.people,trip.settled_people,reminderStamp,receiptState])).digest('hex');
+    const _hash = require('node:crypto').createHash('sha256').update(JSON.stringify([trip.name,trip.people,trip.settled_people,trip.sweep_payments,trip.simple_split,reminderStamp,receiptState])).digest('hex');
     res.set('Cache-Control','private, no-store');
     res.json({ success: true, name: trip.name, people_count: people.length, total: trip.total || 0, receipt_count: trip.receipt_count || 0, settled_hash: settledHash, reminder_last_sent_at: trip.reminder_last_sent_at || null, _hash });
   } catch(err) { res.json({ success: false }); }

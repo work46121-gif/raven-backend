@@ -46,6 +46,13 @@ console.log('PASS: exact cents; percentage, dollar and quantity allocations; pro
   assert.equal(Object.values((await pg.query('select settled_people from trips')).rows[0].settled_people)[0],125,'do not erase real paid money when cost decreases');
   const acl=(await pg.query("select has_function_privilege('anon','raven_edit_trip_split(text,text,text,jsonb,jsonb)','execute') as anon,has_function_privilege('service_role','raven_edit_trip_split(text,text,text,jsonb,jsonb)','execute') as service")).rows[0];assert.deepEqual(acl,{anon:false,service:true});
   console.log('PASS PostgreSQL: idempotent migration, token authorization, optimistic concurrency, atomic updates, preserved payment credits and service-only writes.');
+  await pg.exec('alter table trips add column simple_split boolean default true; alter table trips add column total numeric;');
+  await pg.exec(fs.readFileSync('output/raven-sweep-ledger.sql','utf8'));
+  await pg.query("update trips set settled_people='{}',sweep_payments=$1",[[{id:'p1',from:'Mel',to:'Cousin',amount:50}]]);
+  current=await get();await save(current,{...updates,splits:'{"Cousin":300,"Mel":100,"Sam":200}'});
+  assert.equal((await pg.query('select sweep_payments from trips')).rows[0].sweep_payments[0].amount,50,'custom split edits preserve actual Sweep payments');
+  current=await get();await assert.rejects(save(current,{...updates,paid_by:'Sam'}),/recorded Sweep payments/);
+  console.log('PASS combined migrations: custom shares remain editable with Sweep active; real transfers survive bill edits; payer changes require reconciliation.');
  }finally{await pg.close()}
  const source=fs.readFileSync('Server.js','utf8');
  const start=source.indexOf("app.post('/trip/:tripId/receipt/:receiptId/edit'");const end=source.indexOf("app.post('/trip/:tripId/send-reminder'",start);
