@@ -12,7 +12,7 @@ async function call(){let code=200,body;const res={set(){},status(c){code=c;retu
  status='none';assert.equal((await call()).body.success,true);assert.equal(writes,1);
  fail=true;assert.equal((await call()).code,503);
  const source=fs.readFileSync('Server.js','utf8'),nav=source.slice(source.indexOf('function tripOpenDashboard('),source.indexOf('async function tripRequestFriend('));
- for(const [referrer,expected] of [['capacitor://localhost/dashboard.html','capacitor://localhost/dashboard.html'],['https://ravensplit.com/dashboard.html','https://ravensplit.com/dashboard.html'],['https://evil.test/dashboard.html','https://ravensplit.com/dashboard.html']]){
+ for(const [referrer,expected] of [['capacitor://localhost/','capacitor://localhost/dashboard.html'],['capacitor://localhost/dashboard.html','capacitor://localhost/dashboard.html'],['https://ravensplit.com/dashboard.html','https://ravensplit.com/dashboard.html'],['https://evil.test/dashboard.html','https://ravensplit.com/dashboard.html']]){
   let target='';const ctx={URL,URLSearchParams,document:{referrer},location:{search:'?app=1',assign:v=>target=v}};
   vm.runInNewContext(nav+';tripOpenDashboard("https://ravensplit.com/dashboard.html?dm_friend=abc")',ctx);
   assert.equal(target.split('?')[0],expected);assert.ok(target.includes('app=1')&&target.includes('dm_friend=abc'));

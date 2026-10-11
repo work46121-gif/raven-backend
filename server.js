@@ -7203,8 +7203,8 @@ function tripOpenDashboard(destination) {
   if(new URLSearchParams(location.search).get('app')==='1')url.searchParams.set('app','1');
   try {
     const previous=new URL(document.referrer);
-    if(previous.pathname.endsWith('/dashboard.html') && previous.hostname==='localhost' && ['capacitor:','https:'].includes(previous.protocol)) {
-      previous.search=url.search;previous.hash='';location.assign(previous.href);return;
+    if(previous.hostname==='localhost' && ['capacitor:','https:'].includes(previous.protocol)) {
+      previous.pathname='/dashboard.html';previous.search=url.search;previous.hash='';location.assign(previous.href);return;
     }
   } catch(e) {}
   location.assign(url.href);
