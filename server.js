@@ -4470,8 +4470,15 @@ app.get('/trip/:tripId', async (req, res) => {
   }).length;
   const totalPeopleCount = people.length;
 
-  // Backfill settled_count/debtor_count on the trip row  keeps dashboard in sync
-  supabase.from('trips').update({ settled_count: settledCount, debtor_count: debtorCount }).eq('id', tripId).then(() => {}).catch(() => {});
+  // Existing dashboards display people - debtor_count + settled_count.
+  // For Sweep, creditors are not settled until their receivable is zero too.
+  // Encode the exact page count using the full roster as the denominator, so
+  // installed app versions and the website agree without a client update.
+  // Await the cache write before returning the page so Back cannot race it.
+  await supabase.from('trips').update({
+    settled_count: tripUsesSimpleSplit ? settledPeopleCount : settledCount,
+    debtor_count: tripUsesSimpleSplit ? totalPeopleCount : debtorCount
+  }).eq('id', tripId).then(({error}) => { if(error)console.warn('[trip] Settlement summary sync failed'); }).catch(() => {});
 
   const baseUrl   = process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : `https://raven-backend-production-fb1f.up.railway.app`;
   const frontendUrl = 'https://ravensplit.com';
