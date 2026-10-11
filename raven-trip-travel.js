@@ -61,6 +61,17 @@ module.exports=function registerTravel(app,db,authenticate){
   const status=rows.some(r=>r.status==='accepted')?'accepted':rows.some(r=>r.status==='pending')?'pending':'none';
   res.json({success:true,status,profile_id:profile.id});
  }));
+ app.post('/trips/:id/friend-request',run(async(req,res,user,scope)=>{
+  const rid=String(req.body.raven_id||'').trim().replace(/^@/,'').toLowerCase();
+  if(!/^[a-z0-9_]{1,64}$/.test(rid))deny(400,'Invalid Raven ID.');
+  const profile=await result(db.from('profiles').select('id,email').eq('raven_id',rid).maybeSingle());
+  if(!profile||!scope.allowed.includes(String(profile.email||'').trim().toLowerCase()))deny(404,'Linked trip member not found.');
+  if(profile.id===user.id)deny(400,'This is your profile.');
+  const rows=await result(db.from('raven_friends').select('user_id,friend_id,status').or('and(user_id.eq.'+user.id+',friend_id.eq.'+profile.id+'),and(user_id.eq.'+profile.id+',friend_id.eq.'+user.id+')'));
+  if(rows.some(r=>r.status==='accepted'||r.status==='pending'))return res.json({success:true,status:rows.some(r=>r.status==='accepted')?'accepted':'pending'});
+  await result(db.from('raven_friends').insert({user_id:user.id,friend_id:profile.id,status:'pending'}));
+  res.json({success:true,status:'pending'});
+ }));
  app.get('/trips/:id/flight-status',run(async(req,res)=>{
   const flight=flightNumber(req.query.flight);
   if(!validFlight(flight))deny(400,'Enter a flight number like AA100.');

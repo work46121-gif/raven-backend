@@ -5089,6 +5089,21 @@ input:focus,textarea:focus{border-color:var(--purple)}
 .raven-home-link{position:relative;transition:filter 0.2s ease, text-shadow 0.2s ease, transform 0.2s ease}
 .raven-home-link.raven-armed{filter:drop-shadow(0 0 10px rgba(48,209,88,0.55));text-shadow:0 0 14px rgba(48,209,88,0.55);transform:scale(1.03)}
 .receipt-thumb-placeholder{width:44px;height:44px;border-radius:10px;background:rgba(48,209,88,0.1);border:1px solid rgba(48,209,88,0.24);display:flex;align-items:center;justify-content:center;color:var(--green);flex-shrink:0}
+.sweep-history{border-top:1px solid #ffffff0d;padding:0 16px}
+.sweep-history summary{list-style:none;display:flex;align-items:center;gap:8px;min-height:54px;cursor:pointer;color:#B9B6C9;font-size:12px;font-weight:600}
+.sweep-history summary::-webkit-details-marker{display:none}
+.sweep-history-count{font-size:10px;border-radius:20px;background:#ffffff0c;padding:3px 7px}
+.sweep-history-chevron{margin-left:auto;font-size:18px;transition:transform .15s}
+.sweep-history[open] .sweep-history-chevron{transform:rotate(180deg)}
+.sweep-history-row{display:flex;justify-content:space-between;align-items:center;gap:10px;border-top:1px solid #ffffff0a;padding:12px 0}
+.sweep-history-person{display:flex;align-items:center;gap:9px;font-size:12px;min-width:0;overflow-wrap:anywhere}
+.sweep-history-check{color:#30D158;background:#30d15814;display:grid;place-items:center;flex-shrink:0;width:26px;height:26px;border-radius:50%}
+.sweep-history-person small{display:block;color:#9896A8;font-size:10px;margin-top:4px}
+.sweep-history-actions{text-align:right;flex-shrink:0}
+.sweep-history-actions strong{display:block;color:#30D158;font-size:13px;font-variant-numeric:tabular-nums}
+.sweep-history-actions button{font:inherit;font-size:10px;color:#B9B6C9;background:transparent;border:1px solid #ffffff18;border-radius:8px;min-height:36px;padding:6px 10px;margin-top:6px;cursor:pointer}
+.sweep-history-actions button:disabled{opacity:.5}
+.sweep-history-note{font-size:10px;line-height:1.5;color:#9896A8;margin:0 0 14px}
 .receipt-actions{display:flex;align-items:center;gap:6px;flex-shrink:0;padding-top:2px}
 .receipt-icon-btn{width:30px;height:30px;border-radius:999px;border:1px solid transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;-webkit-tap-highlight-color:transparent;transition:transform .14s ease,background .14s ease,border-color .14s ease}
 .receipt-icon-btn:active{transform:scale(.94)}
@@ -5168,7 +5183,7 @@ ${coverHTML}
   <div class="card">
     ${owesRows}
     ${tripUsesSimpleSplit?'<button type="button" id="sweep-explain-all" onclick="explainRavenSweep()" style="display:block;width:100%;text-align:left;padding:14px 16px;border:0;border-top:1px solid #ffffff0d;background:#a855f70a;color:#C4A3F5;font:inherit;font-size:12px;font-weight:700;cursor:pointer">RAVENBOT explains who pays whom →</button>':''}
-    ${tripUsesSimpleSplit && RavenSweep.ledger(trip).some(p=>!p.reversed_at) ? '<details style="padding:14px 16px"><summary>Recorded Sweep payments</summary>'+RavenSweep.ledger(trip).filter(p=>!p.reversed_at).map(p=>'<div style="padding:10px 0;font-size:12px">'+esc(p.from)+' → '+esc(p.to)+' · $'+Number(p.amount).toFixed(2)+' <button type="button" data-sweep-payment="'+esc(p.id)+'" onclick="undoSweepPayment(this)">Undo record</button></div>').join('')+'</details>' : ''}
+    ${tripUsesSimpleSplit && RavenSweep.ledger(trip).some(p=>!p.reversed_at) ? '<details class="sweep-history"><summary><span>Recorded Sweep payments</span><span class="sweep-history-count">'+RavenSweep.ledger(trip).filter(p=>!p.reversed_at).length+'</span><span class="sweep-history-chevron" aria-hidden="true">⌄</span></summary><div class="sweep-history-list">'+RavenSweep.ledger(trip).filter(p=>!p.reversed_at).slice().reverse().map(p=>'<div class="sweep-history-row"><div class="sweep-history-person"><span class="sweep-history-check" aria-hidden="true">✓</span><div><div>'+esc(p.from)+' <span style="color:#9896A8">→</span> '+esc(p.to)+'</div><small>Payment recorded</small></div></div><div class="sweep-history-actions"><strong>$'+Number(p.amount).toFixed(2)+'</strong><button type="button" data-sweep-payment="'+esc(p.id)+'" onclick="undoSweepPayment(this)">Undo record</button></div></div>').join('')+'<p class="sweep-history-note">Records only · Undo does not reverse a transfer.</p></div></details>' : ''}
     <div id="outstanding-footer" data-total-spend="${totalSpend.toFixed(2)}" style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:${grandTotal>0?'rgba(255,107,53,0.04)':'rgba(48,209,88,0.04)'};border-top:1px solid ${grandTotal>0?'rgba(255,107,53,0.15)':'rgba(48,209,88,0.12)'}">
       <div>
         <div id='outstanding-sublabel'>
@@ -7183,6 +7198,29 @@ async function tripProfileIsFriend(profile) {
   return result;
 }
 
+function tripOpenDashboard(destination) {
+  const url=new URL(destination);
+  if(new URLSearchParams(location.search).get('app')==='1')url.searchParams.set('app','1');
+  try {
+    const previous=new URL(document.referrer);
+    if(previous.pathname.endsWith('/dashboard.html') && previous.hostname==='localhost' && ['capacitor:','https:'].includes(previous.protocol)) {
+      previous.search=url.search;previous.hash='';location.assign(previous.href);return;
+    }
+  } catch(e) {}
+  location.assign(url.href);
+}
+async function tripRequestFriend(profile,button) {
+  button.disabled=true;button.textContent='Sending…';
+  try {
+    let token='';try{token=sessionStorage.getItem('raven_trip_access_'+TRIP_ID)||''}catch(e){}
+    if(!token){await initChatDb();token=(await chatDb.auth.getSession()).data.session?.access_token||'';}
+    if(!token)throw Error('Reopen this trip from your RAVEN dashboard to connect your account.');
+    const response=await fetch(BACKEND+'/trips/'+encodeURIComponent(TRIP_ID)+'/friend-request',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({raven_id:profile.raven_id})});
+    const result=await response.json();if(!response.ok||!result.success)throw Error(result.error||'Could not send friend request.');
+    button.textContent=result.status==='accepted'?'Already friends':'Friend request pending';
+    toast(result.status==='accepted'?'You are already friends':'Friend request sent');
+  } catch(e) {button.disabled=false;button.textContent='Add Friend';toast(e.message||'Could not send friend request.');}
+}
 function openMemberProfile(name) {
   const allProfs = PAY_PROFILES;
   const normalizedName = String(name || '').trim().replace(/^@/, '').toLowerCase();
@@ -7216,7 +7254,7 @@ function openMemberProfile(name) {
   const ridEl=document.getElementById("mp-raven-id"); if(ridEl) ridEl.textContent=prof?.raven_id?"@"+prof.raven_id:"";
   const sinceEl=document.getElementById("mp-member-since"); if(sinceEl) { if(prof?.created_at){const d=new Date(prof.created_at);sinceEl.textContent=" RAVEN member since "+d.toLocaleDateString("en-US",{month:"long",year:"numeric"});}else{sinceEl.textContent=" RAVEN member";}}
   const chipsEl=document.getElementById("mp-payment-chips"); if(chipsEl){const chips=[];if(prof?.venmo)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#0084FF;border-radius:8px;font-size:12px;font-weight:700;color:#fff"><span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;background:rgba(255,255,255,0.18);font-size:10px;line-height:1;font-weight:800">V</span> Venmo</span>');if(prof?.cashapp)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#00D632;border-radius:8px;font-size:12px;font-weight:700;color:#000"><span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;background:rgba(0,0,0,0.14);font-size:10px;line-height:1;font-weight:800">$</span> Cash App</span>');if(prof?.zelle)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#6D1ED4;border-radius:8px;font-size:12px;font-weight:700;color:#fff"><span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;background:rgba(255,255,255,0.18);font-size:10px;line-height:1;font-weight:800">Z</span> Zelle</span>');if(prof?.applepay)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#1a1a1a;border:1px solid #555;border-radius:8px;font-size:12px;font-weight:700;color:#fff"><span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;background:rgba(255,255,255,0.12);font-size:10px;line-height:1;font-weight:800">Pay</span> Apple Pay</span>');chipsEl.innerHTML=chips.length?chips.join(""):'<span style="font-size:12px;color:#6E6B80">No payment methods set up</span>';}
-  const actEl=document.getElementById("mp-actions"); if(actEl){actEl.innerHTML="";if(prof?.raven_id&&!isOwnProfile){const addBtn=document.createElement("button");addBtn.style.cssText="width:100%;padding:13px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.3);border-radius:12px;font-family:inherit;font-size:14px;font-weight:700;color:#A855F7;cursor:pointer";addBtn.textContent="View on RAVEN";addBtn.onclick=()=>{window.open("https://ravensplit.com/dashboard.html","_blank");toast("Search for @"+prof.raven_id+" in Friends");closeMemberProfile();};actEl.appendChild(addBtn);(async()=>{try{const friendship=await tripProfileIsFriend(prof);if(!addBtn.isConnected)return;if(friendship.status==='none')addBtn.textContent='Add Friend on RAVEN';if(friendship.status==='pending'){addBtn.textContent='Friend request pending';addBtn.disabled=true;}if(friendship.status==='self'){addBtn.textContent='Your profile';addBtn.disabled=true;}if(friendship.status==='accepted'){addBtn.textContent='Friends · Message';addBtn.onclick=()=>{const dmUrl='https://ravensplit.com/dashboard.html?dm_friend='+encodeURIComponent(String(friendship.profile_id||prof?.id||''))+'&dm_name='+encodeURIComponent(displayName)+'&dm_raven_id='+encodeURIComponent(String(prof?.raven_id||''));window.open(dmUrl,'_blank');closeMemberProfile();};}}catch(e){}})();}const closeBtn=document.createElement("button");closeBtn.style.cssText="width:100%;padding:13px;background:transparent;border:1px solid rgba(255,255,255,0.1);border-radius:12px;font-family:inherit;font-size:14px;color:#6E6B80;cursor:pointer";closeBtn.textContent="Close";closeBtn.onclick=closeMemberProfile;actEl.appendChild(closeBtn);}
+  const actEl=document.getElementById("mp-actions"); if(actEl){actEl.innerHTML="";if(prof?.raven_id&&!isOwnProfile){const addBtn=document.createElement("button");addBtn.style.cssText="width:100%;padding:13px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.3);border-radius:12px;font-family:inherit;font-size:14px;font-weight:700;color:#A855F7;cursor:pointer";addBtn.textContent="View on RAVEN";addBtn.onclick=()=>{toast("You are viewing @"+prof.raven_id+" on RAVEN");};actEl.appendChild(addBtn);(async()=>{try{const friendship=await tripProfileIsFriend(prof);if(!addBtn.isConnected)return;if(friendship.status==='none'){addBtn.textContent='Add Friend';addBtn.onclick=()=>tripRequestFriend(prof,addBtn);}if(friendship.status==='pending'){addBtn.textContent='Friend request pending';addBtn.disabled=true;}if(friendship.status==='self'){addBtn.textContent='Your profile';addBtn.disabled=true;}if(friendship.status==='accepted'){addBtn.textContent='Friends · Message';addBtn.onclick=()=>{const dmUrl='https://ravensplit.com/dashboard.html?dm_friend='+encodeURIComponent(String(friendship.profile_id||prof?.id||''))+'&dm_name='+encodeURIComponent(displayName)+'&dm_raven_id='+encodeURIComponent(String(prof?.raven_id||''));tripOpenDashboard(dmUrl);closeMemberProfile();};}}catch(e){}})();}const closeBtn=document.createElement("button");closeBtn.style.cssText="width:100%;padding:13px;background:transparent;border:1px solid rgba(255,255,255,0.1);border-radius:12px;font-family:inherit;font-size:14px;color:#6E6B80;cursor:pointer";closeBtn.textContent="Close";closeBtn.onclick=closeMemberProfile;actEl.appendChild(closeBtn);}
   if(modal) modal.classList.add("open");
 }
 function closeMemberProfile(){const m=document.getElementById("member-profile-modal");if(m)m.classList.remove("open");}

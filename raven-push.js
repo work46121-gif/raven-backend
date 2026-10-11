@@ -20,6 +20,7 @@ function alertText(event) {
  // Names only, never message/comment bodies or amounts on the lock screen.
  const clean = (value, max) => String(value || '').replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, '').trim().slice(0, max);
  const first = clean(event.actor_name, 60) || 'Someone';
+ if(event.kind==='trip_payment' || String(event.event_key||'').startsWith('bill_payment:'))return first+' recorded a payment on RAVEN';
  if (['dm', 'group', 'trip_message'].includes(event.kind)) return first + ' sent you a message on RAVEN';
  if (event.kind === 'trip_comment') return first + ' added a comment on trip ' + (clean(event.trip_name, 100) || 'your trip');
  if (event.kind === 'trip_overdue') return 'You have an unpaid balance for ' + (clean(event.trip_name, 100) || 'your trip') + '. Open RAVEN to review your bill.';
@@ -348,6 +349,16 @@ module.exports = function registerPush(app, db, authenticate, env = process.env,
    if (error) throw error;
    for (const event of events || []) {
     let retry = false;
+    if(event.kind==='trip_payment'||String(event.event_key||'').startsWith('bill_payment:')){
+     stage='payment-preference';
+     const {data:profile,error}=await db.from('profiles').select('*').eq('id',event.user_id).maybeSingle();
+     if(error)throw error;
+     if(!profile||profile.privacy_payment_alerts===false){
+      const saved=await db.from('raven_push_events').update({done:true}).eq('id',event.id).eq('lease',event.lease);
+      if(saved.error)throw saved.error;
+      continue;
+     }
+    }
     // Recheck the live balance and trip membership on every delivery attempt;
     // a payment after enqueueing cancels the reminder, including retries.
     if (event.kind === 'trip_overdue') {
