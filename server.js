@@ -4779,9 +4779,11 @@ app.get('/trip/:tripId', async (req, res) => {
           </div>
         </div>
         <div style="text-align:right">
-          <div class="person-balance-display" data-original-owed="${rawOwed.toFixed(2)}" data-raw-owed="${effectiveAmtOwed.toFixed(2)}" style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${effectiveIsSettled?'#30D158':tripUsesSimpleSplit&&sweepNet>0?'#A855F7':effectiveAmtOwed>0?'#FF9A3C':effectiveIsCreditor?'#A855F7':'#9896A8'}">
+          ${tripUsesSimpleSplit?'<button type="button" class="sweep-balance-open" data-name="'+esc(p)+'" onclick="openSweepBalance(this.dataset.name,this)" aria-label="View balance breakdown for '+esc(displayName)+'" style="display:inline-flex;align-items:center;justify-content:flex-end;gap:6px;min-height:44px;padding:0;border:0;background:none;color:inherit;cursor:pointer;border-radius:6px">':''}
+          <span class="person-balance-display" data-original-owed="${rawOwed.toFixed(2)}" data-raw-owed="${effectiveAmtOwed.toFixed(2)}" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${effectiveIsSettled?'#30D158':tripUsesSimpleSplit&&sweepNet>0?'#A855F7':effectiveAmtOwed>0?'#FF9A3C':effectiveIsCreditor?'#A855F7':'#9896A8'}">
             ${tripUsesSimpleSplit ? '$'+Math.abs(sweepNet).toFixed(2) : effectiveIsSettled ? '$0.00' : effectiveAmtOwed>0 ? '-$'+effectiveAmtOwed.toFixed(2) : effectiveIsCreditor ? '+$'+amtReceivable.toFixed(2) : '$0.00'}
-          </div>
+          </span>
+          ${tripUsesSimpleSplit?'<svg aria-hidden="true" width="10" height="14" viewBox="0 0 10 14" fill="none" style="color:#777283;flex-shrink:0"><path d="M3 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>':''}
           ${spendMeta ? `<div style="margin-top:3px;font-size:10px;color:#6E6B80">${spendMeta}</div>` : ''}
         </div>
       </div>
@@ -4791,7 +4793,7 @@ app.get('/trip/:tripId', async (req, res) => {
           ? `<div class="client-pay-block${tripUsesSimpleSplit&&payerEntries.length>1?' sweep-payment-group':''}" ${tripUsesSimpleSplit&&payerEntries.length>1?'style="margin-top:10px;border:1px solid #a855f733;border-radius:12px;padding:10px;background:#a855f709"':''}>
               ${tripUsesSimpleSplit&&payerEntries.length>1?'<div style="font-size:12px;font-weight:700;color:#D9D2F5">One balance · '+payerEntries.length+' payments</div>':''}
               ${payBtnsHtml}${markPaidBtnHtml}
-              ${tripUsesSimpleSplit&&payerEntries.length>1?'<div class="sweep-payment-total" style="font-size:12px;color:#D9D2F5;padding:10px 0 6px">Together: '+payerEntries.map(([,amount])=>'$'+amount.toFixed(2)).join(' + ')+' = <b>$'+effectiveAmtOwed.toFixed(2)+'</b></div><button type="button" class="sweep-explain-person" data-name="'+esc(p)+'" onclick="explainRavenSweep(this.dataset.name)" style="background:none;border:0;color:#C4A3F5;font:inherit;font-size:12px;text-align:left;padding:6px 0;cursor:pointer">Why '+payerEntries.length+' payments? Ask RAVENBOT →</button>':''}
+${tripUsesSimpleSplit&&payerEntries.length>1?'<div class="sweep-payment-total" style="font-size:12px;color:#D9D2F5;padding:10px 0 6px">Together: '+payerEntries.map(([,amount])=>'$'+amount.toFixed(2)).join(' + ')+' = <b>$'+effectiveAmtOwed.toFixed(2)+'</b></div>':''}
             </div>`
           : ''}
     </div>`;
@@ -5165,7 +5167,7 @@ ${coverHTML}
   <div class="sec-lbl">${owesHeading}${tripUsesSimpleSplit ? ` <button type="button" onclick="document.getElementById(\'sweep-info\').showModal()" aria-label="What is RAVENSWEEP?" style="display:inline-flex;align-items:center;gap:5px;margin-left:8px;padding:4px 8px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:999px;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#30D158;vertical-align:middle">RAVEN Sweep ⓘ</button>` : ''}</div>
   <div class="card">
     ${owesRows}
-    ${tripUsesSimpleSplit?'<button type="button" id="sweep-explain-all" onclick="explainRavenSweep()" style="display:block;width:100%;text-align:left;padding:14px 16px;border:0;border-top:1px solid #ffffff0d;background:#a855f70a;color:#C4A3F5;font:inherit;font-size:12px;font-weight:700;cursor:pointer">RAVENBOT · Explain who pays whom →</button>':''}
+    ${tripUsesSimpleSplit?'<button type="button" id="sweep-explain-all" onclick="explainRavenSweep()" style="display:block;width:100%;text-align:left;padding:14px 16px;border:0;border-top:1px solid #ffffff0d;background:#a855f70a;color:#C4A3F5;font:inherit;font-size:12px;font-weight:700;cursor:pointer">RAVENBOT explains who pays whom →</button>':''}
     ${tripUsesSimpleSplit && RavenSweep.ledger(trip).some(p=>!p.reversed_at) ? '<details style="padding:14px 16px"><summary>Recorded Sweep payments</summary>'+RavenSweep.ledger(trip).filter(p=>!p.reversed_at).map(p=>'<div style="padding:10px 0;font-size:12px">'+esc(p.from)+' → '+esc(p.to)+' · $'+Number(p.amount).toFixed(2)+' <button type="button" data-sweep-payment="'+esc(p.id)+'" onclick="undoSweepPayment(this)">Undo record</button></div>').join('')+'</details>' : ''}
     <div id="outstanding-footer" data-total-spend="${totalSpend.toFixed(2)}" style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:${grandTotal>0?'rgba(255,107,53,0.04)':'rgba(48,209,88,0.04)'};border-top:1px solid ${grandTotal>0?'rgba(255,107,53,0.15)':'rgba(48,209,88,0.12)'}">
       <div>
@@ -6003,7 +6005,7 @@ function applyNameAndAvatar(firstName, avatarUrl) {
 // Fetch and apply profile pictures for ALL trip members
 // Cache of member avatar URLs, keyed by lowercase display names and first names
 const _memberAvatarCache = {};
-const sweepInfo=document.createElement('dialog');sweepInfo.id='sweep-info';sweepInfo.setAttribute('aria-label','About RAVENSWEEP');sweepInfo.style.cssText='width:min(420px,calc(100% - 40px));box-sizing:border-box;margin:auto;background:#13101d;color:#eee8fa;border:1px solid #7c3aed66;border-radius:22px;padding:24px;max-height:85dvh;overflow:auto;font-family:inherit;line-height:1.6';sweepInfo.innerHTML='<h3 style="margin-top:0;color:#30d158">What is RAVENSWEEP?</h3><p>RAVEN Sweep combines all trip bills and subtracts what each person owes from what they are owed. For example, owing $10 and being owed $5 becomes one $5 payment.</p><p><strong>Owes</strong> means the amount still to pay. <strong>Gets back</strong> means the amount still to receive. Payments go directly to people who are owed money, without anyone collecting and forwarding it.</p><p>Paying the largest bill does not make someone the only person owed money. A balance may need payments to more than one person so everyone is reimbursed correctly.</p><p>Record a payment only after sending it. RAVEN does not charge anyone or move money automatically.</p><button type="button" onclick="explainRavenSweep()" style="width:100%;padding:12px;margin:0 0 12px;border:1px solid #a855f755;border-radius:12px;background:#a855f71a;color:#D9D2F5;font:inherit;font-weight:700">RAVENBOT · Explain this trip\u2019s amounts</button><form method="dialog"><button style="width:100%;padding:12px;border:0;border-radius:12px;background:#30d158;color:#07120a;font:inherit;font-weight:700">Got it</button></form>';sweepInfo.querySelectorAll('p').forEach(p=>p.style.margin='0 0 12px');document.body.append(sweepInfo);
+const sweepInfo=document.createElement('dialog');sweepInfo.id='sweep-info';sweepInfo.setAttribute('aria-label','About RAVENSWEEP');sweepInfo.style.cssText='width:min(420px,calc(100% - 40px));box-sizing:border-box;margin:auto;background:#13101d;color:#eee8fa;border:1px solid #7c3aed66;border-radius:22px;padding:24px;max-height:85dvh;overflow:auto;font-family:inherit;line-height:1.6';sweepInfo.innerHTML='<h3 style="margin-top:0;color:#30d158">What is RAVENSWEEP?</h3><p>RAVEN Sweep combines all trip bills and subtracts what each person owes from what they are owed. For example, owing $10 and being owed $5 becomes one $5 payment.</p><p><strong>Owes</strong> means the amount still to pay. <strong>Gets back</strong> means the amount still to receive. Payments go directly to people who are owed money, without anyone collecting and forwarding it.</p><p>Paying the largest bill does not make someone the only person owed money. A balance may need payments to more than one person so everyone is reimbursed correctly.</p><p>Record a payment only after sending it. RAVEN does not charge anyone or move money automatically.</p><form method="dialog"><button style="width:100%;padding:12px;border:0;border-radius:12px;background:#30d158;color:#07120a;font:inherit;font-weight:700">Got it</button></form>';sweepInfo.querySelectorAll('p').forEach(p=>p.style.margin='0 0 12px');document.body.append(sweepInfo);
 
 function setCachedMemberAvatar(name, avatarUrl) {
   if (!name) return;
@@ -6746,6 +6748,7 @@ function updatePersonBalanceDisplay(personName) {
 })();
 
 ${require('fs').readFileSync(require.resolve('./raven-sweep-client.js'),'utf8')}
+${require('fs').readFileSync(require.resolve('./raven-sweep-breakdown-client.js'),'utf8')}
 // Mark a person as settled in the trip hub
 function markTripPersonPaid(personName, personId, btn) {
   if (!btn) btn = document.getElementById('markpaid-' + personId);
@@ -8749,6 +8752,10 @@ app.post('/trip/:tripId/ravenbot', async (req, res) => {
     const { data: receipts, error: receiptsError } = await supabase.from('trip_receipts').select('*').eq('trip_id', tripId).order('created_at', { ascending: true });
     if (receiptsError || !Array.isArray(receipts)) return res.status(503).json({success:false,error:'Could not load current receipts. Please retry.'});
     const summary = buildTripConciergePayload(trip, receipts);
+    if (intent === 'balance_breakdown') {
+      if (!summary.sweep) return res.json({success:false,error:'Sweep is no longer enabled. Refresh the trip.'});
+      return res.json({success:true,breakdown:RavenSweepExplain.breakdown(summary.sweep,person)});
+    }
     if (intent === 'sweep_explanation' || (summary.sweep && RavenSweepExplain.explainsBalance(message))) {
       if (!summary.sweep) return res.json({success:false,error:'Sweep is no longer enabled. Refresh the trip.'});
       const focus = intent === 'sweep_explanation' ? person : undefined;

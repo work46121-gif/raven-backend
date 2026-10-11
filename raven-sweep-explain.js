@@ -20,7 +20,7 @@ function describe(trip, receipts, current = S.build(trip, receipts)) {
     const others = people.filter(name => name !== payer);
     const roundedShare = people.length ? Math.round(total / people.length) : 0;
     const equalRoundedOthers = !!payer && total > 0 && others.length > 0 && others.every(name => shares[name] === roundedShare);
-    return { name: r.name || 'Receipt', paid_by: payer || r.paid_by || 'Not recorded', total: total / 100,
+    return { name: r.name || 'Receipt', paid_by: payer || r.paid_by || 'Not recorded', total: total / 100, split_settings: S.parse(r.split_settings, null),
       shares: Object.fromEntries(Object.entries(shares).map(([name, amount]) => [name, amount / 100])),
       rounding: equalRoundedOthers && shares[payer] !== roundedShare ? { others: others.length, each: roundedShare / 100, payer_share: shares[payer] / 100 } : null };
   });
@@ -31,7 +31,35 @@ function describe(trip, receipts, current = S.build(trip, receipts)) {
     return { name, paid: paid / 100, share: (paid - rawNet) / 100, before_settlements: rawNet / 100, settlement_adjustment: (net - rawNet) / 100, net: net / 100,
       payments: Object.entries(current.payoutsByPerson[name] || {}).map(([to, amount]) => ({ to, amount })) };
   });
-  return { version: current.version, outstanding: current.outstanding, bills, balances };
+  const payments = S.ledger(trip).filter(p => !p.reversed_at).map(p => ({ from: canon.get(S.key(p.from)), to: canon.get(S.key(p.to)), amount: S.cents(p.amount) / 100 }));
+  return { version: current.version, outstanding: current.outstanding, bills, balances, payments };
+}
+function breakdown(info, person) {
+  const selected = info.balances.find(p => S.key(p.name) === S.key(person));
+  if (!selected) throw Error('That person is not on this trip. Refresh and try again.');
+  const payments = (info.payments || []).filter(p => p.from === selected.name || p.to === selected.name);
+  const sent = payments.filter(p => p.from === selected.name).reduce((sum, p) => sum + S.cents(p.amount), 0);
+  const received = payments.filter(p => p.to === selected.name).reduce((sum, p) => sum + S.cents(p.amount), 0);
+  const bills = info.bills.map(r => {
+    const share = r.shares[selected.name] || 0;
+    const isPayer = r.paid_by === selected.name;
+    let logic = 'Saved receipt allocation, including this person’s portion of any receipt charges.';
+    if (!share && !isPayer) logic = 'No share assigned on this receipt.';
+    else if (isPayer) logic = money(r.total) + ' paid − ' + money((S.cents(r.total) - S.cents(share)) / 100) + ' allocated to others = ' + money(share) + ' own share.';
+    else if (r.rounding) logic = money(r.total) + ' ÷ ' + (r.rounding.others + 1) + ' people, rounded to the saved share of ' + money(share) + '. The payer absorbs the remaining cents.';
+    else if (r.split_settings?.mode === 'items') logic = 'Saved itemized share, including allocated tax, tip, fees and discounts.';
+    else if (r.split_settings?.split?.mode === 'percent') {
+      const percent = r.split_settings.split.values?.[S.key(selected.name)];
+      if (Number.isFinite(Number(percent)) && percent != null) logic = 'Saved percentage split: ' + Number(percent) + '% of this receipt. Amount shown includes cent rounding.';
+    } else if (r.split_settings?.split?.mode === 'amount') logic = 'Custom dollar amount saved for this person on the receipt.';
+    return { name: r.name, total: r.total, paid_by: r.paid_by, share, logic };
+  });
+  const recipients = selected.payments.map(p => ({ name: p.to, amount: p.amount }));
+  const incoming = info.balances.flatMap(p => p.payments.filter(v => v.to === selected.name).map(v => ({ name: p.name, amount: v.amount })));
+  return { name: selected.name, version: info.version, share: selected.share, paid: selected.paid, net: selected.net,
+    sent: sent / 100, received: received / 100,
+    earlier_adjustment: (S.cents(selected.settlement_adjustment) - sent + received) / 100,
+    bills, recorded_payments: payments, recipients, incoming };
 }
 function explainsBalance(message) {
   return /\b(sweep|owe\w*|owed|pay\w*|paid|reimburs\w*|settle\w*|balanc\w*|netted|offset\w*|both|breakdown|cents?|rounding|shares?|totals?)\b/i.test(String(message || ''));
@@ -94,4 +122,4 @@ function reply(info, person) {
   lines.push('Record each payment only after sending it. RAVEN does not move money automatically.');
   return lines.join('\n');
 }
-module.exports = { describe, explainsBalance, reply };
+module.exports = { describe, breakdown, explainsBalance, reply };

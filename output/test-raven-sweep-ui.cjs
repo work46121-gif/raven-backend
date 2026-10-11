@@ -6,7 +6,7 @@ const receipts=[{id:1,name:'Airbnb',total:1500,paid_by:'Andrew',splits:{Andrew:3
 (async()=>{
  const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
  try{
-  const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true});let writes=[],fail=false,allow=false,botFail=false,botRequests=[];const errors=[];
+  const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true});let writes=[],fail=false,allow=false,botFail=false,botStale=false,botRequests=[];const errors=[];
   page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>allow?d.accept():d.dismiss());
   await page.route('**/*',async route=>{
    const request=route.request(),url=new URL(request.url());
@@ -15,7 +15,8 @@ const receipts=[{id:1,name:'Airbnb',total:1500,paid_by:'Andrew',splits:{Andrew:3
    if(request.resourceType()==='stylesheet')return route.fulfill({contentType:'text/css',body:''});
    if(url.pathname.endsWith('/ravenbot')){
     const body=request.postDataJSON();botRequests.push(body);
-    return route.fulfill({status:botFail?503:200,contentType:'application/json',body:JSON.stringify(botFail?{success:false}:{success:true,reply:E.reply(E.describe(trip,receipts),body.person)})});
+    const breakdown=body.intent==='balance_breakdown'?E.breakdown(E.describe(trip,receipts),body.person):null;if(breakdown&&botStale)breakdown.version='newer-version';
+    return route.fulfill({status:botFail?503:200,contentType:'application/json',body:JSON.stringify(botFail?{success:false}:breakdown?{success:true,breakdown}:{success:true,reply:E.reply(E.describe(trip,receipts),body.person)})});
    }
    if(request.method()==='POST'&&(/mark-settled|sweep-payment/.test(url.pathname))){
     const body=request.postDataJSON();writes.push({path:url.pathname,body});
@@ -35,6 +36,13 @@ const receipts=[{id:1,name:'Airbnb',total:1500,paid_by:'Andrew',splits:{Andrew:3
   for(const name of ['Mel','Will','Nicholas'])assert.deepEqual(await page.locator('#row-person-'+name+' .pay-slot').evaluateAll(elements=>elements.map(el=>[el.dataset.payer,el.dataset.amount])),[[name==='Mel'?'Arsalan':'Andrew','500.00']]);
   assert.equal(await page.locator('#row-person-Andrew').getAttribute('data-is-settled'),'0');
   assert.equal(await page.locator('#sweep-info').isVisible(),false);
+  assert.equal(await page.locator('button[onclick^="explainRavenSweep"]').count(),1,'only one Sweep explanation link');
+  assert.equal(await page.locator('.sweep-balance-open').count(),5);
+  await page.locator('#row-person-Andrew .sweep-balance-open').focus();await page.keyboard.press('Enter');
+  await page.getByRole('dialog',{name:'Balance breakdown for Andrew',exact:true}).getByText('Still to receive · Andrew',{exact:true}).waitFor();
+  assert.match(await page.locator('#sweep-balance-dialog').innerText(),/Paid toward receipts/);
+  await page.keyboard.press('Escape');await page.locator('#sweep-balance-dialog').waitFor({state:'detached'});
+  assert.equal(await page.locator('#row-person-Andrew .sweep-balance-open').evaluate(el=>el===document.activeElement),true,'focus returns to amount');
   assert.equal(await page.getByText('RAVEN Sweep nets everyone’s shares.',{exact:false}).count(),0,'no inline explanatory paragraph');
   await page.getByRole('button',{name:'What is RAVENSWEEP?',exact:true}).click();assert.equal(await page.locator('#sweep-info').isVisible(),true);
   const description=await page.locator('#sweep-info').innerText();assert.match(description,/Payments go directly/);for(const name of trip.people)assert.equal(description.includes(name),false,'generic explanation has no participant names');
@@ -44,6 +52,7 @@ const receipts=[{id:1,name:'Airbnb',total:1500,paid_by:'Andrew',splits:{Andrew:3
   allow=true;fail=true;await button.click();await page.waitForFunction(()=>document.querySelector('#row-person-Mel .sweep-record-payment').disabled===false);assert.equal(writes.length,1);assert.equal(trip.sweep_payments.length,0);
   fail=false;await button.click();await page.waitForFunction(()=>document.getElementById('row-person-Mel').dataset.isSettled==='1');
   assert.equal(trip.sweep_payments.length,1);assert.equal(trip.sweep_payments[0].amount,500);assert.equal(trip.sweep_payments[0].to,'Arsalan');
+  await page.locator('#row-person-Mel .sweep-balance-open').click();await page.getByText('Settled · Mel',{exact:true}).waitFor();await page.getByRole('button',{name:'Close balance breakdown',exact:true}).click();
   assert.match(await page.locator('#row-person-Andrew .person-status-display').innerText(),/Gets back/);
   await page.getByText('Recorded Sweep payments',{exact:true}).click();await page.getByRole('button',{name:'Undo record',exact:true}).click();
   await page.waitForFunction(()=>document.getElementById('row-person-Mel').dataset.isSettled==='0');assert.ok(trip.sweep_payments[0].reversed_at);
@@ -59,10 +68,30 @@ const receipts=[{id:1,name:'Airbnb',total:1500,paid_by:'Andrew',splits:{Andrew:3
   assert.match(await page.locator('#row-person-Nicholas .sweep-payment-total').innerText(),/\$420.01 \+ \$20.01 = \$440.02/);
   await page.locator('#row-person-Nicholas').evaluate(el=>el.scrollIntoView({block:'center'}));
   await page.screenshot({path:'output/raven-sweep-grouped-preview.png'});
-  await page.locator('#row-person-Nicholas .sweep-explain-person').click();
-  await page.waitForFunction(()=>document.getElementById('chat-msgs').textContent.includes('Nicholas owes $440.02 in total'));
+  await page.locator('#row-person-Nicholas .sweep-balance-open').click();
+  await page.getByText('Still to pay · Nicholas',{exact:true}).waitFor();
+  assert.match(await page.locator('#sweep-balance-dialog').innerText(),/Share by receipt/);
+  assert.match(await page.locator('#sweep-balance-dialog').innerText(),/\$260.01/);
+  assert.match(await page.locator('#sweep-balance-dialog').innerText(),/\$180.01/);
+  assert.match(await page.locator('#sweep-balance-dialog').innerText(),/To Andrew/);
+  assert.equal(await page.locator('#chat-modal').isVisible(),false,'amount opens detail, not chatbot');
+  assert.equal(botRequests.at(-1).intent,'balance_breakdown');assert.equal(botRequests.at(-1).person,'Nicholas');
+  assert.ok(await page.locator('#sweep-balance-dialog').evaluate(el=>el.scrollWidth<=el.clientWidth),'breakdown has no horizontal overflow');
+  await page.screenshot({path:'output/sweep-balance-breakdown-mobile.png'});
+  await page.getByRole('button',{name:'Close balance breakdown',exact:true}).click();
+  botFail=true;await page.locator('#row-person-Will .sweep-balance-open').click();await page.getByRole('button',{name:'Retry',exact:true}).waitFor();
+  botFail=false;await page.getByRole('button',{name:'Retry',exact:true}).click();await page.getByText('Still to pay · Will',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'Close balance breakdown',exact:true}).click();
+  botStale=true;const oldName=receipts[0].name;receipts[0].name='<img src=x onerror="alert(1)">';
+  await page.locator('#row-person-Will .sweep-balance-open').click();await page.getByRole('button',{name:'Refresh trip',exact:true}).waitFor();
+  assert.match(await page.locator('#sweep-balance-dialog').innerText(),/Balances changed since this page opened/);
+  assert.equal(await page.locator('#sweep-balance-dialog img').count(),0,'receipt names are text, never markup');
+  assert.match(await page.locator('#sweep-balance-dialog').innerText(),/<img src=x/);
+  await page.getByRole('button',{name:'Close balance breakdown',exact:true}).click();botStale=false;receipts[0].name=oldName;
+  await page.locator('#sweep-explain-all').click();
+  await page.waitForFunction(()=>document.getElementById('chat-msgs').textContent.includes('Nicholas: $420.01 to Andrew + $20.01 to Arsalan = $440.02 total'));
   assert.equal(await page.locator('#chat-modal').isVisible(),true);
-  assert.equal(botRequests.at(-1).intent,'sweep_explanation');assert.equal(botRequests.at(-1).person,'Nicholas');
+  assert.equal(botRequests.at(-1).intent,'sweep_explanation');assert.equal(botRequests.at(-1).person,'');
   assert.equal(await page.locator('#ai-consent-modal').count(),0,'calculated explanation needs no external AI consent');
   await page.locator('#chat-msgs').evaluate(el=>el.scrollTop=0);
   await page.screenshot({path:'output/ravenbot-sweep-breakdown-preview.png'});
@@ -77,6 +106,9 @@ const receipts=[{id:1,name:'Airbnb',total:1500,paid_by:'Andrew',splits:{Andrew:3
   assert.equal(await page.locator('#row-person-Nicholas').getAttribute('data-is-settled'),'0');
   assert.equal(await page.locator('#row-person-Nicholas .sweep-record-payment').getAttribute('data-sweep-to'),'Arsalan');
   assert.equal(await page.locator('#row-person-Nicholas .sweep-payment-group').count(),0,'group disappears after only one payment remains');
+  await page.locator('#row-person-Nicholas .sweep-balance-open').click();await page.getByText('Still to pay · Nicholas',{exact:true}).waitFor();
+  assert.match(await page.locator('#sweep-balance-dialog').innerText(),/Recorded payments sent/);assert.match(await page.locator('#sweep-balance-dialog').innerText(),/−\$420.01/);
+  assert.match(await page.locator('#sweep-balance-dialog').innerText(),/\$20.01/);await page.getByRole('button',{name:'Close balance breakdown',exact:true}).click();
   await page.locator('#sweep-explain-all').click();await page.waitForFunction(()=>document.getElementById('chat-msgs').textContent.includes('Nicholas: $20.01 to Arsalan = $20.01 total'));
   await page.evaluate(()=>closeChat());
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.deepEqual(errors,[]);

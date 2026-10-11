@@ -35,6 +35,23 @@ assert.equal(E.explainsBalance('Where do I upload a photo?'),false);
 const custom=E.describe(trip,[{id:3,name:'Unequal car',total:1000,paid_by:'Alex',splits:{Alex:500,Blair:200,Casey:100,Drew:100,Evan:100}}]);
 assert.equal(custom.bills[0].rounding,null,'custom shares are not mislabeled as rounding');
 assert.doesNotMatch(E.reply(custom),/Where the cents come from/);
+const detail=E.breakdown(info,'Evan');
+assert.equal(detail.net,-440.02);assert.equal(detail.share,440.02);assert.equal(detail.paid,0);
+assert.deepEqual(detail.bills.map(b=>b.share),[260.01,180.01]);
+assert.deepEqual(detail.recipients,[{name:'Alex',amount:420.01},{name:'Blair',amount:20.01}]);
+assert.match(detail.bills[0].logic,/÷ 5 people/);
+const creditor=E.breakdown(info,'Alex');assert.equal(creditor.net,860.03);assert.equal(creditor.paid,1300.07);assert.equal(creditor.share,440.04);
+assert.match(creditor.bills[0].logic,/\$1300.07 paid − \$1040.04 allocated to others = \$260.03 own share/);
+assert.equal(creditor.incoming.reduce((s,p)=>s+S.cents(p.amount),0),86003);
+for(const t of [trip,paid,undone,legacy]){
+ const data=E.describe(t,receipts);
+ for(const name of trip.people){const d=E.breakdown(data,name);assert.equal(S.cents(d.share)-S.cents(d.paid)-S.cents(d.sent)+S.cents(d.received)-S.cents(d.earlier_adjustment),-S.cents(d.net));}
+}
+const paidDetail=E.breakdown(E.describe(paid,receipts),'Evan');assert.equal(paidDetail.sent,420.01);assert.equal(paidDetail.net,-20.01);assert.equal(paidDetail.recorded_payments.length,1);
+assert.equal(E.breakdown(E.describe(legacy,receipts),'Evan').earlier_adjustment,100);
+assert.throws(()=>E.breakdown(info,'Unknown'),/not on this trip/);
+const percent=E.describe(trip,[{id:4,name:'Car',total:1000,paid_by:'Alex',splits:{Alex:500,Blair:200,Casey:100,Drew:100,Evan:100},split_settings:{mode:'bill',split:{mode:'percent',values:{alex:50,blair:20,casey:10,drew:10,evan:10}}}}]);
+assert.match(E.breakdown(percent,'Evan').bills[0].logic,/10%/);
 // Execute the real concierge and RAVENBOT route. No external AI or DB mutations.
 const source=fs.readFileSync('Server.js','utf8'),routes={};let readFail=false,aiCalls=0;
 const context={RavenSweep:S,RavenSweepExplain:E,aggregateSettledCredits:()=>({}),console,app:{get(){},post:(path,fn)=>routes[path]=fn},
@@ -47,7 +64,11 @@ async function request(body){let status=200,result;const res={status(n){status=n
  for(const token of ['wrong',undefined])assert.equal((await request({...body,token})).result.success,false);
  let response=await request(body);assert.equal(response.result.reply,E.reply(info,'Evan'));assert.equal(response.result.source,'sweep_calculation');
  response=await request({token:'invite',message:'Why do I pay both?'});assert.equal(response.result.reply,E.reply(info));
+ response=await request({...body,intent:'balance_breakdown'});assert.deepEqual(JSON.parse(JSON.stringify(response.result.breakdown)),detail);
+ assert.equal((await request({...body,intent:'balance_breakdown',token:'wrong'})).result.success,false);
+ assert.equal((await request({...body,intent:'balance_breakdown',person:'Unknown'})).result.success,false);
  readFail=true;response=await request(body);assert.equal(response.status,503);assert.equal(response.result.success,false);readFail=false;
+ readFail=true;assert.equal((await request({...body,intent:'balance_breakdown'})).status,503);readFail=false;
  assert.equal(aiCalls,0);assert.deepEqual(trip.sweep_payments,[]);
  console.log('PASS RAVENBOT: exact shared-engine amounts, one total/two recipients, rounding, legacy credits, partial payments, undo, mutual offsets, settled state, authorization, read failure and zero external AI/payment writes.');
 })().catch(e=>{console.error(e);process.exitCode=1});
