@@ -93,7 +93,7 @@ module.exports=function registerTravel(app,db,authenticate){
   }));res.json({success:true,members,media,can_assign:scope.owner,hasMore:rows.length>50,nextOffset:offset+50});
  }));
  app.post('/trips/:id/travel',run(async(req,res,user,scope)=>{
-  const kind=req.body.kind;let title=String(req.body.title||'').trim(),flight='';if(!['stay','flight','vehicle'].includes(kind))deny(400,'Choose Airbnb / stay, Flight or Vehicle.');
+  const kind=req.body.kind;let title=String(req.body.title||'').trim(),flight='';if(!['stay','flight','vehicle','activity'].includes(kind))deny(400,'Choose Airbnb / stay, Flight, Vehicle or Itinerary / Activities.');
   let person=null;
   if(kind==='flight'){
    flight=flightNumber(req.body.flight_number);if(flight&&!validFlight(flight))deny(400,'Enter a flight number like AA100.');if(flight)title=storedFlightTitle(title,flight);
