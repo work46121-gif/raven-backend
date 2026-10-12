@@ -4863,7 +4863,8 @@ ${tripUsesSimpleSplit&&payerEntries.length>1?'<div class="sweep-payment-total" s
     //  WHO OWES WHAT (payer excluded  they paid) 
     const personBreakdownHtml = splitEntries.length > 0 ? `
       <div style="margin-bottom:16px">
-        <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:#6E6B80;font-weight:700;margin-bottom:10px">${payer ? `Owes ${esc(payerDisplay)}` : 'Who Owes What'}</div>
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:#6E6B80;font-weight:700;margin-bottom:10px">${tripUsesSimpleSplit?'Receipt shares':payer ? `Owes ${esc(payerDisplay)}` : 'Who Owes What'}</div>
+        ${tripUsesSimpleSplit?'<p class="receipt-sweep-note" style="font-size:11px;color:#9896a8;margin:0 0 10px">Included in Sweep · Follow the payment plan above.</p>':''}
         <div style="display:flex;flex-direction:column;gap:8px">
           ${splitEntries.map(([person, amount]) => {
             const pct = total > 0 ? Math.round((parseFloat(amount)/total)*100) : 0;
@@ -4880,7 +4881,7 @@ ${tripUsesSimpleSplit&&payerEntries.length>1?'<div class="sweep-payment-total" s
                   <div style="font-size:10px;color:#6E6B80">${pct}% of bill</div>
                 </div>
               </div>
-              <div style="height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;margin-bottom:${payer?'10px':'0'}">
+              <div style="height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;margin-bottom:${payer&&!tripUsesSimpleSplit?'10px':'0'}">
                 <div style="height:100%;width:${pct}%;background:${color};border-radius:2px"></div>
               </div>
               ${(()=>{ 
@@ -4890,7 +4891,7 @@ ${tripUsesSimpleSplit&&payerEntries.length>1?'<div class="sweep-payment-total" s
                 const _cred = Math.min(settledCredits[person.toLowerCase()]||0,_raw);
                 const _fullSettled = _raw>0.02 && Math.max(0,_raw-_cred)<=0.02;
                 if (!payer) return '';
-                if(tripUsesSimpleSplit)return '<div style="font-size:12px;color:#9896a8;padding-top:8px">Included in RAVEN Sweep. Use the net payment plan above, not a separate payment for this receipt.</div>';
+                if(tripUsesSimpleSplit)return '';
                 // FIRST: check if this specific receipt is already settled
                 if (_rcptSettled || _fullSettled) {
                   return '<div style="padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px"><button class="rcpt-mark-paid-btn" data-receipt-paid-key="' + paidKey + '" data-person-name="' + esc(person) + '" data-receipt-id="' + esc(r.id||receiptId) + '" data-amount="' + parseFloat(amount).toFixed(2) + '" data-settled="1" style="padding:7px 14px;background:rgba(48,209,88,0.15);border:1px solid rgba(48,209,88,0.4);border-radius:8px;color:#30D158;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">Settled - tap to undo</button></div>';
@@ -4909,7 +4910,7 @@ ${tripUsesSimpleSplit&&payerEntries.length>1?'<div class="sweep-payment-total" s
         <div data-person-avatar="${esc(payer)}" style="width:32px;height:32px;border-radius:50%;background:${avatarColorMap[people.indexOf(payer)%avatarColorMap.length]||'#7C3AED'};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden">${esc(payer[0].toUpperCase())}</div>
         <div style="flex:1">
           <div style="font-size:12px;color:#A855F7;font-weight:700">Paid by ${esc(payerDisplay)}</div>
-          <div style="font-size:11px;color:#6E6B80">Others need to pay them back</div>
+          <div style="font-size:11px;color:#6E6B80">${tripUsesSimpleSplit?'Reimbursement included in Sweep':'Others need to pay them back'}</div>
         </div>
         <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:#A855F7">$${total.toFixed(2)}</div>
       </div>` : '';
@@ -5168,7 +5169,7 @@ ${coverHTML}
 
 <div class="sec" style="margin-top:16px">${countdownHTML}</div>
 <div class="sec" style="margin-top:12px"><button id="trip-travel-action" type="button" style="display:flex;align-items:center;justify-content:space-between;width:100%;box-sizing:border-box;padding:13px 16px;background:linear-gradient(110deg,#7c3aed18,#30d1580c);border:1px solid #7c3aed44;border-radius:13px;color:#d8c5f5;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer"><span>Trip Center</span><span style="font-size:12px;color:#9896a8">View / upload &#8599;</span></button></div>
-<script defer src="https://ravensplit.com/raven-travel-ui.js?v=20261011-activities"></script>
+<script defer src="https://ravensplit.com/raven-travel-ui.js?v=20261012-compact"></script>
 
 <div class="sec" style="margin-top:16px">
   <div id="trip-reminder-wrap" style="display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 16px;background:linear-gradient(135deg,rgba(255,193,7,0.12),rgba(255,193,7,0.04));border:1px solid rgba(255,193,7,0.24);border-radius:16px">
