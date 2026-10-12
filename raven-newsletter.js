@@ -38,6 +38,11 @@ module.exports=function registerNewsletter(app,db,authenticate,admin,env=process
   if(!response.ok||!result.id)throw Error('Newsletter delivery was not confirmed');
   return result.id;
  }
+ app.post('/newsletter/prompt',async(req,res)=>{try{
+  const user=await authenticate(req);if(!user)return res.status(401).json({success:false});
+  const show=await checked(db.rpc('raven_claim_newsletter_prompt',{p_user:user.id}));
+  res.json({success:true,show:show===true});
+ }catch{res.status(503).json({success:false,show:false});}});
  app.get('/newsletter/preferences',async(req,res)=>{try{
   const user=await authenticate(req);if(!user)return res.status(401).json({success:false});
   const row=await checked(db.from('raven_newsletter_subscribers').select('enabled,email').eq('user_id',user.id).maybeSingle());
@@ -51,7 +56,7 @@ module.exports=function registerNewsletter(app,db,authenticate,admin,env=process
   // Keep older clients in sync before updating the authoritative subscription.
   await checked(db.from('profiles').update({privacy_email_marketing:enabled}).eq('id',user.id));
   await checked(db.from('raven_newsletter_subscribers').upsert({user_id:user.id,email:String(user.email).toLowerCase(),enabled,
-   consent_source:req.body.source==='onboarding'?'onboarding':'settings',consent_at:enabled?now:null,updated_at:now},{onConflict:'user_id'}));
+   consent_source:['onboarding','monthly_prompt'].includes(req.body.source)?req.body.source:'settings',consent_at:enabled?now:null,updated_at:now},{onConflict:'user_id'}));
   res.json({success:true,enabled});
  }catch{res.status(503).json({success:false,error:'Could not save your newsletter choice. Please try again.'});}});
  const unsubscribePage=(body)=>'<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>RAVEN newsletter</title><body style="background:#09090f;color:#eee;font:18px Arial;padding:40px;line-height:1.6"><main style="max-width:480px;margin:auto"><h1>RAVEN</h1>'+body+'</main></body>';
