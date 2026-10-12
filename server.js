@@ -116,6 +116,7 @@ require('./raven-chat-routes')(app, supabase, getAuthenticatedRavenUser);
 const tripPushReminders = require('./raven-push-reminders')(supabase, (trip, receipts) => buildTripConciergePayload(trip, receipts).debtors);
 require('./raven-push')(app, supabase, getAuthenticatedRavenUser, process.env, undefined, tripPushReminders);
 require('./raven-trip-travel')(app, supabase, getAuthenticatedRavenUser);
+require('./raven-newsletter')(app, supabase, getAuthenticatedRavenUser, requireRavenAdmin);
 
 async function provisionCreatorWelcome(user) {
   const createdAt = Date.parse(user?.created_at || '');
