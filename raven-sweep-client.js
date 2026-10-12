@@ -1,3 +1,9 @@
+document.querySelectorAll('[data-sweep-recorded-at]').forEach(node=>{
+  const value=node.dataset.sweepRecordedAt,date=new Date(value);
+  if(!value||!Number.isFinite(date.getTime())){node.textContent='Recorded · date unavailable';return;}
+  node.textContent='Recorded '+new Intl.DateTimeFormat(undefined,{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'}).format(date);
+  node.title=date.toISOString();
+});
 async function saveSweepAction(url,body,button){
   const label=button.textContent;button.disabled=true;button.textContent='Saving...';
   try{

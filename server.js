@@ -5191,7 +5191,7 @@ ${coverHTML}
   <div class="card">
     ${owesRows}
     ${tripUsesSimpleSplit?'<button type="button" id="sweep-explain-all" onclick="explainRavenSweep()" style="display:block;width:100%;text-align:left;padding:14px 16px;border:0;border-top:1px solid #ffffff0d;background:#a855f70a;color:#C4A3F5;font:inherit;font-size:12px;font-weight:700;cursor:pointer">RAVENBOT explains who pays whom →</button>':''}
-    ${tripUsesSimpleSplit && RavenSweep.ledger(trip).some(p=>!p.reversed_at) ? '<details class="sweep-history"><summary><span>Recorded Sweep payments</span><span class="sweep-history-count">'+RavenSweep.ledger(trip).filter(p=>!p.reversed_at).length+'</span><span class="sweep-history-chevron" aria-hidden="true">⌄</span></summary><div class="sweep-history-list">'+RavenSweep.ledger(trip).filter(p=>!p.reversed_at).slice().reverse().map(p=>'<div class="sweep-history-row"><div class="sweep-history-person"><span class="sweep-history-check" aria-hidden="true">✓</span><div><div>'+esc(p.from)+' <span style="color:#9896A8">→</span> '+esc(p.to)+'</div><small>Payment recorded</small></div></div><div class="sweep-history-actions"><strong>$'+Number(p.amount).toFixed(2)+'</strong><button type="button" data-sweep-payment="'+esc(p.id)+'" onclick="undoSweepPayment(this)">Undo record</button></div></div>').join('')+'<p class="sweep-history-note">Records only · Undo does not reverse a transfer.</p></div></details>' : ''}
+    ${tripUsesSimpleSplit && RavenSweep.ledger(trip).some(p=>!p.reversed_at) ? '<details class="sweep-history"><summary><span>Recorded Sweep payments</span><span class="sweep-history-count">'+RavenSweep.ledger(trip).filter(p=>!p.reversed_at).length+'</span><span class="sweep-history-chevron" aria-hidden="true">⌄</span></summary><div class="sweep-history-list">'+RavenSweep.ledger(trip).filter(p=>!p.reversed_at).slice().reverse().map(p=>'<div class="sweep-history-row"><div class="sweep-history-person"><span class="sweep-history-check" aria-hidden="true">✓</span><div><div>'+esc(p.from)+' <span style="color:#9896A8">→</span> '+esc(p.to)+'</div><small data-sweep-recorded-at="'+esc(p.created_at||'')+'">Recorded · date unavailable</small></div></div><div class="sweep-history-actions"><strong>$'+Number(p.amount).toFixed(2)+'</strong><button type="button" data-sweep-payment="'+esc(p.id)+'" onclick="undoSweepPayment(this)">Undo record</button></div></div>').join('')+'<p class="sweep-history-note">Records only · Undo does not reverse a transfer.</p></div></details>' : ''}
     <div id="outstanding-footer" data-total-spend="${totalSpend.toFixed(2)}" style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:${grandTotal>0?'rgba(255,107,53,0.04)':'rgba(48,209,88,0.04)'};border-top:1px solid ${grandTotal>0?'rgba(255,107,53,0.15)':'rgba(48,209,88,0.12)'}">
       <div>
         <div id='outstanding-sublabel'>
@@ -7530,7 +7530,7 @@ function renderItems() {
     const d = document.createElement('div');
     d.style.cssText='background:#13131A;border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:10px 12px';
     const row = document.createElement('div');
-    row.style.cssText='display:flex;align-items:center;gap:8px;margin-bottom:8px';
+    row.style.cssText='display:grid;grid-template-columns:minmax(0,1fr) 90px;align-items:start;gap:10px;margin-bottom:12px';
     // Editable name input  clearly styled so it's obvious it's editable
     const nameInput=document.createElement('input');
     nameInput.type='text';
@@ -7540,17 +7540,19 @@ function renderItems() {
     nameInput.addEventListener('focus',()=>{ nameInput.style.borderColor='rgba(124,58,237,0.6)'; });
     nameInput.addEventListener('blur',()=>{ nameInput.style.borderColor='rgba(255,255,255,0.15)'; item.name=nameInput.value.trim()||item.name; });
     nameInput.addEventListener('input',()=>{ item.name=nameInput.value; });
-    const priceStack=document.createElement('div'); priceStack.style.cssText='display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0';
+    const priceStack=document.createElement('div'); priceStack.style.cssText='display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0';
     const priceSpan=document.createElement('input');priceSpan.type='number';priceSpan.min='0';priceSpan.step='0.01';priceSpan.inputMode='decimal';priceSpan.value=item.price.toFixed(2);priceSpan.setAttribute('aria-label','Price for '+item.name);priceSpan.style.cssText='width:100px;font-family:monospace;font-size:13px;color:#eee8fa';priceSpan.onchange=()=>{try{item.price=RavenTripSplits.money(priceSpan.value)/100;renderItems()}catch(error){toast(error.message,false);priceSpan.value=item.price.toFixed(2)}};priceStack.append(priceSpan);
     const del=document.createElement('button'); del.type='button';del.textContent='Remove item';del.setAttribute('aria-label','Remove '+item.name);del.style.cssText='background:none;border:1px solid #ffffff20;border-radius:7px;padding:8px;color:#ffaaaa;cursor:pointer;font-size:12px';
     del.addEventListener('click',()=>{ tripItems=tripItems.filter(i=>i.id!==item.id); renderItems(); });
-    row.appendChild(nameInput); row.appendChild(priceStack);priceStack.appendChild(del);
-    const btns=document.createElement('div'); btns.style.cssText='display:flex;gap:6px;flex-wrap:wrap';
+    priceSpan.style.width='100%';priceSpan.style.boxSizing='border-box';row.appendChild(nameInput);row.appendChild(priceSpan);
+    const btns=document.createElement('div'); btns.style.cssText='display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px';
+    const sharing=item.assignees.length?item.assignees:PEOPLE;
+    let itemAmounts={};try{itemAmounts=RavenTripSplits.itemShares(item,sharing,RavenQuantities)}catch(error){const warning=document.createElement('p');warning.textContent=error.message;d.append(warning)}
     PEOPLE.forEach(p => {
       const on=item.assignees.includes(p);
       const b=document.createElement('button');
-      b.textContent=(on?' ':'')+p;
-      b.style.cssText='padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;background:'+(on?'rgba(48,209,88,0.15)':'rgba(255,255,255,0.05)')+';border:1px solid '+(on?'rgba(48,209,88,0.3)':'rgba(255,255,255,0.1)')+';color:'+(on?'#30D158':'#9896A8');
+      b.type='button';b.textContent=p+(itemAmounts[p]!==undefined?' · $'+itemAmounts[p].toFixed(2):'');b.setAttribute('aria-label','Share with '+p);
+      b.style.cssText='min-width:0;white-space:normal;overflow-wrap:anywhere;line-height:1.5;text-align:left;padding:8px 10px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;background:'+(on?'rgba(48,209,88,0.15)':'rgba(255,255,255,0.05)')+';border:1px solid '+(on?'rgba(48,209,88,0.3)':'rgba(255,255,255,0.1)')+';color:'+(on?'#30D158':'#9896A8');
       b.addEventListener('click',()=>{
         if(item.custom_split){toast('Adjust this item’s split to review the changed people before saving.');}
         if(item.assignees.includes(p)) item.assignees=item.assignees.filter(a=>a!==p); else item.assignees.push(p);
@@ -7558,17 +7560,14 @@ function renderItems() {
       });
       btns.appendChild(b);
     });
-    d.appendChild(row); d.appendChild(btns); container.appendChild(d);
-    const sharing=item.assignees.length?item.assignees:PEOPLE;
+    d.appendChild(row);d.appendChild(priceStack);d.appendChild(btns);container.appendChild(d);
     if(sharing.length>0){
       const adjust=document.createElement('button');adjust.type='button';adjust.textContent='Adjust split · % or $';adjust.dataset.itemControl='financial';adjust.className='btn-o';adjust.style.cssText='padding:7px;font-size:11px;white-space:nowrap';
       adjust.onclick=()=>editTripItemSplit(item,sharing,renderItems);priceStack.append(adjust);
       const quantity=document.createElement('button');quantity.type='button';quantity.textContent='Quantities';quantity.dataset.itemControl='quantity';quantity.className='btn-o';quantity.style.cssText='padding:7px;font-size:11px';
       quantity.onclick=()=>RavenQuantities.edit(item,sharing,async q=>{item.quantity_split=q;delete item.custom_split;renderItems()});priceStack.append(quantity);
     }
-    const detail=document.createElement('p');detail.style.cssText='font-size:12px;color:#9896a8';
-    try{detail.textContent=Object.entries(RavenTripSplits.itemShares(item,sharing,RavenQuantities)).map(([name,value])=>name+': $'+value.toFixed(2)).join(' · ')}catch(error){detail.textContent=error.message}
-    d.append(detail);
+    priceStack.append(del);
   });
   updateItemizedSummary();
 }
@@ -7638,6 +7637,7 @@ function tripPhoto(file) {
             tripScanTotal=Number(d.total)>0?Number(d.total):null;
             if (!document.getElementById('r-name').value && d.bill_name) document.getElementById('r-name').value = d.bill_name;
             const tot = d.total || d.items.reduce((s,i)=>s+i.price,0);
+            document.getElementById('r-discount').value='';tripBillSplit={mode:'equal'};
             document.getElementById('r-total').value = tot.toFixed(2); updateEven();
             tripScanCharges = { tax: parseFloat(d.tax) || 0, tip: parseFloat(d.tip) || 0, service_fee: (parseFloat(d.service_fee) || 0) + (parseFloat(d.misc) || 0) };
             document.getElementById('r-tax').value = tripScanCharges.tax > 0 ? tripScanCharges.tax.toFixed(2) : '';
@@ -7646,7 +7646,7 @@ function tripPhoto(file) {
             document.getElementById('r-item-discount').value = (parseFloat(d.discount) || 0) > 0 ? parseFloat(d.discount).toFixed(2) : '';
             if (d.tax > 0) { /* store tax for display  add to total field note */ }
             tripItems = d.items.map((item,idx)=>({id:Date.now()+idx,name:item.name,price:parseFloat(item.price)||0,assignees:[]}));
-            setSplit('itemized'); renderItems();
+            setSplit('even'); renderItems();
             st.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(48,209,88,0.08);border:1px solid rgba(48,209,88,0.2);border-radius:8px"><span></span><span style="font-size:13px;color:#30D158;font-weight:600">'+d.items.length+' items found'+(d.tax>0?'  Tax $'+parseFloat(d.tax).toFixed(2):'')+'! Photo saved </span></div>';
             if(d.needs_review||d.included_details?.length){const review=document.createElement('p');review.style.cssText='font-size:13px;line-height:1.5;color:#ffb04a';review.textContent=d.needs_review?'Scan needs review. Check the itemized total against the receipt before saving.':'Already included, not added again: '+d.included_details.map(i=>i.name+' ($'+Number(i.price).toFixed(2)+')').join(', ');st.append(review);}
             try { const pid=window._currentPendingId; if(pid){const pending=JSON.parse(localStorage.getItem('raven_pending_receipts')||'[]');const idx=pending.findIndex(p=>p.id===pid);if(idx>=0){pending[idx].scanned=true;localStorage.setItem('raven_pending_receipts',JSON.stringify(pending));}} } catch(e) {}
