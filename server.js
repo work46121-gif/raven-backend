@@ -872,6 +872,10 @@ function handleHelp() {
 app.get('/admin/me', requireRavenAdmin, (req, res) => {
   res.json({ success: true, isAdmin: true, email: RAVEN_ADMIN_EMAIL });
 });
+app.get('/admin/students-preview', requireRavenAdmin, (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({success:true,html:fs.readFileSync(path.join(__dirname,'raven-students-preview.html'),'utf8')});
+});
 
 app.get('/admin/recent-members', requireRavenAdmin, async (req, res) => {
   try {
