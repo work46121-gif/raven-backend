@@ -1,6 +1,15 @@
 // Inlined into Trip Hub after the shared split calculator. Draft changes are
 // committed only by Save Receipt / Save Changes, never by opening a dialog.
 let tripBillSplit={mode:'equal'};
+let tripScanTotal=null;
+function checkTripScanTotal(total){
+  if(tripScanTotal!==null&&Math.round(total*100)!==Math.round(tripScanTotal*100))throw Error('Itemized total $'+total.toFixed(2)+' does not match the scanned total paid $'+tripScanTotal.toFixed(2)+'. Remove included details or correct the items and charges before saving.');
+}
+function tripScanSummary(total){
+  if(tripScanTotal===null)return '';
+  const difference=Math.round((total-tripScanTotal)*100)/100;
+  return '<div style="margin-top:12px;font-size:12px;line-height:1.5;color:'+(difference?'#ffb04a':'#30d158')+'">Scanned total paid: $'+tripScanTotal.toFixed(2)+(difference?' · '+(difference>0?'Over':'Under')+' by $'+Math.abs(difference).toFixed(2)+'. Review included charges before saving.':' · Matches receipt')+'</div>';
+}
 let _editReceiptId=null, editBillSplit=null, editBillItems=[], editBillMode='bill';
 const tripSplitEsc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function tripBillPreview(splits,payer){

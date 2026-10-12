@@ -3,15 +3,18 @@ const money=v=>Math.round((Number(String(v??0).replace(/[$,]/g,''))||0)*100)/100
 const sumItems=items=>money((items||[]).reduce((s,i)=>s+money(i.price),0));
 const expectedTotal=r=>money(r.subtotal+r.tax+r.tip+r.service_fee+r.misc-r.discount);
 function normalizeParsedReceipt(raw){
- const r={bill_name:String(raw?.bill_name||'').trim(),items:[],subtotal:money(raw?.subtotal),tax:money(raw?.tax),tip:money(raw?.tip),service_fee:money(raw?.service_fee??raw?.serviceFee),misc:money(raw?.misc??raw?.misc_fee??raw?.fees),discount:money(raw?.discount),total:money(raw?.total),warning:''};
+ const r={bill_name:String(raw?.bill_name||'').trim(),items:[],included_details:Array.isArray(raw?.included_details)?raw.included_details.map(i=>({name:String(i.name||''),price:money(i.price)})):[],subtotal:money(raw?.subtotal),tax:money(raw?.tax),tip:money(raw?.tip),service_fee:money(raw?.service_fee??raw?.serviceFee),misc:money(raw?.misc??raw?.misc_fee??raw?.fees),discount:money(raw?.discount),total:money(raw?.total),warning:''};
  let itemService=0,itemMisc=0;
  for(const i of Array.isArray(raw?.items)?raw.items:[]){const name=String(i?.name||'').trim(),price=money(i?.price);if(!name||price<=0)continue;
+  // Exclude only explicitly classified included components, never arbitrary
+  // rows selected simply because subtracting their prices makes a total fit.
+  if(i.included_in_parent===true){r.included_details.push({name,price});continue;}
   if(/\b(service|convenience|processing|delivery)\s+(fee|charge)\b/i.test(name)){itemService=money(itemService+price);continue;}
   if(/\b(misc(?:ellaneous)?|bag|recycling|container)\s+(fee|charge)\b|\bbottle deposit\b/i.test(name)){itemMisc=money(itemMisc+price);continue;}
   r.items.push({name,price});
  }
  if(!r.service_fee)r.service_fee=itemService;if(!r.misc)r.misc=itemMisc;
- r.printed_subtotal=r.subtotal;
+ r.printed_subtotal=money(raw?.printed_subtotal??r.subtotal);
  const itemSum=sumItems(r.items),charges=money(r.tax+r.tip+r.service_fee+r.misc-r.discount);
  // Printed subtotal may include mandatory fees or an order-level discount.
  // Only accept a different subtotal interpretation if the full receipt also balances.

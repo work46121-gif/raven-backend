@@ -56,7 +56,12 @@
    roster(sharing);
    if(sharing.some(n=>!names.includes(n)))throw Error('An item includes someone who is no longer on this trip.');
    const shares=itemShares(item,sharing,quantities);subtotal+=money(item.price);
-   for(const [name,value]of Object.entries(shares))base[name]+=Math.round(value*100);
+   // Round only the final receipt allocation. Otherwise repeated equal items
+   // keep assigning every spare cent to the same member and compound the gap.
+   const split=item.custom_split;
+   const weights=sharing.map(n=>split?.mode==='amount'?money(split.values[key(n)]):split?.mode==='percent'?Number(split.values[key(n)]):split?.mode==='equal'?1:quantities.share(item,sharing,n));
+   const weightTotal=weights.reduce((a,b)=>a+b,0);
+   sharing.forEach((n,i)=>{base[n]+=weightTotal?money(item.price)*weights[i]/weightTotal:Math.round(shares[n]*100)});
   }
   const extra=['tax','tip','service_fee'].reduce((s,k)=>s+money(charges[k]||0),0),discount=money(charges.discount||0);
   if(discount>subtotal+extra)throw Error('The discount cannot exceed the receipt total.');
@@ -79,7 +84,7 @@
  api.edit=(options,save)=>{
   const {total,names,title}=options;roster(names);money(total);
   const initial=options.initial||{mode:'equal'};
-  let mode=initial.mode==='equal'?'percent':initial.mode,values={},busy=false;
+  let mode=initial.mode==='equal'?'percent':initial.mode,values={},busy=false,equalIntent=initial.mode==='equal';
   const touched=new Set();const fields={},amountLabels={};
   const dialog=document.createElement('dialog');dialog.setAttribute('aria-label','Adjust split');
   dialog.style.cssText='position:fixed;inset:0;margin:auto;width:min(460px,calc(100vw - 28px));max-height:85dvh;overflow:auto;box-sizing:border-box;background:#121019;color:#eee8fa;border:1px solid #7c3aed66;border-radius:22px;padding:22px;font:inherit';
@@ -90,14 +95,14 @@
   const modes=node('div');modes.style.cssText='display:flex;gap:8px;margin:16px 0';
   const percent=node('button','Percentage'),amount=node('button','Dollar amounts');modes.append(percent,amount);dialog.append(modes);
   const note=node('p');note.setAttribute('role','status');note.style.cssText='font-size:13px;line-height:1.5;color:#ffb04a';
-  function candidate(){return{mode,values:{...values}}}
+  function candidate(){return equalIntent?{mode:'equal'}:{mode,values:{...values}}}
   function sync(){
    percent.setAttribute('aria-pressed',String(mode==='percent'));amount.setAttribute('aria-pressed',String(mode==='amount'));
    percent.style.borderColor=mode==='percent'?'#c084fc':'#473551';amount.style.borderColor=mode==='amount'?'#c084fc':'#473551';
    names.forEach(n=>{fields[key(n)].value=values[key(n)];fields[key(n)].setAttribute('aria-label',n+(mode==='percent'?' percentage':' amount'));});update();
   }
   function update(){
-   let shares=null;try{shares=allocation(total,names,candidate());note.textContent='Fully assigned · $'+Number(total).toFixed(2);note.style.color='#30d158'}catch(error){note.textContent=error.message;note.style.color='#ffb04a'}
+   let shares=null;try{shares=allocation(total,names,candidate());note.textContent='Fully assigned · $'+Number(total).toFixed(2)+(equalIntent&&money(total)%names.length?' · Equal shares; this total cannot divide into whole cents evenly. Payments differ by at most 1¢ so the total stays exact.':'');note.style.color='#30d158'}catch(error){note.textContent=error.message;note.style.color='#ffb04a'}
    names.forEach(n=>{amountLabels[key(n)].textContent=shares?'$'+shares[n].toFixed(2):'—'});
    apply.disabled=busy||!shares;
   }
@@ -106,20 +111,21 @@
    row.style.cssText='display:grid;grid-template-columns:minmax(0,1fr) 90px 70px;align-items:center;gap:8px;padding:10px 0';caption.style.overflowWrap='anywhere';
    input.type='number';input.inputMode='decimal';input.min='0';input.step='0.01';input.style.width='100%';
    preview.style.cssText='font-size:13px;text-align:right;color:#30d158';fields[key(n)]=input;amountLabels[key(n)]=preview;
-   input.oninput=()=>{values[key(n)]=input.value;touched.add(key(n));update()};row.append(caption,input,preview);dialog.append(row);
+   input.oninput=()=>{equalIntent=false;values[key(n)]=input.value;touched.add(key(n));update()};row.append(caption,input,preview);dialog.append(row);
   });
   function switchMode(next){
+   if(next===mode)return;
    let shares;try{shares=allocation(total,names,candidate())}catch(_){note.textContent='Finish the current split, or choose Split equally, before switching.';return}
-   mode=next;const units=mode==='percent'?10000:money(total),weights=names.map(n=>Number(total)===0?1:shares[n]);
+   mode=next;const units=mode==='percent'?10000:money(total),weights=names.map(n=>equalIntent||Number(total)===0?1:shares[n]);
    const allocated=apportion(units,weights);values=Object.fromEntries(names.map((n,i)=>[key(n),allocated[i]/100]));touched.clear();sync();
   }
   percent.onclick=()=>switchMode('percent');amount.onclick=()=>switchMode('amount');
   const equal=node('button','Split equally'),remainder=node('button','Split remainder equally'),cancel=node('button','Cancel'),apply=node('button','Save split');
-  equal.onclick=()=>{const units=mode==='percent'?10000:money(total);const v=apportion(units,names.map(()=>1));values=Object.fromEntries(names.map((n,i)=>[key(n),v[i]/100]));touched.clear();sync()};
+  equal.onclick=()=>{equalIntent=true;const units=mode==='percent'?10000:money(total);const v=apportion(units,names.map(()=>1));values=Object.fromEntries(names.map((n,i)=>[key(n),v[i]/100]));touched.clear();sync()};
   remainder.onclick=()=>{
    const others=names.filter(n=>!touched.has(key(n)));if(!others.length){note.textContent='All shares were edited. Set the remaining values manually, or start with Split equally.';return}
    try{const used=names.filter(n=>touched.has(key(n))).reduce((s,n)=>s+money(values[key(n)]),0),remaining=(mode==='percent'?10000:money(total))-used;
-    if(remaining<0)throw Error('The edited shares exceed the total.');const v=apportion(remaining,others.map(()=>1));others.forEach((n,i)=>{values[key(n)]=v[i]/100});sync();
+    if(remaining<0)throw Error('The edited shares exceed the total.');equalIntent=touched.size===0;const v=apportion(remaining,others.map(()=>1));others.forEach((n,i)=>{values[key(n)]=v[i]/100});sync();
    }catch(error){note.textContent=error.message}
   };
   cancel.onclick=()=>dialog.close();apply.onclick=async()=>{
@@ -129,8 +135,8 @@
   const actions=node('div');actions.style.cssText='display:flex;gap:8px;flex-wrap:wrap';actions.append(equal,remainder,cancel,apply);dialog.append(note,actions);
   dialog.querySelectorAll('button,input').forEach(e=>{e.style.cssText+=';box-sizing:border-box;min-width:0;font:inherit;font-size:14px;padding:11px;border-radius:10px;border:1px solid #473551;background:#22172f;color:#e3c9ff;touch-action:manipulation';if(e.tagName==='BUTTON')e.type='button'});
   apply.style.cssText+=';background:#28ce58;color:#061109;font-weight:800';
-  let start,initialError='';try{start=allocation(total,names,initial)}catch(error){start=allocation(total,names);initialError=error.message+' Equal shares shown for review; Cancel keeps the original.';}
-  const units=mode==='percent'?10000:money(total),allocated=apportion(units,names.map(n=>Number(total)===0?1:start[n]));values=Object.fromEntries(names.map((n,i)=>[key(n),allocated[i]/100]));
+  let start,initialError='';try{start=allocation(total,names,initial)}catch(error){equalIntent=true;start=allocation(total,names);initialError=error.message+' Equal shares shown for review; Cancel keeps the original.';}
+  const units=mode==='percent'?10000:money(total),allocated=apportion(units,names.map(n=>equalIntent||Number(total)===0?1:start[n]));values=!equalIntent&&initial.mode==='percent'?{...initial.values}:Object.fromEntries(names.map((n,i)=>[key(n),allocated[i]/100]));
   dialog.addEventListener('cancel',event=>{if(busy)event.preventDefault()});dialog.addEventListener('close',()=>dialog.remove());document.body.append(dialog);sync();if(initialError){note.textContent=initialError;note.style.color='#ffb04a'}dialog.showModal();
  };
 })(typeof window!=='undefined'?window:globalThis);
