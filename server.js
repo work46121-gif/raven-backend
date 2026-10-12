@@ -5458,7 +5458,7 @@ ${coverHTML}
   </div>
 </div>
 
-<div id="toast" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:#13131A;border:1px solid rgba(255,255,255,0.12);border-radius:12px;padding:12px 20px;font-size:13px;color:#F0EEF8;z-index:9999;opacity:0;transition:all 0.3s;white-space:nowrap;box-shadow:0 20px 60px rgba(0,0,0,0.5)"></div>
+<div id="toast" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:#13131A;border:1px solid rgba(255,255,255,0.12);border-radius:12px;padding:12px 20px;font-size:13px;color:#F0EEF8;z-index:9999;opacity:0;transition:all 0.3s;white-space:normal;width:max-content;max-width:calc(100vw - 32px);box-sizing:border-box;overflow-wrap:anywhere;box-shadow:0 20px 60px rgba(0,0,0,0.5)"></div>
 
 <script>
 //  Read all data from JSON  no user content ever touches JS source code 
