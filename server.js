@@ -1033,40 +1033,7 @@ app.post('/account/welcome', async (req, res) => {
 // header. Permanently deletes the user's profile data and their auth
 // account. Trip/bill records the user participated in are left intact for
 // other members, but this user's own membership rows and PII are removed.
-app.post('/account/delete', async (req, res) => {
-  try {
-    const authHeader = req.headers.authorization || '';
-    if (!authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ success: false, error: 'Missing Authorization header' });
-    }
-    const accessToken = authHeader.slice(7);
-    const { data: userData, error: userErr } = await supabase.auth.getUser(accessToken);
-    if (userErr || !userData?.user?.id) {
-      return res.status(401).json({ success: false, error: 'Invalid or expired session. Please sign in again.' });
-    }
-    const userId = userData.user.id;
-    const userEmail = userData.user.email || '';
-
-    // Best-effort cleanup of this user's data across related tables.
-    // Each step is isolated so one failure doesn't block the rest.
-    try { await supabase.from('raven_friends').delete().or(`user_id.eq.${userId},friend_id.eq.${userId}`); } catch (e) { console.error('[account/delete] raven_friends:', e.message); }
-    try { if (userEmail) await supabase.from('trip_members').delete().eq('user_email', userEmail); } catch (e) { console.error('[account/delete] trip_members:', e.message); }
-    try { if (userEmail) await supabase.from('contacts').delete().eq('owner_phone', userEmail); } catch (e) { console.error('[account/delete] contacts:', e.message); }
-    try { await supabase.from('profiles').delete().eq('id', userId); } catch (e) { console.error('[account/delete] profiles:', e.message); }
-
-    // Finally, remove the login itself so the user can no longer sign in.
-    const { error: deleteAuthErr } = await supabase.auth.admin.deleteUser(userId);
-    if (deleteAuthErr) {
-      console.error('[account/delete] auth.admin.deleteUser:', deleteAuthErr.message);
-      return res.status(500).json({ success: false, error: 'Could not fully delete your account. Please try again or contact support.' });
-    }
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error('[account/delete] EXCEPTION:', err.message, err.stack);
-    res.status(500).json({ success: false, error: 'Could not delete your account. Please try again.' });
-  }
-});
+require('./raven-account-delete')(app,supabase);
 
 app.post('/sms', async (req, res) => {
   const fromPhone = normalizePhone(req.body.From || '');
