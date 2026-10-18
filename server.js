@@ -116,6 +116,7 @@ require('./raven-chat-routes')(app, supabase, getAuthenticatedRavenUser);
 const tripPushReminders = require('./raven-push-reminders')(supabase, (trip, receipts) => buildTripConciergePayload(trip, receipts).debtors);
 require('./raven-push')(app, supabase, getAuthenticatedRavenUser, process.env, undefined, tripPushReminders);
 require('./raven-trip-travel')(app, supabase, getAuthenticatedRavenUser);
+require('./raven-trip-album').startCleanup(supabase);
 require('./raven-newsletter')(app, supabase, getAuthenticatedRavenUser, requireRavenAdmin);
 
 async function provisionCreatorWelcome(user) {
@@ -5141,7 +5142,8 @@ ${coverHTML}
 
 <div class="sec" style="margin-top:16px">${countdownHTML}</div>
 <div class="sec" style="margin-top:12px"><button id="trip-travel-action" type="button" style="display:flex;align-items:center;justify-content:space-between;width:100%;box-sizing:border-box;padding:13px 16px;background:linear-gradient(110deg,#7c3aed18,#30d1580c);border:1px solid #7c3aed44;border-radius:13px;color:#d8c5f5;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer"><span>Trip Center</span><span style="font-size:12px;color:#9896a8">View / upload &#8599;</span></button></div>
-<script defer src="https://ravensplit.com/raven-travel-ui.js?v=20261012-flight-refresh"></script>
+<script>${require('fs').readFileSync(require.resolve('./raven-trip-album-ui.js'),'utf8')}</script>
+<script defer src="https://ravensplit.com/raven-travel-ui.js?v=20261018-trip-album"></script>
 
 <div class="sec" style="margin-top:16px">
   <div id="trip-reminder-wrap" style="display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 16px;background:linear-gradient(135deg,rgba(255,193,7,0.12),rgba(255,193,7,0.04));border:1px solid rgba(255,193,7,0.24);border-radius:16px">
@@ -9670,7 +9672,8 @@ app.post('/trip/:tripId/receipt/:receiptId/edit', async (req, res) => {
     try{validated=RavenTripReceipts.validate(req.body,trip)}catch(error){return res.status(400).json({success:false,error:error.message})}
     const updates={name:name||'Receipt',paid_by:paid_by||null,total:validated.total,splits:JSON.stringify(validated.splits),items:JSON.stringify(validated.items),split_settings:validated.split_settings};
     for(const field of ['tax','tip','service_fee','discount'])updates[field]=Number(req.body[field]||0);
-    const saved=await supabase.rpc('raven_edit_trip_split',{p_trip:String(tripId),p_receipt:String(receiptId),p_token:token,p_expected:RavenTripReceipts.snapshot(current),p_updates:updates});
+    const editRpc=updates.paid_by!==current.paid_by?'raven_correct_trip_payer':'raven_edit_trip_split';
+    const saved=await supabase.rpc(editRpc,{p_trip:String(tripId),p_receipt:String(receiptId),p_token:token,p_expected:RavenTripReceipts.snapshot(current),p_updates:updates});
     if(saved.error)return res.status(409).json({success:false,error:saved.error.code==='P0001'?saved.error.message:'Could not save the bill safely. Please retry shortly.'});
     // Recalculate trip total = outstanding (not total spend)
     const { data: allR } = await supabase.from('trip_receipts').select('total').eq('trip_id', tripId);

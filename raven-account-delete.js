@@ -10,6 +10,7 @@ module.exports=function registerAccountDelete(app,db){
    const auth=await db.auth.getUser(header.slice(7));const user=auth.data?.user;
    if(auth.error||!user?.id)return res.status(401).json({success:false,error:'Invalid or expired session. Please sign in again.'});
    async function cleanup(query,optional=false){const result=await query;if(result.error&&!(optional&&['42P01','PGRST205'].includes(result.error.code)))throw Error('cleanup');}
+   await require('./raven-trip-album').cleanupUser(db,user.id);
    await cleanup(db.from('raven_friends').delete().or(`user_id.eq.${user.id},friend_id.eq.${user.id}`));
    if(user.email){
     await cleanup(db.from('trip_members').delete().eq('user_email',user.email),true);
@@ -29,4 +30,3 @@ module.exports=function registerAccountDelete(app,db){
   }
  });
 };
-

@@ -83,6 +83,10 @@ function updateEditSplitPreview(){
   total.readOnly=editBillMode==='items';
   try{const allocation=editReceiptAllocation();if(editBillMode==='items')total.value=allocation.total.toFixed(2);
     rows.innerHTML='<p style="font-size:12px;color:#b8b1c7">'+(editBillMode==='items'?'Item splits plus proportional charges.':'Whole-bill split. Item details, if present, are for reference.')+'</p>'+tripBillPreview(allocation.splits,document.getElementById('edit-r-paidby').value);
+    const original=receiptsDataMap[_editReceiptId];
+    if(original&&RavenTripSplits.key(original.paid_by)!==RavenTripSplits.key(document.getElementById('edit-r-paidby').value)){
+      const note=document.createElement('p');note.style.cssText='font-size:12px;color:#b8b1c7';note.textContent='Changing who paid updates the remaining balances. Recorded payments stay with their original recipients; a repayment may now be due.';rows.append(note);
+    }
     document.getElementById('edit-r-save').disabled=false;
   }catch(error){rows.textContent=error.message;document.getElementById('edit-r-save').disabled=true}
 }

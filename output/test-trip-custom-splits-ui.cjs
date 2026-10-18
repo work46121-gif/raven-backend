@@ -53,6 +53,11 @@ const html='<html><head><meta name="viewport" content="width=device-width,initia
   await page.getByRole('button',{name:'Adjust item split',exact:true}).click();
   await page.getByLabel('Cousin percentage',{exact:true}).fill('60');await page.getByRole('button',{name:'Split remainder equally',exact:true}).click();await page.getByRole('button',{name:'Save split',exact:true}).click();
   await page.locator('#edit-r-save').click();await page.locator('#edit-receipt-modal').waitFor({state:'hidden'});assert.deepEqual(requests.at(-1).splits,{Cousin:396,Mel:132,Sam:132});assert.equal(requests.at(-1).items[0].custom_split.values.cousin,'60');
-  assert.deepEqual(errors,[]);console.log('PASS mobile UI: percentage/dollar modes, remainder helper, validation, cent previews, name-edit preservation, cancellation, retryable save failures, itemized existing bills and no horizontal overflow.');
+  await page.evaluate(()=>openEditReceipt('car'));await page.locator('#edit-r-paidby').selectOption('Sam');
+  await page.getByText('Changing who paid updates the remaining balances. Recorded payments stay with their original recipients; a repayment may now be due.').waitFor();
+  await page.locator('#edit-r-paidby').selectOption('Cousin');assert.equal(await page.getByText(/Recorded payments stay with their original recipients/).count(),0);
+  await page.locator('#edit-r-paidby').selectOption('Sam');await page.locator('#edit-r-save').click();await page.locator('#edit-receipt-modal').waitFor({state:'hidden'});
+  assert.equal(requests.at(-1).paid_by,'Sam');assert.equal(requests.at(-1).expected_version,'v1');
+  assert.deepEqual(errors,[]);console.log('PASS mobile UI: percentage/dollar modes, remainder helper, validation, cent previews, name-edit preservation, cancellation, retryable save failures, itemized existing bills, payer correction preview/save and no horizontal overflow.');
  }finally{await browser.close()}
 })().catch(error=>{console.error(error);process.exitCode=1});
