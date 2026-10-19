@@ -36,11 +36,11 @@
  .trip-album-viewer button{padding:10px 12px;border:1px solid #ffffff22;background:transparent;color:#ddc2f3;border-radius:9px;font:inherit;cursor:pointer}
  .trip-album-viewer .trip-album-delete{color:#e2a6b6}
  `;document.head.append(css);
- window.RavenTripAlbum={mount(container,{tripId,api}){
+ window.RavenTripAlbum={mount(container,{tripId,api,standalone=false}){
   const path='/trips/'+encodeURIComponent(tripId)+'/album';let disposed=false,busy=false,uploading=false,uploadController=null,offset=0,items=[],pending=[],viewSequence=0;
   const section=make('section');section.className='travel-section';section.setAttribute('aria-label','Trip Photo Album');
   const head=make('div');head.className='travel-section-head';const add=make('button','＋ Add photos / videos');add.type='button';add.className='travel-text-button';
-  head.append(make('h4','Trip Photo Album'),add);
+  head.append(make('h4',standalone?'Photos / videos':'Trip Photo Album'),add);
   const note=make('p','Your trip, together. Shared with linked trip members only.');note.className='trip-album-note';
   const status=make('p');status.className='trip-album-note';status.setAttribute('role','status');
   const form=make('form');form.className='trip-album-upload';form.hidden=true;

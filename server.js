@@ -4162,6 +4162,12 @@ app.post('/trip/create', async (req, res) => {
   }
 });
 
+require('./raven-trip-receipt-photos').register(app,supabase);
+app.get('/assets/trip-album-ui.js', (req,res) => {
+  res.setHeader('Cache-Control','public, max-age=3600');
+  res.type('application/javascript').sendFile(path.join(__dirname,'raven-trip-album-ui.js'));
+});
+
 app.get('/trip/:tripId', async (req, res) => {
   const { tripId } = req.params;
   const token = req.query.t;
@@ -4241,6 +4247,7 @@ app.get('/trip/:tripId', async (req, res) => {
   }
 
   const { data: receipts } = await supabase.from('trip_receipts').select('*').eq('trip_id', tripId).order('created_at', { ascending: false });
+  const receiptPhotoUrl = receipt => require('./raven-trip-receipt-photos').url(receipt,tripId,trip.share_token);
   let { data: comments } = await supabase.from('trip_comments').select('*').eq('trip_id', tripId).order('created_at', { ascending: true });
   if (!comments || comments.length === 0) {
     const { data: tripMessages } = await supabase.from('trip_messages').select('*').eq('trip_id', tripId).order('created_at', { ascending: true });
@@ -4911,7 +4918,7 @@ ${tripUsesSimpleSplit&&payerEntries.length>1?'<div class="sweep-payment-total" s
       </div>`;
 
     const thumbHtml = r.photo_url
-      ? '<img src="' + esc(r.photo_url) + '" style="width:44px;height:44px;border-radius:10px;object-fit:cover;flex-shrink:0;border:1px solid rgba(255,255,255,0.1)">'
+      ? '<img loading="lazy" decoding="async" src="' + esc(receiptPhotoUrl(r)) + '" style="width:44px;height:44px;border-radius:10px;object-fit:cover;flex-shrink:0;border:1px solid rgba(255,255,255,0.1)">'
       : '<div class="receipt-thumb-placeholder">' + tripIconSvg.receipt + '</div>';
     const receiptAddedByHtml = r.added_by
       ? `<div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);font-size:11px;color:#6E6B80"> ${esc(r.added_by)} added this receipt</div>`
@@ -4939,7 +4946,7 @@ ${tripUsesSimpleSplit&&payerEntries.length>1?'<div class="sweep-payment-total" s
       <div id="${receiptId}" style="display:none;padding:0 16px 20px;margin-top:-4px">
         <button type="button" class="btn-o" data-receipt-id="${esc(r.id)}" onclick="openEditReceipt(this.dataset.receiptId)" style="margin:8px 0 12px">Adjust split · % or $</button>
         <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:0">
-          ${r.photo_url ? `<div style="margin-bottom:14px"><img src="${esc(r.photo_url)}" onclick="openReceiptPhoto('${esc(r.photo_url)}','${esc(r.name)}')" style="width:100%;max-height:200px;object-fit:cover;border-radius:10px;cursor:zoom-in;border:1px solid rgba(255,255,255,0.1);display:block"></div>` : ''}
+          ${r.photo_url ? `<div style="margin-bottom:14px"><img loading="lazy" decoding="async" src="${esc(receiptPhotoUrl(r))}" onclick="openReceiptPhoto(this.src,this.alt)" alt="${esc(r.name||'Receipt')}" style="width:100%;max-height:200px;object-fit:cover;border-radius:10px;cursor:zoom-in;border:1px solid rgba(255,255,255,0.1);display:block"></div>` : ''}
           ${itemsHtml}
           ${items.length && r.split_settings?.mode==='bill' ? '<p style="font-size:12px;color:#9896a8">Whole-bill split overrides item shares.</p>' : ''}
           ${personBreakdownHtml}
@@ -5019,7 +5026,7 @@ ${tripUsesSimpleSplit&&payerEntries.length>1?'<div class="sweep-payment-total" s
         tax: r.tax || 0, tip: r.tip || 0, service_fee: r.service_fee || 0, discount: r.discount || 0,
         split_settings: r.split_settings || null,
         version: RavenTripReceipts.version(r),
-        photo_url: r.photo_url || '',
+        photo_url: receiptPhotoUrl(r),
         created_at: r.created_at || ''
       };
     })
@@ -5142,8 +5149,8 @@ ${coverHTML}
 
 <div class="sec" style="margin-top:16px">${countdownHTML}</div>
 <div class="sec" style="margin-top:12px"><button id="trip-travel-action" type="button" style="display:flex;align-items:center;justify-content:space-between;width:100%;box-sizing:border-box;padding:13px 16px;background:linear-gradient(110deg,#7c3aed18,#30d1580c);border:1px solid #7c3aed44;border-radius:13px;color:#d8c5f5;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer"><span>Trip Center</span><span style="font-size:12px;color:#9896a8">View / upload &#8599;</span></button></div>
-<script>${require('fs').readFileSync(require.resolve('./raven-trip-album-ui.js'),'utf8')}</script>
-<script defer src="https://ravensplit.com/raven-travel-ui.js?v=20261019-album-upload"></script>
+<div class="sec" style="margin-top:8px"><button id="trip-album-action" type="button" style="display:flex;align-items:center;justify-content:space-between;width:100%;padding:12px 16px;background:transparent;border:0;color:#bfa0e5;font:inherit;font-size:13px;cursor:pointer"><span>Trip Photo Album</span><span>Open album →</span></button></div>
+<script defer src="https://ravensplit.com/raven-travel-ui.js?v=20261019-lazy-album"></script>
 
 <div class="sec" style="margin-top:16px">
   <div id="trip-reminder-wrap" style="display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 16px;background:linear-gradient(135deg,rgba(255,193,7,0.12),rgba(255,193,7,0.04));border:1px solid rgba(255,193,7,0.24);border-radius:16px">
@@ -6339,6 +6346,8 @@ function buildSavedReceiptsGallery() {
       const cell = document.createElement('div');
       cell.style.cssText = 'position:relative;border-radius:10px;overflow:hidden;cursor:pointer;border:2px solid rgba(48,209,88,0.4)';
       const img = document.createElement('img');
+      img.loading = 'lazy';
+      img.decoding = 'async';
       img.src = r.photo_url;
       img.style.cssText = 'width:100%;aspect-ratio:3/4;object-fit:cover;display:block';
       img.addEventListener('error', () => { cell.style.display='none'; });
