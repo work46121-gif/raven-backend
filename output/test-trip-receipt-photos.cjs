@@ -13,7 +13,19 @@ async function get(token='token',tripId='TEST',receiptId='42'){
  const response=await get();assert.equal(response.status,200);assert.equal(response.mime,'image/png');assert.deepEqual(response.body,Buffer.from(png.split(',')[1],'base64'));assert.equal(response.headers['Cache-Control'],'private, no-store');assert.equal(response.headers['X-Content-Type-Options'],'nosniff');
  for(const token of ['',undefined,'invite','wrong',['token']]){reads=[];assert.equal((await get(token===undefined?null:token)).status,403);assert.ok(!reads.includes('trip_receipts'),'never reads a photo without valid view access')}
  assert.equal((await get('token','OTHER')).status,403);assert.equal((await get('token','TEST','43')).status,404);assert.equal((await get('token','../TEST')).status,403);
- for(const bad of ['https://external.invalid/photo.jpg','data:image/svg+xml;base64,PHN2Zz4=',png.replace('image/png','image/jpeg'),'data:image/png;base64,%%%']){value=bad;assert.equal((await get()).status,404)}
+ for(const label of ['image/jpeg','image/webp']){
+  value=png.replace('image/png',label);const legacy=await get();
+  assert.equal(legacy.status,200,'legacy mislabeled PNG remains viewable');assert.equal(legacy.mime,'image/png','serve actual raster type');
+  assert.deepEqual(legacy.body,Buffer.from(png.split(',')[1],'base64'),'never alter original photo bytes');
+  assert.equal(legacy.headers['X-Content-Type-Options'],'nosniff');
+ }
+ for(const [mime,bytes] of [['image/jpeg',Buffer.from([255,216,255,224])],['image/webp',Buffer.from('RIFF0000WEBP')]]){
+  value='data:image/png;base64,'+bytes.toString('base64');const detected=await get();
+  assert.equal(detected.status,200);assert.equal(detected.mime,mime);assert.deepEqual(detected.body,bytes);
+ }
+ for(const bad of ['https://external.invalid/photo.jpg','data:image/svg+xml;base64,PHN2Zz4=','data:image/png;base64,%%%','data:image/jpeg;base64,'+Buffer.from('<svg onload="alert(1)"></svg>').toString('base64'),'data:image/png;base64,'+Buffer.from('<html><script>alert(1)</script></html>').toString('base64'),'data:image/jpeg;base64,AAAA']){value=bad;assert.equal((await get()).status,404)}
+ value=png.replace('image/png','image/jpeg');
+ for(const token of ['wrong','invite'])assert.equal((await get(token)).status,403,'legacy images still require trip view access');
  broken=true;assert.equal((await get()).status,503);broken=false;
  assert.equal(photos.url({id:'42',photo_url:png},'TEST','token'),'/trip/TEST/receipt-photo/42?t=token');assert.equal(photos.url({photo_url:'https://existing.invalid/photo'},'TEST','token'),'https://existing.invalid/photo');
  const trip={id:'TEST',share_token:'token',invite_token:'invite',name:'Synthetic performance trip',people:['Alex','Blair'],simple_split:true,settled_people:{},creator_email:'owner@test.invalid'};
