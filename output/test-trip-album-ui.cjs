@@ -98,6 +98,9 @@ const U='11111111-1111-4111-8111-111111111111';
   await page.getByRole('button',{name:'Trip Center',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('.trip-album-tile').length===24);assert.equal(await page.locator('.trip-album-viewer').count(),1,'no leaked viewer after reopening');
   assert.equal(await page.locator('a[target="_blank"]').count(),0);assert.deepEqual(errors,[]);
   await page.getByRole('button',{name:'Close Trip Center'}).click();
+  await page.evaluate(()=>{const mount=window.RavenTripAlbum.mount;window.RavenTripAlbum.mount=(...args)=>{const handle=mount(...args);return {destroy:()=>handle.destroy()}}});
+  await page.getByRole('button',{name:'Trip Center',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('.trip-album-tile').length===24);
+  await page.getByRole('button',{name:'Close Trip Center'}).click();assert.equal(await page.getByRole('dialog',{name:'Trip Center',exact:true}).isVisible(),false,'new site handles older album helper during rolling deployment');assert.deepEqual(errors,[]);
   console.log('PASS album UI: mobile grid, photos and playable video, upload/retry deduplication, safe deletion, paging, no external windows, async close cleanup, 320/390/768px layout.');
  }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});
