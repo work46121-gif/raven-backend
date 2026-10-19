@@ -34,11 +34,34 @@ function openSweepBalance(person, trigger) {
         const refresh=node('button','Refresh trip');refresh.type='button';refresh.onclick=()=>reloadPage(0);body.append(refresh);
       }
       heading('Share by receipt');
+      // Classify against the person being viewed, never the signed-in viewer.
+      // Paying for a receipt takes precedence, even if their own share is $0.
+      const receiptRoles={
+        paid:{label:'Paid by '+detail.name,color:'#30d158',border:'#30d15866',background:'#30d15814'},
+        included:{label:'Included in split',color:'#c084fc',border:'#a855f766',background:'#a855f714'},
+        excluded:{label:'Not included',color:'#aaa4b7',border:'#aaa4b733',background:'#aaa4b70a'}
+      };
       detail.bills.forEach(bill=>{
-        const card=node('section');card.style.cssText='padding:12px 14px;margin:8px 0;border:1px solid #ffffff12;border-radius:12px;background:#ffffff03';
-        line(card,bill.name,money(bill.share));card.append(note('Receipt '+money(bill.total)+' · Paid by '+bill.paid_by),note(bill.logic));body.append(card);
+        const role=bill.paid_by===detail.name?'paid':Number(bill.share)>0?'included':'excluded';
+        const appearance=receiptRoles[role];
+        const card=node('section');card.dataset.receiptRole=role;card.setAttribute('aria-label',bill.name+' · '+appearance.label);
+        card.style.cssText='padding:12px 14px;margin:8px 0;border:1px solid '+appearance.border+';border-radius:12px;background:'+appearance.background;
+        line(card,bill.name,money(bill.share));
+        const meta=note('');const status=node('span',appearance.label);status.style.cssText='color:'+appearance.color+';font-weight:600';
+        meta.append(status,document.createTextNode(' · Receipt '+money(bill.total)+(role==='paid'?'':' · Paid by '+bill.paid_by)));
+        card.append(meta,note(bill.logic));body.append(card);
       });
       if(!detail.bills.length)body.append(note('No receipts have been added.'));
+      if(detail.bills.length){
+        const legend=node('div');legend.className='sweep-receipt-legend';legend.setAttribute('role','group');legend.setAttribute('aria-label','Receipt color legend for '+detail.name);
+        legend.style.cssText='display:flex;flex-wrap:wrap;gap:8px 16px;margin:12px 0 4px;font-size:11px;line-height:1.5;color:#aaa4b7';
+        Object.values(receiptRoles).forEach(appearance=>{
+          const entry=node('span');entry.style.cssText='display:inline-flex;align-items:center;gap:6px;min-width:0;overflow-wrap:anywhere';
+          const swatch=node('span');swatch.setAttribute('aria-hidden','true');swatch.style.cssText='width:8px;height:8px;flex:none;border-radius:50%;background:'+appearance.color;
+          entry.append(swatch,document.createTextNode(appearance.label));legend.append(entry);
+        });
+        body.append(legend);
+      }
       heading('How the balance is calculated');
       line(body,'Receipt shares',money(detail.share));
       if(detail.paid)line(body,'Paid toward receipts','−'+money(detail.paid));
