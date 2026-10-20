@@ -4,12 +4,17 @@ const {photoBytes}=require('./raven-chat-routes');
 const BUCKET='raven-trip-album',TABLE='raven_trip_album';
 const VIDEO_LIMIT=12*1024*1024,UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const BINARY_VIDEO_LIMIT=50*1024*1024;
+const BINARY_PHOTO_LIMIT=50*1024*1024;
 const fail=(status,message)=>{throw Object.assign(Error(message),{status})};
 function binaryMedia(bytes,mime,limit=BINARY_VIDEO_LIMIT){
  if(!Buffer.isBuffer(bytes)||!bytes.length)fail(400,'The selected file is empty. Choose it again.');
  if(['image/jpeg','image/png','image/webp'].includes(mime)){
-  if(bytes.length>6291456)fail(413,'This photo is over 6 MB. Choose a smaller photo.');
-  return {...photoBytes('data:'+mime+';base64,'+bytes.toString('base64')),kind:'photo'};
+  if(bytes.length>BINARY_PHOTO_LIMIT)fail(413,'This photo is over 50 MB. Choose a smaller photo.');
+  // Validate the binary buffer directly: avoid large base64 copies and leave
+  // the shared chat/travel/legacy-JSON photo validator's 6 MiB cap unchanged.
+  const valid=mime==='image/jpeg'?bytes[0]===255&&bytes[1]===216&&bytes[2]===255:mime==='image/png'?bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])):bytes.toString('ascii',0,4)==='RIFF'&&bytes.toString('ascii',8,12)==='WEBP';
+  if(!valid)fail(400,'Photo format does not match the file.');
+  return {bytes,mime,extension:mime.split('/')[1],kind:'photo'};
  }
  if(!['video/mp4','video/quicktime','video/webm'].includes(mime))fail(415,'Choose a JPG, PNG or WebP photo, or an MP4, MOV or WebM video.');
  if(bytes.length<16||bytes.length>limit)fail(413,'Video must be up to '+(limit/1024/1024)+' MB. Trim or export a smaller clip.');
@@ -77,8 +82,8 @@ module.exports=function registerAlbum(app,db,{run,result}){
  app.post('/trips/:id/album/file',run(async(req,res,user,scope)=>{
   const mime=String(req.headers['content-type']||'').split(';')[0].trim().toLowerCase();
   if(!['image/jpeg','image/png','image/webp','video/mp4','video/quicktime','video/webm'].includes(mime))fail(415,'Choose a supported photo or video.');
-  const limit=mime.startsWith('video/')?BINARY_VIDEO_LIMIT:6291456;
-  if(Number(req.headers['content-length'])>limit)fail(413,'This '+(mime.startsWith('video/')?'video is over 50 MB. Trim or export a smaller clip.':'photo is over 6 MB. Choose a smaller photo.'));
+  const limit=mime.startsWith('video/')?BINARY_VIDEO_LIMIT:BINARY_PHOTO_LIMIT;
+  if(Number(req.headers['content-length'])>limit)fail(413,'This '+(mime.startsWith('video/')?'video is over 50 MB. Trim or export a smaller clip.':'photo is over 50 MB. Choose a smaller photo.'));
   const id=req.headers['x-raven-upload-id'];if(!UUID.test(id||''))fail(400,'Invalid upload. Choose the file again.');
   let caption;try{caption=decodeURIComponent(req.headers['x-raven-upload-caption']||'').trim()}catch{fail(400,'The caption could not be read. Edit it and retry.')}
   if(caption.length>160)fail(400,'Keep the caption under 160 characters.');
@@ -88,7 +93,7 @@ module.exports=function registerAlbum(app,db,{run,result}){
   binaryUploads++;
   try{
    const raw=require('express').raw({type:()=>true,limit,inflate:false});
-   await new Promise((resolve,reject)=>raw(req,res,error=>error?reject(Object.assign(Error(error.type==='entity.too.large'?'This file is too large. Videos can be up to 50 MB; photos up to 6 MB.':'Could not receive this file. Please retry.'),{status:error.status||400})):resolve()));
+   await new Promise((resolve,reject)=>raw(req,res,error=>error?reject(Object.assign(Error(error.type==='entity.too.large'?'This file is too large. Photos and videos can be up to 50 MB each.':'Could not receive this file. Please retry.'),{status:error.status||400})):resolve()));
    await save(binaryMedia(req.body,mime),id,caption,res,user,scope);
   }finally{binaryUploads--}
  }));

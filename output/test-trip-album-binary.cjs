@@ -10,7 +10,19 @@ const large=movie(13*1024*1024),limit=50*1024*1024;
 assert.equal(album.binaryMedia(large,'video/quicktime').bytes.length,large.length);
 assert.equal(album.binaryMedia(movie(limit),'video/quicktime').bytes.length,limit);
 assert.throws(()=>album.binaryMedia(movie(limit+1),'video/quicktime'),/50 MB/);
-assert.throws(()=>album.binaryMedia(Buffer.alloc(6291457),'image/png'),/6 MB/);
+const photoHeaders={'image/jpeg':Buffer.from([255,216,255,224]),'image/png':Buffer.from([137,80,78,71,13,10,26,10]),'image/webp':Buffer.from('RIFF0000WEBP')};
+function photo(size,mime='image/png'){const bytes=Buffer.alloc(size);photoHeaders[mime].copy(bytes);return bytes}
+for(const mime of Object.keys(photoHeaders)){
+ const bytes=photo(limit,mime),parsed=album.binaryMedia(bytes,mime);
+ assert.equal(parsed.bytes,bytes,'binary validation must not copy/base64-expand large photos');
+ assert.equal(parsed.kind,'photo');assert.equal(parsed.mime,mime);
+ assert.throws(()=>album.binaryMedia(photo(limit+1,mime),mime),/50 MB/);
+ assert.throws(()=>album.binaryMedia(Buffer.alloc(32),mime),/format/);
+}
+assert.throws(()=>album.binaryMedia(Buffer.alloc(0),'image/png'),/empty/);
+assert.throws(()=>album.binaryMedia(photo(32),'image/svg+xml'),/Choose/);
+assert.throws(()=>require('../raven-chat-routes').photoBytes('data:image/png;base64,'+photo(6291457).toString('base64')),/6 MB/,'chat cap remains unchanged');
+assert.throws(()=>album.mediaBytes('data:image/png;base64,'+photo(6291457).toString('base64')),/6 MB/,'legacy JSON remains bounded');
 assert.throws(()=>album.binaryMedia(Buffer.from('<html>not a movie</html>'),'video/quicktime'),/format/);
 const heic=movie();heic.write('heic',16);assert.throws(()=>album.binaryMedia(heic,'video/quicktime'),/format/);
 const wide=Buffer.alloc(8);wide.writeUInt32BE(8);wide.write('wide',4);assert.equal(album.binaryMedia(Buffer.concat([wide,movie()]),'video/quicktime').kind,'video');
@@ -37,6 +49,18 @@ const db={from(table){let filters=[],operation='read',value;const q={select(){re
   await pg.exec(`insert into raven_trip_album(trip_id,uploader_id,kind,object_path,mime_type,byte_size) values('T','${U}','video','maximum.mov','video/quicktime',${limit})`);
   await assert.rejects(pg.exec(`insert into raven_trip_album(trip_id,uploader_id,kind,object_path,mime_type,byte_size) values('T','${U}','video','too-large.mov','video/quicktime',${limit+1})`));
   await assert.rejects(pg.exec(`insert into raven_trip_album(trip_id,uploader_id,kind,object_path,mime_type,byte_size) values('T','${U}','photo','oversized.png','image/png',6291457)`));
+  const before=(await pg.query('select * from raven_trip_album order by id')).rows;
+  const photosMigration=fs.readFileSync('output/raven-trip-album-photo-limit.sql','utf8');await pg.exec(photosMigration);await pg.exec(photosMigration);
+  assert.deepEqual((await pg.query('select * from raven_trip_album order by id')).rows,before,'photo migration preserves every existing media field');
+  assert.equal((await pg.query("select has_table_privilege('authenticated','raven_trip_album','insert') as allowed")).rows[0].allowed,false);
+  assert.equal((await pg.query("select relrowsecurity from pg_class where oid='raven_trip_album'::regclass")).rows[0].relrowsecurity,true);
+  assert.deepEqual((await pg.query("select public,file_size_limit::int from storage.buckets where id='raven-trip-album'")).rows,[{public:false,file_size_limit:limit}]);
+  for(const [index,mime] of Object.keys(photoHeaders).entries()){
+   await pg.query("insert into raven_trip_album(trip_id,uploader_id,kind,object_path,mime_type,byte_size) values('T',$1,'photo',$2,$3,$4)",[U,'maximum-'+index,mime,limit]);
+  }
+  for(const [kind,mime,size] of [['photo','image/png',limit+1],['photo','image/png',0],['photo','image/svg+xml',100],['photo','video/mp4',100],['video','video/mp4',limit+1]]){
+   await assert.rejects(pg.query("insert into raven_trip_album(trip_id,uploader_id,kind,object_path,mime_type,byte_size) values('T',$1,$2,'invalid',$3,$4)",[U,kind,mime,size]));
+  }
  }finally{await pg.close()}
  const app=express();app.use(express.json({limit:'20mb'}));
  register(app,db,async req=>req.headers.authorization==='Bearer member'?{id:U,email:'member@example.invalid'}:req.headers.authorization==='Bearer outsider'?{id:U,email:'outsider@example.invalid'}:null);
@@ -56,7 +80,17 @@ const db={from(table){let filters=[],operation='read',value;const q={select(){re
   while(releases.length<2)await new Promise(resolve=>setTimeout(resolve,10));
   assert.equal((await post({id:'77777777-7777-4777-8777-777777777777'})).status,429,'bounded simultaneous upload buffers');
   hold=false;releases.splice(0).forEach(resolve=>resolve());assert.equal((await first).status,201);assert.equal((await second).status,201);
+  const photoId='88888888-8888-4888-8888-888888888888',image=photo(limit);
+  assert.equal((await post({body:image,mime:'image/png',id:photoId})).status,201,'full 50 MiB photo reaches storage through authenticated binary HTTP');
+  assert.equal(rows.find(row=>row.id===photoId).byte_size,limit);assert.equal(rows.find(row=>row.id===photoId).kind,'photo');
+  const savedUploads=uploads;
+  assert.equal((await post({body:image,mime:'image/png',id:photoId})).status,201);assert.equal(uploads,savedUploads,'large photo retry is idempotent');
+  assert.equal((await post({body:photo(limit+1),mime:'image/png'})).status,413);
+  assert.equal((await post({body:Buffer.from('<svg>not an image</svg>'),mime:'image/png'})).status,400);
+  assert.equal((await post({body:image,mime:'image/png',auth:'outsider'})).status,403);
+  const chunked=await fetch(base+'/trips/T/album/file',{method:'POST',headers:{Authorization:'Bearer member','Content-Type':'image/png','X-Raven-Upload-Id':photoId},body:require('node:stream').Readable.from([image,Buffer.from([0])]),duplex:'half'});
+  assert.equal(chunked.status,413,'streamed body over limit is rejected without Content-Length');await chunked.text();assert.equal(uploads,savedUploads);
   assert.match(fs.readFileSync('Server.js','utf8'),/Access-Control-Allow-Headers[^\n]*X-Raven-Upload-Id, X-Raven-Upload-Caption/,'upload metadata allowed by CORS');
-  console.log('PASS binary album: real local HTTP, 13 MiB MOV, 50 MiB boundary, exact MIME/signature validation, iPhone header padding, Unicode captions, retry deduplication, auth/trip isolation, memory concurrency cap and private/idempotent migration preserving existing media.');
+  console.log('PASS binary album: real local HTTP 50 MiB photo/video boundaries, JPEG/PNG/WebP validation without base64 copies, streamed oversize rejection, legacy/chat caps preserved, retry deduplication, auth/trip isolation, memory concurrency cap and private/idempotent photo migration preserving existing media.');
  }finally{hold=false;releases.splice(0).forEach(resolve=>resolve());server.closeAllConnections();await new Promise(resolve=>server.close(resolve))}
 })().catch(error=>{console.error(error);process.exitCode=1});

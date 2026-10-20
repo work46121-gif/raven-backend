@@ -51,7 +51,7 @@
   const choose=make('button');choose.type='button';choose.className='trip-album-choose';
   const chooseText=make('span','Choose photos / videos');chooseText.append(make('small','Add memories from your library'));choose.append(make('b','＋'),chooseText);choose.setAttribute('aria-label','Choose photos or videos');choose.onclick=()=>file.click();
   const caption=make('input');caption.maxLength=160;caption.placeholder='Caption (optional)';caption.setAttribute('aria-label','Album caption');
-  const hint=make('p','Photos up to 6 MB · Videos up to 50 MB · 10 at a time');hint.className='trip-album-note';
+  const hint=make('p','Photos & videos up to 50 MB each · 10 at a time');hint.className='trip-album-note';
   const send=make('button','Upload to album');send.type='submit';send.disabled=true;
   const queue=make('div');queue.className='trip-album-queue';queue.setAttribute('aria-label','Selected memories');
   const stop=make('button','Stop upload');stop.type='button';stop.className='trip-album-stop';stop.hidden=true;stop.onclick=()=>uploadController?.abort();
@@ -172,7 +172,7 @@
    for(const photo of chosen){
     if(pending.some(p=>p.file.name===photo.name&&p.file.size===photo.size&&p.file.lastModified===photo.lastModified))continue;
     const type=photo.type&&photo.type!=='application/octet-stream'?photo.type.toLowerCase():types[photo.name.split('.').pop().toLowerCase()]||'';
-    const limit=type.startsWith('video/')?52428800:6291456;let message='';
+    const limit=52428800;let message='';
     if(!Object.values(types).includes(type))message='Unsupported format. Use JPG, PNG, WebP, MP4, MOV or WebM.';
     else if(!photo.size)message='Empty file. Download it from iCloud and choose it again.';
     else if(photo.size>limit)message=(photo.size/1024/1024).toFixed(1)+' MB — over the '+(limit/1024/1024)+' MB limit. '+(type.startsWith('video/')?'Trim or export a smaller clip.':'Choose a smaller photo.');
