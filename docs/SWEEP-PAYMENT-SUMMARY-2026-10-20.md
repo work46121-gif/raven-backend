@@ -12,6 +12,10 @@ Incoming and outgoing payments are summed in integer cents in one pass over the 
 
 The compact summary sits below the name/amount header, wraps between complete label/amount pairs, and no longer squeezes long names against the balance. Receipt spending and recorded repayments have distinct accessible group labels.
 
+Follow-up requested before handoff: Received uses soft mint green (`#77DDA8`); Paid and Sent use soft red (`#F28D9B`); Share and earlier adjustments remain neutral. The balance keeps its existing status colors. Labels remain explicit for people who cannot distinguish colors; small-text contrast is checked against dark and highlighted row backgrounds.
+
+All Receipts now appears directly above Saved Receipt Photos. The gallery stays collapsed and retains the same delayed, low-priority background loading (at most two concurrent photos).
+
 ## Verification
 
 All tests used synthetic fixtures and mocked browser traffic, with local PostgreSQL-compatible tests where applicable. No production receipts or payments were created or changed.

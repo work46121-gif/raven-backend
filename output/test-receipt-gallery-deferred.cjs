@@ -26,6 +26,8 @@ const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAA
    await page.clock.runFor(250);
    const toggle=page.getByRole('button',{name:/Saved Receipt Photos/}),body=page.locator('#saved-receipts-body');
    await toggle.waitFor();assert.equal(await toggle.getAttribute('aria-expanded'),'false');assert.equal(await body.isVisible(),false);
+   assert.ok(await page.locator('#saved-receipts-section').evaluate(el => el.previousElementSibling === document.getElementById('receipts-body').closest('.sec')), 'All Receipts is immediately above Saved Receipt Photos');
+   assert.ok(await page.locator('#saved-receipts-section').evaluate(el => el.nextElementSibling.contains(document.getElementById('comments-heading'))), 'saved photos remain above comments');
    assert.equal(await body.locator('img').count(),0,'no gallery image elements on trip entry');assert.equal(photoRequests,0,'no initial photo downloads');
    if(withPending)assert.match(await toggle.innerText(),/1 pending/i);
    await toggle.scrollIntoViewIfNeeded();await page.screenshot({path:'output/trip-saved-photos-collapsed.png'});
@@ -48,6 +50,6 @@ const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAA
    await toggle.click();await toggle.focus();await page.keyboard.press('Enter');assert.equal(await body.locator('img').count(),withPending?6:5,'reopen does not duplicate gallery');
    assert.deepEqual(errors,[]);assert.deepEqual(writes,[]);assert.equal(JSON.stringify(receipts),snapshot,'records and amounts unchanged');await page.close();
   }
-  console.log('PASS saved-photo gallery: collapsed default, zero entry downloads, low-priority background photos after load, independent All Receipts, early open, keyboard reopen/no duplicates, pending photos preserved, zero writes.');
+  console.log('PASS saved-photo gallery: All Receipts above Saved Receipt Photos, collapsed default, zero entry downloads, low-priority background photos after load, independent All Receipts, early open, keyboard reopen/no duplicates, pending photos preserved, zero writes.');
  }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});

@@ -56,7 +56,11 @@ const money = n => '$' + (Math.abs(n) / 100).toFixed(2);
         for (const [label, cents] of Object.entries(expected)) {
           const meta = row.locator('[data-balance-meta="' + label + '"]');
           assert.equal(await meta.count(), cents ? 1 : 0, name + ' shows only applicable ' + label);
-          if (cents) assert.ok((await meta.innerText()).endsWith((label === 'earlier-adjustment' ? cents < 0 ? '−' : '+' : '') + money(cents)));
+          if (cents) {
+            assert.ok((await meta.innerText()).endsWith((label === 'earlier-adjustment' ? cents < 0 ? '−' : '+' : '') + money(cents)));
+            const color = await meta.evaluate(el => getComputedStyle(el).color);
+            assert.equal(color, label === 'received' ? 'rgb(119, 221, 168)' : ['paid', 'sent'].includes(label) ? 'rgb(242, 141, 155)' : 'rgb(152, 150, 168)', 'credit/debit colors retain readable labels');
+          }
         }
         assert.equal((await row.locator('.person-balance-display').innerText()).trim(), money(S.cents(detail.net)));
         assert.equal(expected.paid - expected.share + expected.sent - expected.received + expected['earlier-adjustment'], S.cents(detail.net), 'displayed amounts reconcile to the cent');
@@ -72,8 +76,9 @@ const money = n => '$' + (Math.abs(n) / 100).toFixed(2);
     await check({ ...partial, sweep_payments: partial.sweep_payments.map(p => ({ ...p, reversed_at: '2026-10-20T14:00:00Z' })) });
     await check(settled);
     assert.equal(await page.locator('[data-trip-member-row][data-is-settled="1"]').count(), 3, 'all settled only when actual net is zero');
-    await page.locator('#row-person-Alex').scrollIntoViewIfNeeded();
+    await page.locator('#row-person-Alex').evaluate(el => el.scrollIntoView({ block: 'start' }));
     await page.screenshot({ path: 'output/sweep-payment-summary-mobile.png' });
+    assert.equal(await page.locator('#row-person-Alex .person-balance-display').evaluate(el => getComputedStyle(el).color), 'rgb(48, 209, 88)', 'settled balance keeps original RAVEN green');
     await check(both);
     assert.equal(await page.locator('#row-person-Alex [data-balance-meta="received"]').innerText(), 'Received $51.00');
     assert.equal(await page.locator('#row-person-Alex [data-balance-meta="sent"]').innerText(), 'Sent $1.01');
@@ -106,6 +111,12 @@ const money = n => '$' + (Math.abs(n) / 100).toFixed(2);
     assert.equal(await page.locator('[data-balance-meta="paid"]').count(), 2);
     assert.deepEqual(financialRequests, []);
     assert.deepEqual(errors, []);
-    console.log('PASS payment summary: incoming/outgoing, partial/full/undone, both directions, aliases/JSON, cents, legacy credits, empty/non-Sweep trips, unchanged balances/data, and 320/390/768px layout. Synthetic records only.');
+    const luminance = hex => hex.match(/[a-f0-9]{2}/gi).map(v => parseInt(v, 16) / 255).map(v => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4).reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+    for (const text of ['#F28D9B', '#77DDA8']) {
+      for (const background of ['#0C0C12', '#13131A', '#0E271B']) {
+        assert.ok((luminance(text) + 0.05) / (luminance(background) + 0.05) >= 4.5, 'small-text contrast on dark and highlighted rows');
+      }
+    }
+    console.log('PASS payment summary: incoming/outgoing, partial/full/undone, both directions, aliases/JSON, cents, legacy credits, empty/non-Sweep trips, unchanged balances/data, accessible debit/credit colors, and 320/390/768px layout. Synthetic records only.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

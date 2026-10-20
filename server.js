@@ -4741,12 +4741,12 @@ app.get('/trip/:tripId', async (req, res) => {
     const frontedTotal = Math.round((frontedTotals[p] || 0) * 100) / 100;
     const spendMetaParts = [];
     if (assignedTotal > 0.005) spendMetaParts.push({ label: 'Share', amount: assignedTotal, title: 'Personal share of receipts' });
-    if (frontedTotal > 0.005) spendMetaParts.push({ label: 'Paid', amount: frontedTotal, title: 'Paid toward receipts, before reimbursements' });
+    if (frontedTotal > 0.005) spendMetaParts.push({ label: 'Paid', amount: frontedTotal, color: '#F28D9B', title: 'Paid toward receipts, before reimbursements' });
     const paymentMetaParts = [];
     if (tripUsesSimpleSplit) {
       const recorded = recordedPaymentTotals.get(RavenSweep.key(p));
-      if (recorded.sent > 0) paymentMetaParts.push({ label: 'Sent', amount: recorded.sent / 100, title: 'Recorded repayments sent to trip members' });
-      if (recorded.received > 0) paymentMetaParts.push({ label: 'Received', amount: recorded.received / 100, title: 'Recorded repayments received from trip members' });
+      if (recorded.sent > 0) paymentMetaParts.push({ label: 'Sent', amount: recorded.sent / 100, color: '#F28D9B', title: 'Recorded repayments sent to trip members' });
+      if (recorded.received > 0) paymentMetaParts.push({ label: 'Received', amount: recorded.received / 100, color: '#77DDA8', title: 'Recorded repayments received from trip members' });
       // Older settlement credits are separate adjustments, not invented Sweep
       // transfers. Keep them visible when needed to explain the remaining net.
       const earlierAdjustment = beforeEarlierSettlements
@@ -4754,7 +4754,7 @@ app.get('/trip/:tripId', async (req, res) => {
         : 0;
       if (earlierAdjustment !== 0) paymentMetaParts.push({ label: 'Earlier adjustment', amount: earlierAdjustment / 100, signed: true, title: 'Earlier settlement adjustment to the balance, before recorded Sweep payments' });
     }
-    const renderBalanceMeta = (parts, label) => parts.length ? `<div role="group" aria-label="${label}" style="display:flex;flex-wrap:wrap;justify-content:flex-end;gap:3px 10px;margin-top:3px;font-size:11px;line-height:1.5;color:#9896A8">${parts.map(part => `<span data-balance-meta="${part.label.toLowerCase().replace(/ /g, '-')}" title="${part.title}" style="white-space:nowrap">${part.label} ${part.signed ? (part.amount < 0 ? '−' : '+') : ''}$${Math.abs(part.amount).toFixed(2)}</span>`).join('')}</div>` : '';
+    const renderBalanceMeta = (parts, label) => parts.length ? `<div role="group" aria-label="${label}" style="display:flex;flex-wrap:wrap;justify-content:flex-end;gap:3px 10px;margin-top:3px;font-size:11px;line-height:1.5;color:#9896A8">${parts.map(part => `<span data-balance-meta="${part.label.toLowerCase().replace(/ /g, '-')}" title="${part.title}" style="white-space:nowrap;color:${part.color || '#9896A8'}">${part.label} ${part.signed ? (part.amount < 0 ? '−' : '+') : ''}$${Math.abs(part.amount).toFixed(2)}</span>`).join('')}</div>` : '';
 
     const personId = 'person-' + p.replace(/[^a-z0-9]/gi,'_');
 
@@ -6460,7 +6460,7 @@ function buildSavedReceiptsGallery() {
     section.appendChild(header);
     section.appendChild(body);
     const receiptsSec = document.getElementById('receipts-body');
-    if (receiptsSec) receiptsSec.closest('.sec').parentNode.insertBefore(section, receiptsSec.closest('.sec'));
+    if (receiptsSec) receiptsSec.closest('.sec').insertAdjacentElement('afterend', section);
     const warmGallery = () => setTimeout(() => {
       const start = () => { if (section.isConnected) ensureGallery(); };
       if (window.requestIdleCallback) window.requestIdleCallback(start, {timeout:3000});
