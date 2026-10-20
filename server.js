@@ -6324,18 +6324,41 @@ function buildSavedReceiptsGallery() {
     section.style.marginTop = '16px';
 
     const totalCount = dbReceipts.length + pending.length;
-    const header = document.createElement('div');
-    header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;cursor:pointer';
+    const header = document.createElement('button');
+    header.type = 'button';
+    header.setAttribute('aria-expanded', 'false');
+    header.setAttribute('aria-controls', 'saved-receipts-body');
+    header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;margin-bottom:10px;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer';
     header.innerHTML =
-      '<div class="sec-lbl" style="margin-bottom:0"> Saved Receipt Photos (' + totalCount + ')' +
+      '<span class="sec-lbl" style="margin-bottom:0"> Saved Receipt Photos (' + totalCount + ')' +
       (pending.length > 0 ? ' <span style="font-size:10px;background:rgba(255,107,53,0.15);color:#FF6B35;border-radius:6px;padding:2px 8px;font-weight:700">' + pending.length + ' pending</span>' : '') +
-      '</div>' +
-      '<div style="font-size:12px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:8px;user-select:none"><span id="saved-receipts-toggle"> Hide</span></div>';
+      '</span>' +
+      '<span style="font-size:12px;color:#6E6B80;background:rgba(255,255,255,0.05);padding:4px 10px;border-radius:8px;user-select:none"><span id="saved-receipts-toggle"> Show</span></span>';
 
     const body = document.createElement('div');
     body.id = 'saved-receipts-body';
-    body.style.display = 'block'; // auto-open when photos exist
+    body.style.display = 'none';
 
+    // Keep entry lightweight. After the page loads, quietly warm two images at
+    // a time at low priority. Opening early starts the same queue immediately.
+    let galleryBuilt = false;
+    const photoQueue = [];
+    let photoActive = 0;
+    function pumpSavedPhotos() {
+      while (section.isConnected && photoActive < 2 && photoQueue.length) {
+        const entry = photoQueue.shift();
+        photoActive++;
+        let finished = false;
+        const finish = () => { if (finished) return; finished = true; clearTimeout(timer); photoActive--; pumpSavedPhotos(); };
+        const timer = setTimeout(() => { entry.img.removeAttribute('src'); finish(); }, 20000);
+        entry.img.addEventListener('load', finish, { once:true });
+        entry.img.addEventListener('error', finish, { once:true });
+        entry.img.src = entry.url;
+      }
+    }
+    function ensureGallery() {
+    if (galleryBuilt) return;
+    galleryBuilt = true;
     const grid = document.createElement('div');
     grid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px';
 
@@ -6346,9 +6369,11 @@ function buildSavedReceiptsGallery() {
       const cell = document.createElement('div');
       cell.style.cssText = 'position:relative;border-radius:10px;overflow:hidden;cursor:pointer;border:2px solid rgba(48,209,88,0.4)';
       const img = document.createElement('img');
-      img.loading = 'lazy';
+      img.loading = 'eager';
+      img.fetchPriority = 'low';
       img.decoding = 'async';
-      img.src = r.photo_url;
+      img.alt = 'Saved receipt photo: ' + (r.name || 'Receipt');
+      photoQueue.push({img, url:r.photo_url});
       img.style.cssText = 'width:100%;aspect-ratio:3/4;object-fit:cover;display:block';
       img.addEventListener('error', () => { cell.style.display='none'; });
       const overlay = document.createElement('div');
@@ -6366,10 +6391,11 @@ function buildSavedReceiptsGallery() {
       const label = d.toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'America/New_York'});
       const cell = document.createElement('div');
       cell.style.cssText = 'position:relative;border-radius:10px;overflow:hidden;cursor:pointer;border:2px solid rgba(255,107,53,0.4)';
-      cell.innerHTML = '<img src="data:' + (r.mediaType||'image/jpeg') + ';base64,' + r.imageBase64 + '" style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block">' +
+      cell.innerHTML = '<img alt="Pending receipt" decoding="async" style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block">' +
         '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.7);padding:4px 6px">' +
         '<div style="font-size:9px;color:#FF6B35;font-weight:600"> Pending</div>' +
         '<div style="font-size:8px;color:#9896A8">' + label + '</div></div>';
+      photoQueue.push({img:cell.querySelector('img'), url:'data:' + (r.mediaType||'image/jpeg') + ';base64,' + r.imageBase64});
       cell.addEventListener('click', () => viewSavedReceipt(r.id));
       grid.appendChild(cell);
     });
@@ -6380,7 +6406,10 @@ function buildSavedReceiptsGallery() {
       const retryBtn = document.createElement('button');
       retryBtn.style.cssText = 'width:100%;padding:10px;background:rgba(255,107,53,0.1);border:1px solid rgba(255,107,53,0.3);border-radius:10px;color:#FF6B35;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:8px';
       retryBtn.textContent = ' Retry scanning ' + pending.length + ' pending photo' + (pending.length>1?'s':'');
-      retryBtn.addEventListener('click', retryPendingScans);
+      retryBtn.addEventListener('click', () => {
+        if (typeof retryPendingScans === 'function') retryPendingScans();
+        else toast('To retry, use Add a Receipt and choose the pending photo again.', false);
+      });
       body.appendChild(retryBtn);
     } else {
       const doneMsg = document.createElement('div');
@@ -6388,10 +6417,14 @@ function buildSavedReceiptsGallery() {
       doneMsg.textContent = 'All photos scanned ';
       body.appendChild(doneMsg);
     }
+    pumpSavedPhotos();
+    }
 
     header.addEventListener('click', () => {
       const open = body.style.display !== 'none';
+      if (!open) ensureGallery();
       body.style.display = open ? 'none' : 'block';
+      header.setAttribute('aria-expanded', String(!open));
       const tog = document.getElementById('saved-receipts-toggle');
       if (tog) tog.textContent = open ? ' Show' : ' Hide';
     });
@@ -6400,6 +6433,13 @@ function buildSavedReceiptsGallery() {
     section.appendChild(body);
     const receiptsSec = document.getElementById('receipts-body');
     if (receiptsSec) receiptsSec.closest('.sec').parentNode.insertBefore(section, receiptsSec.closest('.sec'));
+    const warmGallery = () => setTimeout(() => {
+      const start = () => { if (section.isConnected) ensureGallery(); };
+      if (window.requestIdleCallback) window.requestIdleCallback(start, {timeout:3000});
+      else setTimeout(start, 0);
+    }, 1000);
+    if (document.readyState === 'complete') warmGallery();
+    else window.addEventListener('load', warmGallery, {once:true});
   } catch(e) { console.error('Saved receipts gallery error:', e); }
 }
 
