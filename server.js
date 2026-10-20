@@ -1926,11 +1926,13 @@ app.get('/bill/:billId', async (req, res) => {
     selections = canon.selections;
   }
 
+  const RavenPlusBadge = require('./raven-plus-badge');
+  const plusBadgeScript = '<script>' + require('fs').readFileSync(require.resolve('./raven-plus-badge'), 'utf8') + '</script>';
   let creatorProfile = null;
-  const emailTry = await supabase.from('profiles').select('first_name,phone,email,venmo,cashapp,zelle,applepay,updated_at').eq('email', bill.creator_phone).maybeSingle();
+  const emailTry = await supabase.from('profiles').select('id,raven_id,first_name,phone,email,venmo,cashapp,zelle,applepay,updated_at').eq('email', bill.creator_phone).maybeSingle();
   creatorProfile = emailTry.data;
   if (!creatorProfile) {
-    const phoneTry = await supabase.from('profiles').select('first_name,phone,email,venmo,cashapp,zelle,applepay,updated_at').eq('phone', bill.creator_phone).maybeSingle();
+    const phoneTry = await supabase.from('profiles').select('id,raven_id,first_name,phone,email,venmo,cashapp,zelle,applepay,updated_at').eq('phone', bill.creator_phone).maybeSingle();
     creatorProfile = phoneTry.data;
   }
 
@@ -1947,7 +1949,7 @@ app.get('/bill/:billId', async (req, res) => {
       const payerPhone = payerParticipantRes.data?.phone || '';
       if (payerPhone && !String(payerPhone).startsWith('unknown_') && !String(payerPhone).startsWith('guest:')) {
         const directProfileRes = await supabase.from('profiles')
-          .select('first_name,phone,email,venmo,cashapp,zelle,applepay,updated_at')
+          .select('id,raven_id,first_name,phone,email,venmo,cashapp,zelle,applepay,updated_at')
           .or('email.eq.' + payerPhone + ',phone.eq.' + payerPhone)
           .maybeSingle();
         if (directProfileRes.data) payerProfile = directProfileRes.data;
@@ -2036,7 +2038,7 @@ app.get('/bill/:billId', async (req, res) => {
   const participantsHTML = participants.length > 0 ? `
     <div style="max-width:800px;margin:20px auto 0;padding:0 20px">
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#6E6B80;font-weight:600;margin-bottom:10px">Who owes what</div>
-      ${paidByLower ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:10px;margin-bottom:10px"><span style="font-size:18px;color:#C084FC;font-weight:800">$</span><div><div style="font-size:13px;font-weight:700;color:#C084FC">${bill.paid_by} paid the bill</div><div style="font-size:11px;color:#6E6B80">Everyone else owes them their share</div></div></div>` : ''}
+      ${paidByLower ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:10px;margin-bottom:10px"><span style="font-size:18px;color:#C084FC;font-weight:800">$</span><div><div style="font-size:13px;font-weight:700;color:#C084FC">${bill.paid_by}${RavenPlusBadge.html(billPayerProfile)} paid the bill</div><div style="font-size:11px;color:#6E6B80">Everyone else owes them their share</div></div></div>` : ''}
       <div style="background:#0C0C12;border:1px solid rgba(255,255,255,0.07);border-radius:16px;overflow:hidden">
         ${participants.map(p => {
           const myItems = participantItems[p.name.toLowerCase()] || [];
@@ -2057,7 +2059,7 @@ app.get('/bill/:billId', async (req, res) => {
           return `<div id="prow-${p.id}" style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)">
             <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
               <div style="min-width:0;flex:1">
-                <div style="font-size:15px;font-weight:600;color:#F0EEF8">${p.name}</div>
+                <div style="font-size:15px;font-weight:600;color:#F0EEF8">${p.name}${RavenPlusBadge.html(participantProfilesByKey[billParticipantKey(p.name)])}</div>
                 ${statusEl}
                 ${breakdownHTML}
               </div>
@@ -2110,6 +2112,7 @@ app.get('/bill/:billId', async (req, res) => {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
   <title>${bill.name} - RAVEN</title>
+  ${plusBadgeScript}
   <meta property="og:title" content="${bill.name} - RAVEN" />
   <meta property="og:description" content="Tap to see what you owe - Bill ID: ${billId}" />
   <meta property="og:image" content="https://ravensplit.com/raven-hero.png" />
@@ -2434,6 +2437,7 @@ app.get('/bill/:billId', async (req, res) => {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
   <title>${bill.name} - RAVEN</title>
+  ${plusBadgeScript}
   <meta property="og:title" content="${bill.name} - Pick your items" />
   <meta property="og:description" content="Tap to claim what you ordered - Bill ID: ${billId}" />
   <meta property="og:image" content="https://ravensplit.com/raven-hero.png" />
@@ -2600,7 +2604,7 @@ app.get('/bill/:billId', async (req, res) => {
     </div>
     <div class="bill-total" style="font-size:32px;font-weight:900;color:#30D158;font-family:'Courier New',monospace">$${parseFloat(bill.total||0).toFixed(2)}</div>
   </div>
-  ${paidByLower ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:10px;margin-bottom:4px"><span style="font-size:16px">${isAppBillMode ? 'Paid' : '&#128179;'}</span><div><div style="font-size:13px;font-weight:700;color:#C084FC">${bill.paid_by} paid the bill</div><div style="font-size:11px;color:#6E6B80">Everyone else needs to pay them back</div></div></div>` : ''}
+  ${paidByLower ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:10px;margin-bottom:4px"><span style="font-size:16px">${isAppBillMode ? 'Paid' : '&#128179;'}</span><div><div style="font-size:13px;font-weight:700;color:#C084FC">${bill.paid_by}${RavenPlusBadge.html(billPayerProfile)} paid the bill</div><div style="font-size:11px;color:#6E6B80">Everyone else needs to pay them back</div></div></div>` : ''}
 </div>
 
 <!-- Live Mode Banner -->
@@ -3488,7 +3492,7 @@ function renderState(d) {
           + '<div style="flex:1;min-width:0;display:flex;align-items:flex-start;gap:10px">'
           + avatarHtml
           + '<div style="flex:1;min-width:0">'
-          + '<div style="font-size:15px;font-weight:' + (isMe?'800':'600') + ';color:' + (isMe?'#30D158':'#F0EEF8') + '">' + p.name + (isMe ? ' <span style="font-size:11px;font-weight:500;color:#30D158;opacity:0.7">(you)</span>' : '') + '</div>'
+          + '<div style="font-size:15px;font-weight:' + (isMe?'800':'600') + ';color:' + (isMe?'#30D158':'#F0EEF8') + '">' + p.name + RavenPlusBadge.html(participantProfile) + (isMe ? ' <span style="font-size:11px;font-weight:500;color:#30D158;opacity:0.7">(you)</span>' : '') + '</div>'
           + '<div style="font-size:12px;color:' + statusColor + ';margin-top:2px">' + statusText + '</div>'
           + breakdown + '</div></div>' + action + '</div></div>';
       }).join('');
@@ -4262,6 +4266,7 @@ app.get('/trip/:tripId', async (req, res) => {
   const people = Array.isArray(trip.people) ? trip.people : JSON.parse(trip.people || '[]');
 
   // Fetch payment profiles for all trip members
+  const RavenPlusBadge = require('./raven-plus-badge');
   let memberPayProfiles = {}; // keyed by first name, full name, raven_id, and safe backfilled aliases
   let tripLinkedProfiles = [];
   const profileAliases = (profile) => {
@@ -4349,7 +4354,7 @@ app.get('/trip/:tripId', async (req, res) => {
 
   try {
     const normalizedPeople = [...new Set((people || []).map(p => String(p || '').trim()).filter(Boolean))];
-    const ravenHandles = normalizedPeople.filter(p => /^@?[a-z0-9_]{2,30}$/i.test(p)).map(p => p.replace(/^@/, '').toLowerCase());
+    const ravenHandles = normalizedPeople.filter(p => /^@?[a-z0-9_]{1,30}$/i.test(p)).map(p => p.replace(/^@/, '').toLowerCase());
     const firstNames = [...new Set(normalizedPeople.map(p => p.split(' ')[0]).filter(Boolean))];
 
     if (ravenHandles.length > 0) {
@@ -4372,6 +4377,21 @@ app.get('/trip/:tripId', async (req, res) => {
       });
     }
   } catch(e) { console.error('Extended member profile lookup error:', e); }
+
+  const plusBadgeProfilesByMember = {};
+  for (const person of people) {
+    const profile = getMemberProfile(person);
+    if (!profile || !RavenPlusBadge.isMember(profile)) continue;
+    const linked = tripLinkedProfiles.filter(p => memberAliasMatchesProfile(person, p));
+    const exactAccount = [profile.id, profile.email, '@' + profile.raven_id]
+      .some(value => value && String(value).toLowerCase() === String(person).trim().toLowerCase());
+    // Only an unambiguous linked account or an explicit account identifier.
+    // A global first-name search must never decorate an unlinked guest.
+    if (exactAccount || (linked.length === 1 && linked[0].id === profile.id)) {
+      plusBadgeProfilesByMember[person] = { id: profile.id };
+    }
+  }
+  const memberPlusBadge = person => RavenPlusBadge.html(plusBadgeProfilesByMember[person]);
 
   // Net owed per person: how much each person owes TO payers (excluding what they paid themselves)
   const totals = {};       // what each person owes overall
@@ -4786,7 +4806,7 @@ app.get('/trip/:tripId', async (req, res) => {
         <div style="display:flex;align-items:center;gap:10px;cursor:pointer;min-width:0;flex:1" data-open-profile="${esc(p)}" title="View ${esc(displayName)}'s profile">
           <div data-person-avatar="${esc(p)}" style="width:34px;height:34px;flex-shrink:0;border-radius:50%;background:${avatarColors[i%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;overflow:hidden">${profile?.avatar_url ? `<img src="${esc(profile.avatar_url)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : esc(displayName[0].toUpperCase())}</div>
           <div style="min-width:0">
-            <div data-trip-member-name="1" style="font-weight:600;font-size:14px;display:flex;flex-wrap:wrap;align-items:center;gap:6px;overflow-wrap:anywhere">${esc(displayName)} <span data-trip-member-you="1" style="display:none;font-size:11px;color:#30D158;font-weight:700">(you)</span><span style="font-size:11px;color:#6E6B80;font-weight:400">&gt;</span></div>
+            <div data-trip-member-name="1" style="font-weight:600;font-size:14px;display:flex;flex-wrap:wrap;align-items:center;gap:6px;overflow-wrap:anywhere">${esc(displayName)}${memberPlusBadge(p)} <span data-trip-member-you="1" style="display:none;font-size:11px;color:#30D158;font-weight:700">(you)</span><span style="font-size:11px;color:#6E6B80;font-weight:400">&gt;</span></div>
             <div class="person-status-display" style="font-size:11px;color:${effectiveIsSettled?'#30D158':effectiveAmtOwed>0?'#FF9A3C':effectiveIsCreditor?'#A855F7':'#30D158'}">
               ${tripUsesSimpleSplit ? sweepStatus : effectiveIsSettled ? 'all settled' : effectiveAmtOwed>0 ? (effectiveIsPartiallySettled ? 'still owes $' + effectiveAmtOwed.toFixed(2) : 'owes $' + effectiveAmtOwed.toFixed(2)) : effectiveIsCreditor ? 'collecting $' + amtReceivable.toFixed(2) : 'all settled'}
             </div>
@@ -4838,7 +4858,7 @@ ${tripUsesSimpleSplit&&payerEntries.length>1?'<div class="sweep-payment-total" s
     const splitPillsHtml = splitEntries.map(([p,a]) =>
       `<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:rgba(255,255,255,0.05);border-radius:20px;font-size:12px;color:#9896A8">
         <span data-person-avatar="${esc(p)}" style="width:18px;height:18px;border-radius:50%;background:${avatarColorMap[people.indexOf(p) % avatarColorMap.length] || '#6E6B80'};display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0">${esc(p[0].toUpperCase())}</span>
-        ${esc(getMemberDisplayName(p))} <b style="color:#F0EEF8;font-family:monospace">$${parseFloat(a).toFixed(2)}</b>
+        ${esc(getMemberDisplayName(p))}${memberPlusBadge(p)} <b style="color:#F0EEF8;font-family:monospace">$${parseFloat(a).toFixed(2)}</b>
       </span>`
     ).join('');
 
@@ -4882,7 +4902,7 @@ ${tripUsesSimpleSplit&&payerEntries.length>1?'<div class="sweep-payment-total" s
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${payer?'10px':'8px'}">
                 <div style="display:flex;align-items:center;gap:8px">
                   <div data-person-avatar="${esc(person)}" style="width:28px;height:28px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;overflow:hidden;flex-shrink:0">${esc(person[0].toUpperCase())}</div>
-                  <span style="font-size:14px;font-weight:600">${esc(getMemberDisplayName(person))}</span>
+                  <span style="font-size:14px;font-weight:600">${esc(getMemberDisplayName(person))}${memberPlusBadge(person)}</span>
                 </div>
                 <div style="text-align:right">
                   <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:#30D158;letter-spacing:0.03em;line-height:1">$${parseFloat(amount).toFixed(2)}</div>
@@ -4917,7 +4937,7 @@ ${tripUsesSimpleSplit&&payerEntries.length>1?'<div class="sweep-payment-total" s
       <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:rgba(124,58,237,0.07);border:1px solid rgba(124,58,237,0.2);border-radius:10px;margin-bottom:12px">
         <div data-person-avatar="${esc(payer)}" style="width:32px;height:32px;border-radius:50%;background:${avatarColorMap[people.indexOf(payer)%avatarColorMap.length]||'#7C3AED'};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden">${esc(payer[0].toUpperCase())}</div>
         <div style="flex:1">
-          <div style="font-size:12px;color:#A855F7;font-weight:700">Paid by ${esc(payerDisplay)}</div>
+          <div style="font-size:12px;color:#A855F7;font-weight:700">Paid by ${esc(payerDisplay)}${memberPlusBadge(payer)}</div>
           <div style="font-size:11px;color:#6E6B80">${tripUsesSimpleSplit?'Reimbursement included in Sweep':'Others need to pay them back'}</div>
         </div>
         <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:#A855F7">$${total.toFixed(2)}</div>
@@ -4959,7 +4979,7 @@ ${tripUsesSimpleSplit&&payerEntries.length>1?'<div class="sweep-payment-total" s
           ${thumbHtml}
           <div style="flex:1;min-width:0">
             <div style="font-weight:700;font-size:15px;color:#F0EEF8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.name||'Receipt')}</div>
-            <div style="font-size:11px;color:#6E6B80;margin-top:2px">${dateStr}  ${splitterCount} ${splitterCount===1?'person':'people'}</div>            ${payer ? '<div style="display:inline-flex;align-items:center;gap:4px;margin-top:3px;padding:2px 8px;background:rgba(168,85,247,0.12);border:1px solid rgba(168,85,247,0.25);border-radius:6px"><span style="font-size:10px;color:#A855F7;font-weight:700"> Paid by ' + esc(payer) + '</span></div>' : ''}
+            <div style="font-size:11px;color:#6E6B80;margin-top:2px">${dateStr}  ${splitterCount} ${splitterCount===1?'person':'people'}</div>            ${payer ? '<div style="display:inline-flex;align-items:center;gap:4px;margin-top:3px;padding:2px 8px;background:rgba(168,85,247,0.12);border:1px solid rgba(168,85,247,0.25);border-radius:6px"><span style="font-size:10px;color:#A855F7;font-weight:700"> Paid by ' + esc(payerDisplay) + '</span>' + memberPlusBadge(payer) + '</div>' : ''}
             ${splitEntries.length > 0 ? '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">' + splitPillsHtml + '</div>' : ''}
           </div>
         </div>
@@ -5039,6 +5059,7 @@ ${tripUsesSimpleSplit&&payerEntries.length>1?'<div class="sweep-payment-total" s
     people,
     hasCoverImage: !!trip.cover_image,
     memberPayProfiles,
+    plusBadgeProfilesByMember,
     conciergeSummary: buildTripConciergePayload({ ...trip, id: tripId }, receipts || []),
     receiptsData: (receipts||[]).map(r => {
       let splitsData = {};
@@ -5066,6 +5087,7 @@ ${tripUsesSimpleSplit&&payerEntries.length>1?'<div class="sweep-payment-total" s
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <title>${experienceIcon} ${esc(trip.name)}  RAVEN</title>
+<script>${require('fs').readFileSync(require.resolve('./raven-plus-badge'), 'utf8')}</script>
 <meta property="og:title" content="${experienceIcon} ${esc(trip.name)}  ${pageTitleSuffix}">
 <meta property="og:description" content="${people.length} ${memberCountLabel}  ${(receipts||[]).length} ${receiptCountLabel}${(receipts||[]).length!==1?'s':''}  $${totalSpend.toFixed(2)} total">
 <meta property="og:image" content="${trip.cover_image ? baseUrl+'/trip/'+tripId+'/cover-image' : 'https://ravensplit.com/raven-hero.png'}">
@@ -7309,7 +7331,7 @@ function openMemberProfile(name) {
   // Use the cached value from applyAllMemberAvatars, falling back to localStorage for self
   const cachedAvatar = getTripProfileAvatar(name) || _memberAvatarCache[normalizedName] || _memberAvatarCache[displayName.toLowerCase()] || null;
   if (avEl) { if (cachedAvatar) { avEl.innerHTML = '<img src="'+cachedAvatar+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%">'; avEl.style.background="transparent"; } else { avEl.innerHTML = ''; avEl.textContent=displayName[0].toUpperCase(); avEl.style.background=colors[displayName.charCodeAt(0)%colors.length]; } }
-  const nameEl=document.getElementById("mp-name"); if(nameEl) nameEl.textContent=displayName;
+  const nameEl=document.getElementById("mp-name"); if(nameEl) { nameEl.textContent=displayName; RavenPlusBadge.mount(nameEl, D.plusBadgeProfilesByMember?.[name] || Object.values(D.plusBadgeProfilesByMember || {}).find(p => p.id === prof?.id), "profile"); }
   const ridEl=document.getElementById("mp-raven-id"); if(ridEl) ridEl.textContent=prof?.raven_id?"@"+prof.raven_id:"";
   const sinceEl=document.getElementById("mp-member-since"); if(sinceEl) { if(prof?.created_at){const d=new Date(prof.created_at);sinceEl.textContent=" RAVEN member since "+d.toLocaleDateString("en-US",{month:"long",year:"numeric"});}else{sinceEl.textContent=" RAVEN member";}}
   const chipsEl=document.getElementById("mp-payment-chips"); if(chipsEl){const chips=[];if(prof?.venmo)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#0084FF;border-radius:8px;font-size:12px;font-weight:700;color:#fff"><span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;background:rgba(255,255,255,0.18);font-size:10px;line-height:1;font-weight:800">V</span> Venmo</span>');if(prof?.cashapp)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#00D632;border-radius:8px;font-size:12px;font-weight:700;color:#000"><span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;background:rgba(0,0,0,0.14);font-size:10px;line-height:1;font-weight:800">$</span> Cash App</span>');if(prof?.zelle)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#6D1ED4;border-radius:8px;font-size:12px;font-weight:700;color:#fff"><span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;background:rgba(255,255,255,0.18);font-size:10px;line-height:1;font-weight:800">Z</span> Zelle</span>');if(prof?.applepay)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#1a1a1a;border:1px solid #555;border-radius:8px;font-size:12px;font-weight:700;color:#fff"><span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;background:rgba(255,255,255,0.12);font-size:10px;line-height:1;font-weight:800">Pay</span> Apple Pay</span>');chipsEl.innerHTML=chips.length?chips.join(""):'<span style="font-size:12px;color:#6E6B80">No payment methods set up</span>';}
