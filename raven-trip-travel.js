@@ -1,5 +1,6 @@
 const {randomUUID,randomBytes,createHmac,timingSafeEqual}=require('node:crypto');
 const {photoBytes}=require('./raven-chat-routes');
+const {flightTracking}=require('./raven-trip-lifecycle');
 const BUCKET='raven-trip-media';
 const emails=value=>{try{const a=typeof value==='string'?JSON.parse(value):value;return Array.isArray(a)?a.map(v=>String(v).trim().toLowerCase()):[]}catch{return []}};
 const deny=(status,message)=>{throw Object.assign(Error(message),{status})};
@@ -29,7 +30,7 @@ module.exports=function registerTravel(app,db,authenticate){
  const result=async q=>{const {data,error}=await q;if(error)throw error;return data};
  async function access(id,user){
   if(!/^[a-z0-9_-]{1,64}$/i.test(id))deny(400,'Invalid trip.');
-  const trip=await result(db.from('trips').select('id,name,creator_email,member_emails,people').eq('id',id).maybeSingle());
+  const trip=await result(db.from('trips').select('id,name,creator_email,member_emails,people,end_date,trip_date,total,receipt_count').eq('id',id).maybeSingle());
   if(!trip)deny(404,'Trip not found.');
   const owner=String(trip.creator_email||'').trim().toLowerCase(),email=String(user.email||'').trim().toLowerCase();
   const allowed=[...new Set([owner,...emails(trip.member_emails)].filter(Boolean))];
@@ -76,9 +77,10 @@ module.exports=function registerTravel(app,db,authenticate){
   await result(db.from('raven_friends').insert({user_id:user.id,friend_id:profile.id,status:'pending'}));
   res.json({success:true,status:'pending'});
  }));
- app.get('/trips/:id/flight-status',run(async(req,res)=>{
+ app.get('/trips/:id/flight-status',run(async(req,res,user,scope)=>{
   const flight=flightNumber(req.query.flight);
   if(!validFlight(flight))deny(400,'Enter a flight number like AA100.');
+  if(!flightTracking(scope.trip).enabled)return res.json({success:true,available:false,tracking_enabled:false,flight,status:'completed',label:'Tracking off · trip completed',detail:'Flight tracking is off for completed trips. No flight-provider requests are made.'});
   res.json({success:true,...await lookupFlight(flight)});
  }));
  app.get('/trips/:id/travel',run(async(req,res,user,scope)=>{
@@ -94,7 +96,7 @@ module.exports=function registerTravel(app,db,authenticate){
    const signed=await result(db.storage.from(BUCKET).createSignedUrl(row.object_path,900));
    const meta=row.kind==='flight'?flightTitleMeta(row.title):{title:row.title,flight:''};
    return {id:row.id,kind:row.kind,person_id:row.person_id,title:meta.title,flight_number:meta.flight,created_at:row.created_at,url:signed.signedUrl,can_remove:scope.owner||row.uploader_id===user.id};
-  }));res.json({success:true,members,media,can_assign:scope.owner,hasMore:rows.length>50,nextOffset:offset+50});
+  }));res.json({success:true,members,media,flight_tracking:flightTracking(scope.trip),can_assign:scope.owner,hasMore:rows.length>50,nextOffset:offset+50});
  }));
  app.post('/trips/:id/travel',run(async(req,res,user,scope)=>{
   const kind=req.body.kind;let title=String(req.body.title||'').trim(),flight='';if(!['stay','flight','vehicle','activity'].includes(kind))deny(400,'Choose Airbnb / stay, Flight, Vehicle or Itinerary / Activities.');

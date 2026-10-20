@@ -6,6 +6,8 @@
  .trip-album-tile img{display:block;width:100%;height:100%;object-fit:cover}
  .trip-album-tile span{display:block;font:600 12px inherit;padding:6px;overflow-wrap:anywhere}
  .trip-album-tile .trip-album-play{font-size:30px}
+ .trip-album-tile.has-preview .trip-album-play{position:absolute;inset:0;display:grid;place-items:center;text-shadow:0 2px 10px #000;background:#0002}
+ .trip-album-tile.has-preview .trip-album-caption{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,#000b);color:#fff;padding:18px 6px 6px;font-size:11px}
  .trip-album-upload{display:grid;gap:10px;margin:12px 0}.trip-album-upload[hidden]{display:none}
  .trip-album-upload input[hidden]{display:none!important}
  .trip-album-pending progress[hidden],.trip-album-upload button[hidden]{display:none}
@@ -35,6 +37,7 @@
  .trip-album-viewer header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
  .trip-album-viewer button{padding:10px 12px;border:1px solid #ffffff22;background:transparent;color:#ddc2f3;border-radius:9px;font:inherit;cursor:pointer}
  .trip-album-viewer .trip-album-delete{color:#e2a6b6}
+ .trip-album-viewer .trip-album-save{background:#30d158;color:#07120a;border:0;font-weight:700;margin:12px 10px 0 0}
  `;document.head.append(css);
  window.RavenTripAlbum={mount(container,{tripId,api,standalone=false}){
   const path='/trips/'+encodeURIComponent(tripId)+'/album';let disposed=false,busy=false,uploading=false,uploadController=null,offset=0,items=[],pending=[],viewSequence=0;
@@ -57,7 +60,8 @@
   for(const button of [more,refresh]){button.type='button';button.className='travel-text-button';button.style.marginRight='16px'}more.hidden=true;
   section.append(head,note,form,status,grid,more,refresh);container.append(section);
   const viewer=make('dialog');viewer.className='trip-album-viewer';viewer.setAttribute('aria-label','Trip album preview');document.body.append(viewer);
-  const clearViewer=()=>{for(const video of viewer.querySelectorAll('video')){video.pause();video.removeAttribute('src');video.load()}viewer.replaceChildren()};
+  let saveController=null,saveUrl=null;
+  const clearViewer=()=>{saveController?.abort();saveController=null;if(saveUrl)URL.revokeObjectURL(saveUrl);saveUrl=null;for(const video of viewer.querySelectorAll('video')){video.pause();video.removeAttribute('src');video.load()}viewer.replaceChildren()};
   viewer.addEventListener('close',()=>{viewSequence++;clearViewer()});
   function valid(){return !disposed&&section.isConnected}
   function error(message){if(valid()){status.dataset.tone='error';status.textContent=message||'Could not update the album. Please retry.'}}
@@ -72,6 +76,28 @@
     if(row.kind==='video'){media.controls=true;media.playsInline=true;media.preload='metadata'}else media.alt=row.caption||'Trip photo';
     media.src=row.url;media.onerror=()=>{message.textContent='This file could not be displayed. Close and reopen to retry. Some video formats may not play on this device.'};
     message.textContent=[row.caption,'Added '+new Date(row.created_at).toLocaleString()].filter(Boolean).join(' · ');viewer.append(media);
+    if(row.kind==='video'){
+     const save=make('button','Save video'),saveNote=make('p');save.type='button';save.className='trip-album-save';saveNote.setAttribute('role','status');let readyFile=null;
+     save.onclick=async()=>{
+      if(readyFile){
+       try{
+        if(navigator.canShare?.({files:[readyFile]})&&navigator.share){await navigator.share({files:[readyFile],title:'Trip video'});saveNote.textContent='Choose Save Video or Save to Files in your device’s share sheet.'}
+        else{if(!saveUrl)saveUrl=URL.createObjectURL(readyFile);const link=make('a');link.href=saveUrl;link.download=readyFile.name;document.body.append(link);link.click();link.remove();saveNote.textContent='Download requested. Check your device’s downloads.'}
+       }catch(e){saveNote.textContent=e.name==='AbortError'?'Save canceled. Tap Save video to try again.':'Could not open the save menu. Please try again.'}return;
+      }
+      save.disabled=true;save.textContent='Preparing video…';saveNote.textContent='Preparing the original file. Keep this preview open.';const controller=saveController=new AbortController();const timer=setTimeout(()=>controller.abort(),120000);
+      try{
+       const fresh=await api(path+'/'+row.id);if(!valid()||sequence!==viewSequence||!viewer.open)return;
+       const response=await fetch(fresh.media.url,{signal:controller.signal});if(!response.ok)throw Error('Could not download this video. Please retry.');
+       const blob=await response.blob();if(!blob.size||blob.size>52428800)throw Error('This video could not be prepared for saving.');
+       if(!valid()||sequence!==viewSequence||!viewer.open)return;
+       const mime=fresh.media.mime_type||blob.type,ext=mime==='video/quicktime'?'mov':mime==='video/webm'?'webm':'mp4';
+       readyFile=new File([blob],'RAVEN-trip-'+String(row.id).replace(/[^a-z0-9-]/gi,'').slice(0,40)+'.'+ext,{type:mime});
+       saveNote.textContent='Ready. Tap Save video to choose where to save it.';
+      }catch(e){if(valid()&&sequence===viewSequence&&viewer.open)saveNote.textContent=e.name==='AbortError'?'Download stopped. Tap Save video to retry.':e.message}
+      finally{clearTimeout(timer);if(sequence===viewSequence&&viewer.open){save.disabled=false;save.textContent='Save video'}}
+     };viewer.append(save,saveNote);
+    }
     if(row.can_remove){const remove=make('button','Remove from album');remove.type='button';remove.className='trip-album-delete';
      remove.onclick=async()=>{if(!confirm('Remove this photo or video from the trip album?'))return;remove.disabled=true;
       try{await api(path+'/'+row.id,'DELETE');if(valid()){viewer.close();await load(false)}}catch(e){message.textContent=e.message;remove.disabled=false}
@@ -79,11 +105,29 @@
     }
    }catch(e){if(valid()&&sequence===viewSequence)message.textContent=e.message||'Could not open this memory. Close and try again.'}
   }
+  // Only visible album tiles request a frame, two at a time. Never autoplay or
+  // load the gallery while opening a trip. Release video decoders after capture.
+  let thumbObserver=null,thumbEpoch=0,thumbQueue=[],thumbActive=0,thumbStops=[],thumbUrls=[];
+  function clearThumbs(){thumbEpoch++;thumbObserver?.disconnect();for(const stop of thumbStops)stop();thumbStops=[];thumbQueue=[];thumbActive=0;for(const url of thumbUrls)URL.revokeObjectURL(url);thumbUrls=[]}
+  function pumpThumbs(){
+   while(valid()&&thumbActive<2&&thumbQueue.length){
+    const {tile,item}=thumbQueue.shift(),epoch=thumbEpoch;thumbActive++;const video=make('video');let finished=false,capturing=false;
+    const finish=()=>{if(finished)return;finished=true;clearTimeout(timer);video.pause();video.removeAttribute('src');video.load();if(epoch===thumbEpoch){thumbActive--;pumpThumbs()}};
+    const timer=setTimeout(finish,10000);thumbStops.push(finish);
+    video.muted=true;video.playsInline=true;video.preload='metadata';video.crossOrigin='anonymous';
+    const capture=()=>{if(finished||capturing||video.readyState<2)return;capturing=true;try{const canvas=make('canvas');canvas.width=240;canvas.height=Math.max(1,Math.min(480,Math.round(240*video.videoHeight/video.videoWidth)));canvas.getContext('2d').drawImage(video,0,0,canvas.width,canvas.height);canvas.toBlob(blob=>{if(!finished&&blob&&valid()&&epoch===thumbEpoch&&tile.isConnected){const img=make('img');img.alt=item.caption||'Video preview';img.src=URL.createObjectURL(blob);thumbUrls.push(img.src);tile.prepend(img);tile.classList.add('has-preview')}finish()},'image/jpeg',0.75)}catch{finish()}};
+    video.onloadedmetadata=()=>{try{video.currentTime=Math.min(0.1,Number.isFinite(video.duration)?video.duration/2:0.1)}catch{capture()}};video.onseeked=capture;video.onloadeddata=()=>{if(!video.seeking)capture()};video.onerror=finish;video.src=item.url+'#t=0.1';video.load();
+   }
+  }
   function render(){
+   clearThumbs();
+   if(typeof IntersectionObserver==='function')thumbObserver=new IntersectionObserver(entries=>{for(const entry of entries)if(entry.isIntersecting){thumbObserver.unobserve(entry.target);thumbQueue.push({tile:entry.target,item:entry.target.albumItem})}pumpThumbs()},{root:container.closest('dialog'),rootMargin:'60px'});
    grid.replaceChildren();for(const item of items){const tile=make('button');tile.type='button';tile.className='trip-album-tile';tile.setAttribute('aria-label','View '+(item.caption||(item.kind==='video'?'trip video':'trip photo')));tile.onclick=()=>show(item);
     if(item.kind==='photo'){const img=make('img');img.src=item.url;img.alt=item.caption||'Trip photo';img.loading='lazy';img.onerror=()=>{img.remove();tile.append(make('span','Photo · tap to view'))};tile.append(img)}
-    else{const play=make('span','▷');play.className='trip-album-play';tile.append(play,make('span',item.caption||'Video'))}grid.append(tile);
+    else{const play=make('span','▷'),caption=make('span',item.caption||'Video');play.className='trip-album-play';caption.className='trip-album-caption';tile.append(play,caption);tile.albumItem=item}grid.append(tile);
+    if(item.kind==='video'){if(thumbObserver)thumbObserver.observe(tile);else thumbQueue.push({tile,item})}
    }
+   if(!thumbObserver)pumpThumbs();
   }
   async function load(append=false){
    if(busy||!valid())return;busy=true;more.disabled=refresh.disabled=true;
@@ -160,6 +204,6 @@
    finally{uploading=false;uploadController=null;if(valid())renderPending()}
   };
   more.onclick=()=>load(true);refresh.onclick=()=>load(false);void load(false);
-  return {isUploading(){return uploading},destroy(){disposed=true;uploadController?.abort();viewSequence++;viewer.close();clearViewer();viewer.remove();for(const entry of pending)release(entry);section.remove();pending=[]}};
+  return {isUploading(){return uploading},destroy(){disposed=true;clearThumbs();uploadController?.abort();viewSequence++;viewer.close();clearViewer();viewer.remove();for(const entry of pending)release(entry);section.remove();pending=[]}};
  }};
 })();
