@@ -4419,6 +4419,21 @@ app.get('/trip/:tripId', async (req, res) => {
   const settledCredits = aggregateSettledCredits(trip.settled_people, validReceiptIds);
   const tripUsesSimpleSplit = RavenSweep.active(trip);
   const simpleSettlementPlan = tripUsesSimpleSplit ? RavenSweep.build(trip,receipts||[]) : null;
+  const hasEarlierSettlements = Object.keys(RavenSweep.parse(trip.settled_people, {}) || {}).length > 0;
+  const beforeEarlierSettlements = tripUsesSimpleSplit && hasEarlierSettlements
+    ? RavenSweep.build({ ...trip, settled_people: {}, sweep_payments: [] }, receipts || [])
+    : null;
+  // Read the validated ledger once. These display totals never change balances
+  // or infer transfers from a settled status; undone payments do not count.
+  const recordedPaymentTotals = new Map(people.map(p => [RavenSweep.key(p), { sent: 0, received: 0 }]));
+  if (tripUsesSimpleSplit) {
+    for (const payment of RavenSweep.ledger(trip)) {
+      if (payment.reversed_at) continue;
+      const amount = RavenSweep.cents(payment.amount);
+      recordedPaymentTotals.get(RavenSweep.key(payment.from)).sent += amount;
+      recordedPaymentTotals.get(RavenSweep.key(payment.to)).received += amount;
+    }
+  }
 
   // grandTotal = outstanding (after settled credits, capped so 999999 sentinel never over-reduces)
   const grandTotal = tripUsesSimpleSplit ? simpleSettlementPlan.outstanding : Math.round(Object.entries(totals).reduce((s, [person, raw]) => {
@@ -4725,9 +4740,21 @@ app.get('/trip/:tripId', async (req, res) => {
     const assignedTotal = Math.round((assignedTotals[p] || 0) * 100) / 100;
     const frontedTotal = Math.round((frontedTotals[p] || 0) * 100) / 100;
     const spendMetaParts = [];
-    if (assignedTotal > 0.005) spendMetaParts.push('Share $' + assignedTotal.toFixed(2));
-    if (frontedTotal > 0.005) spendMetaParts.push('Paid $' + frontedTotal.toFixed(2));
-    const spendMeta = spendMetaParts.join(' · ');
+    if (assignedTotal > 0.005) spendMetaParts.push({ label: 'Share', amount: assignedTotal, title: 'Personal share of receipts' });
+    if (frontedTotal > 0.005) spendMetaParts.push({ label: 'Paid', amount: frontedTotal, title: 'Paid toward receipts, before reimbursements' });
+    const paymentMetaParts = [];
+    if (tripUsesSimpleSplit) {
+      const recorded = recordedPaymentTotals.get(RavenSweep.key(p));
+      if (recorded.sent > 0) paymentMetaParts.push({ label: 'Sent', amount: recorded.sent / 100, title: 'Recorded repayments sent to trip members' });
+      if (recorded.received > 0) paymentMetaParts.push({ label: 'Received', amount: recorded.received / 100, title: 'Recorded repayments received from trip members' });
+      // Older settlement credits are separate adjustments, not invented Sweep
+      // transfers. Keep them visible when needed to explain the remaining net.
+      const earlierAdjustment = beforeEarlierSettlements
+        ? RavenSweep.cents(simpleSettlementPlan.originalNetByPerson[p]) - RavenSweep.cents(beforeEarlierSettlements.netByPerson[p])
+        : 0;
+      if (earlierAdjustment !== 0) paymentMetaParts.push({ label: 'Earlier adjustment', amount: earlierAdjustment / 100, signed: true, title: 'Earlier settlement adjustment to the balance, before recorded Sweep payments' });
+    }
+    const renderBalanceMeta = (parts, label) => parts.length ? `<div role="group" aria-label="${label}" style="display:flex;flex-wrap:wrap;justify-content:flex-end;gap:3px 10px;margin-top:3px;font-size:11px;line-height:1.5;color:#9896A8">${parts.map(part => `<span data-balance-meta="${part.label.toLowerCase().replace(/ /g, '-')}" title="${part.title}" style="white-space:nowrap">${part.label} ${part.signed ? (part.amount < 0 ? '−' : '+') : ''}$${Math.abs(part.amount).toFixed(2)}</span>`).join('')}</div>` : '';
 
     const personId = 'person-' + p.replace(/[^a-z0-9]/gi,'_');
 
@@ -4755,25 +4782,26 @@ app.get('/trip/:tripId', async (req, res) => {
 
     // data-is-settled used for accurate settled count
     return `<div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.05)" id="row-${personId}" data-trip-member-row="1" data-trip-person="${esc(p)}" data-trip-member-display="${esc(displayName)}" data-is-settled="${effectiveIsSettled?'1':'0'}" data-is-debtor="${effectiveAmtOwed>0.02?'1':'0'}">
-      <div style="display:flex;align-items:center;justify-content:space-between;${(payerEntries.length>0&&!isSettled)?'margin-bottom:4px':''}">
-        <div style="display:flex;align-items:center;gap:10px;cursor:pointer" data-open-profile="${esc(p)}" title="View ${esc(displayName)}'s profile">
-          <div data-person-avatar="${esc(p)}" style="width:34px;height:34px;border-radius:50%;background:${avatarColors[i%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;overflow:hidden">${profile?.avatar_url ? `<img src="${esc(profile.avatar_url)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : esc(displayName[0].toUpperCase())}</div>
-          <div>
-            <div data-trip-member-name="1" style="font-weight:600;font-size:14px;display:flex;align-items:center;gap:6px">${esc(displayName)} <span data-trip-member-you="1" style="display:none;font-size:11px;color:#30D158;font-weight:700">(you)</span><span style="font-size:11px;color:#6E6B80;font-weight:400">&gt;</span></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;${(payerEntries.length>0&&!isSettled)?'margin-bottom:4px':''}">
+        <div style="display:flex;align-items:center;gap:10px;cursor:pointer;min-width:0;flex:1" data-open-profile="${esc(p)}" title="View ${esc(displayName)}'s profile">
+          <div data-person-avatar="${esc(p)}" style="width:34px;height:34px;flex-shrink:0;border-radius:50%;background:${avatarColors[i%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;overflow:hidden">${profile?.avatar_url ? `<img src="${esc(profile.avatar_url)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : esc(displayName[0].toUpperCase())}</div>
+          <div style="min-width:0">
+            <div data-trip-member-name="1" style="font-weight:600;font-size:14px;display:flex;flex-wrap:wrap;align-items:center;gap:6px;overflow-wrap:anywhere">${esc(displayName)} <span data-trip-member-you="1" style="display:none;font-size:11px;color:#30D158;font-weight:700">(you)</span><span style="font-size:11px;color:#6E6B80;font-weight:400">&gt;</span></div>
             <div class="person-status-display" style="font-size:11px;color:${effectiveIsSettled?'#30D158':effectiveAmtOwed>0?'#FF9A3C':effectiveIsCreditor?'#A855F7':'#30D158'}">
               ${tripUsesSimpleSplit ? sweepStatus : effectiveIsSettled ? 'all settled' : effectiveAmtOwed>0 ? (effectiveIsPartiallySettled ? 'still owes $' + effectiveAmtOwed.toFixed(2) : 'owes $' + effectiveAmtOwed.toFixed(2)) : effectiveIsCreditor ? 'collecting $' + amtReceivable.toFixed(2) : 'all settled'}
             </div>
           </div>
         </div>
-        <div style="text-align:right">
+        <div style="text-align:right;flex-shrink:0">
           ${tripUsesSimpleSplit?'<button type="button" class="sweep-balance-open" data-name="'+esc(p)+'" onclick="openSweepBalance(this.dataset.name,this)" aria-label="View balance breakdown for '+esc(displayName)+'" style="display:inline-flex;align-items:center;justify-content:flex-end;gap:6px;min-height:44px;padding:0;border:0;background:none;color:inherit;cursor:pointer;border-radius:6px">':''}
           <span class="person-balance-display" data-original-owed="${rawOwed.toFixed(2)}" data-raw-owed="${effectiveAmtOwed.toFixed(2)}" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:${effectiveIsSettled?'#30D158':tripUsesSimpleSplit&&sweepNet>0?'#A855F7':effectiveAmtOwed>0?'#FF9A3C':effectiveIsCreditor?'#A855F7':'#9896A8'}">
             ${tripUsesSimpleSplit ? '$'+Math.abs(sweepNet).toFixed(2) : effectiveIsSettled ? '$0.00' : effectiveAmtOwed>0 ? '-$'+effectiveAmtOwed.toFixed(2) : effectiveIsCreditor ? '+$'+amtReceivable.toFixed(2) : '$0.00'}
           </span>
           ${tripUsesSimpleSplit?'<svg aria-hidden="true" width="10" height="14" viewBox="0 0 10 14" fill="none" style="color:#777283;flex-shrink:0"><path d="M3 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>':''}
-          ${spendMeta ? `<div style="margin-top:3px;font-size:10px;color:#6E6B80">${spendMeta}</div>` : ''}
         </div>
       </div>
+      ${renderBalanceMeta(spendMetaParts, 'Receipt spending')}
+      ${renderBalanceMeta(paymentMetaParts, 'Recorded settlements')}
       ${effectiveIsSettled
         ? `<div style="margin-top:6px;display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(48,209,88,0.07);border:1px solid rgba(48,209,88,0.2);border-radius:8px"><span style="font-size:13px;color:#30D158;font-weight:600">Fully Settled</span></div>`
         : payerEntries.length>0

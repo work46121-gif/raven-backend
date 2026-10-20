@@ -52,10 +52,13 @@ const receipts=[{id:1,name:'Airbnb',total:1500,paid_by:'Andrew',splits:{Andrew:3
   allow=true;fail=true;await button.click();await page.waitForFunction(()=>document.querySelector('#row-person-Mel .sweep-record-payment').disabled===false);assert.equal(writes.length,1);assert.equal(trip.sweep_payments.length,0);
   fail=false;await button.click();await page.waitForFunction(()=>document.getElementById('row-person-Mel').dataset.isSettled==='1');
   assert.equal(trip.sweep_payments.length,1);assert.equal(trip.sweep_payments[0].amount,500);assert.equal(trip.sweep_payments[0].to,'Arsalan');
+  assert.equal(await page.locator('#row-person-Mel [data-balance-meta="sent"]').innerText(),'Sent $500.00');
+  assert.equal(await page.locator('#row-person-Arsalan [data-balance-meta="received"]').innerText(),'Received $500.00');
   await page.locator('#row-person-Mel .sweep-balance-open').click();await page.getByText('Settled · Mel',{exact:true}).waitFor();await page.getByRole('button',{name:'Close balance breakdown',exact:true}).click();
   assert.match(await page.locator('#row-person-Andrew .person-status-display').innerText(),/Gets back/);
   await page.getByText('Recorded Sweep payments',{exact:true}).click();await page.getByRole('button',{name:'Undo record',exact:true}).click();
   await page.waitForFunction(()=>document.getElementById('row-person-Mel').dataset.isSettled==='0');assert.ok(trip.sweep_payments[0].reversed_at);
+  assert.equal(await page.locator('[data-balance-meta="sent"],[data-balance-meta="received"]').count(),0,'undo removes sent and received totals after reload');
   assert.match(await page.locator('#row-person-Andrew .person-balance-display').innerText(),/\$1000.00/);
   trip={...trip,sweep_payments:[]};
   Object.assign(receipts[0],{total:1300.07,splits:{Arsalan:260.01,Mel:260.01,Will:260.01,Nicholas:260.01}});
