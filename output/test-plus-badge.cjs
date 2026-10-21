@@ -110,7 +110,7 @@ async function renderBill(live,guest=false) {
   html=live;await page.goto('https://badge.test/bill/TEST?t=token&app=1');
   await page.waitForFunction(()=>document.querySelectorAll('#owes-list [data-raven-plus-badge]').length===2);
   // Exercise the actual dashboard participant-name fragment and mount behavior.
-  const identityLine=dashboard.split(/\r?\n/).find(l=>l.includes('? \'<span class="raven-plus-identity"'));
+  const identityLine=dashboard.split(/\r?\n/).find(l=>l.includes('? \'<span class="raven-plus-identity bill-preview-identity"'));
   assert.ok(identityLine);
   const expression=identityLine.trim().slice(2);
   const identity=vm.runInNewContext(expression,{index:0,participantAvatar:'<span>A</span>',participantProfile:profiles[1],paymentMethod:'',escapeHtml:s=>s,window:{RavenPlusBadge:badge}});

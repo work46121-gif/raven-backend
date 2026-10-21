@@ -44,10 +44,10 @@
     if (isCreator(profile)) element.insertAdjacentHTML('beforeend', '<span class="raven-creator-badge" data-raven-creator="1" aria-label="RAVEN Creator">CREATOR</span>');
   }
   const css = `
-.raven-plus-badge.raven-plus-badge{display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;flex:0 0 28px;width:28px;min-width:28px;height:28px;min-height:28px;padding:3px;margin:0 0 0 3px;border:0;border-radius:7px;background:transparent;color:#C084FC;box-shadow:none;cursor:pointer;line-height:1;touch-action:manipulation;box-sizing:border-box}
-.raven-plus-badge.raven-plus-badge img{display:block;width:22px;height:22px;max-width:none;object-fit:contain;pointer-events:none}
-.raven-plus-badge.raven-plus-badge-profile{width:36px;height:36px;flex-basis:36px}
-.raven-plus-badge.raven-plus-badge-profile img{width:28px;height:28px}
+.raven-plus-badge.raven-plus-badge{display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;flex:0 0 24px;width:24px;min-width:24px;height:24px;min-height:24px;padding:3px;margin:0 0 0 1px;border:0;border-radius:6px;background:transparent;color:#C084FC;box-shadow:none;cursor:pointer;line-height:1;touch-action:manipulation;box-sizing:border-box}
+.raven-plus-badge.raven-plus-badge img{display:block;width:18px;height:18px;max-width:none;object-fit:contain;pointer-events:none}
+.raven-plus-badge.raven-plus-badge-profile{width:28px;height:28px;flex-basis:28px}
+.raven-plus-badge.raven-plus-badge-profile img{width:20px;height:20px}
 .raven-plus-badge.raven-plus-badge:hover{background:rgba(192,132,252,.1)}
 .raven-plus-badge.raven-plus-badge:focus-visible{outline:2px solid #C084FC;outline-offset:2px}
 .raven-plus-identity{display:inline-flex;align-items:center;min-width:0;max-width:100%;gap:2px}
@@ -58,7 +58,6 @@
 #raven-plus-info img{display:block;width:26px;height:26px}
 #raven-plus-info button{flex:0 0 32px;width:32px;min-height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:#ddd0ea;font:22px/1 sans-serif;cursor:pointer}
 #raven-plus-info button:focus-visible{outline:2px solid #C084FC}
-@media(pointer:coarse){.raven-plus-badge.raven-plus-badge{min-width:32px;min-height:32px}}
 `;
   let installed = false, popup = null, active = null;
   function install() {

@@ -32,6 +32,9 @@ async function sqlTests(){
   await assert.rejects(save());await pg.exec('reset role');
  }
  await pg.exec('set role service_role');await save();await pg.exec('reset role');
+ await save([{participant_id:1,guest_identity:row.guest_identity}]);
+ assert.deepEqual((await pg.query('select venmo,cashapp,applepay from bill_guest_payment_methods')).rows,[{venmo:'',cashapp:'',applepay:''}],'clearing the editor removes all saved contact values');
+ await save();
  await pg.exec(`update participants set phone='linked@example.invalid' where id=1`);await assert.rejects(save());
  await pg.exec(`update participants set phone='unknown_guest_B' where id=1;update bills set status='deleted' where id='B'`);await assert.rejects(save());
  await pg.exec(`update bills set status='active' where id='B';delete from auth.users where id='${owner.id}'`);
@@ -42,9 +45,9 @@ async function sqlTests(){
 async function apiTests(){
  const routes={},calls=[];let actor=owner;
  const data={bills:[{id:'B',share_token:'secret',creator_phone:owner.email,paid_by:'Guest',status:'active'}],participants:[{id:1,bill_id:'B',name:'Guest',phone:'unknown_guest_B'},{id:2,bill_id:'B',name:'Member',phone:'linked@example.invalid'}],bill_guest_payment_methods:[{participant_id:1,bill_id:'B',guest_identity:'unknown_guest_B',venmo:'guest_demo',cashapp:'',applepay:''}]};
- const db={from(table){let single=false;const filters=[];const q={select(){return q},eq(k,v){filters.push(r=>r[k]===v);return q},maybeSingle(){single=true;return q},then(fn,fail){const rows=(data[table]||[]).filter(r=>filters.every(f=>f(r)));return Promise.resolve({data:single?rows[0]||null:rows,error:null}).then(fn,fail)}};return q},async rpc(name,args){calls.push({name,args});return{data:true,error:null}}};
- S.register({post:(p,f)=>routes.POST=f,get:(p,f)=>routes.GET=f},db,async()=>actor);
- async function run(method,body={},token='secret'){let code=200,output;const res={set(){},status(n){code=n;return this},json(value){output=value;return this}};await routes[method]({params:{billId:'B'},headers:{'x-raven-bill-token':token},body},res);return{code,output}}
+ const db={from(table){let single=false;const filters=[];const q={select(){return q},eq(k,v){filters.push(r=>String(r[k])===String(v));return q},maybeSingle(){single=true;return q},then(fn,fail){const rows=(data[table]||[]).filter(r=>filters.every(f=>f(r)));return Promise.resolve({data:single?rows[0]||null:rows,error:null}).then(fn,fail)}};return q},async rpc(name,args){calls.push({name,args});return{data:true,error:null}}};
+ S.register({post:(p,f)=>routes.POST=f,get:(p,f)=>routes[p.endsWith('/:participantId')?'GETEDIT':'GET']=f},db,async()=>actor);
+ async function run(method,body={},token='secret',participantId='1'){let code=200,output;const res={set(){},status(n){code=n;return this},json(value){output=value;return this}};await routes[method]({params:{billId:'B',participantId},headers:{'x-raven-bill-token':token},body},res);return{code,output}}
  const entries=[{name:'Guest',methods:{venmo:'@guest_demo',cashapp:'$GuestDemo',applepay:'+1 (555) 123-4567'}}];
  assert.equal((await run('POST',{entries})).code,200);assert.equal(calls[0].args.p_entries[0].applepay,'+15551234567');
  const allowed=calls.length;
@@ -57,8 +60,21 @@ async function apiTests(){
  assert.equal((await run('POST',{entries:[{name:'Guest',methods:{venmo:'https://evil.invalid'}}]})).code,400);
  assert.equal((await run('POST',{entries:[...entries,...entries]})).code,400);
  assert.equal(calls.length,allowed,'unauthorized or invalid requests never write');
+ assert.equal((await run('GETEDIT')).output.methods.venmo,'guest_demo');
+ assert.equal((await run('GETEDIT',{},'bad')).code,403);
+ assert.equal((await run('GETEDIT',{},'secret','2')).code,409,'registered contacts never editable');
+ data.participants.push({id:3,bill_id:'OTHER',name:'Guest',phone:'unknown_other'});
+ assert.equal((await run('GETEDIT',{},'secret','3')).code,404,'participant must belong to bill');
+ actor=null;assert.equal((await run('GETEDIT')).code,401,'payment link alone cannot read editor');
+ actor={id:'member',email:'linked@example.invalid'};assert.equal((await run('GETEDIT')).code,403,'participant cannot edit');actor=owner;
+ assert.equal((await run('POST',{entries:[{...entries[0],participant_id:99,guest_identity:'unknown_guest_B'}]})).code,409);
+ assert.equal((await run('POST',{entries:[{...entries[0],participant_id:1,guest_identity:'unknown_old'}]})).code,409);
+ assert.equal(calls.length,allowed,'stale editor cannot write to replacement participant');
+ assert.equal((await run('POST',{entries:[{name:'Guest',participant_id:1,guest_identity:'unknown_guest_B',methods:{}}]})).code,200,'editor may clear all methods');
+ assert.deepEqual(calls.at(-1).args.p_entries,[{participant_id:1,guest_identity:'unknown_guest_B'}]);
  data.participants[0].phone='linked@example.invalid';assert.equal(await S.payer(db,data.bills[0]),null,'manual details never attach to an assigned account');
  data.participants[0].phone='unknown_different';assert.equal(await S.payer(db,data.bills[0]),null,'stale guest identity suppressed');
+ assert.deepEqual((await run('GETEDIT')).output.methods,{},'stale details never leak into a new guest editor');
  data.bills[0].status='deleted';assert.equal((await run('GET')).code,404);
 }
 (async()=>{

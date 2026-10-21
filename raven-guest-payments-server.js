@@ -17,6 +17,27 @@ async function payer(db,bill){
   return Object.keys(methods).length?{...methods,first_name:person.name,guest_payment_details:true}:null;
 }
 function register(app,db,authenticate){
+  // Editing contacts is creator-only, even when someone has a shared payment link.
+  app.get('/bill/:billId/guest-payment-methods/:participantId',async(req,res)=>{
+    res.set('Cache-Control','private, no-store');
+    try{
+      const user=await authenticate(req);
+      if(!user?.id||!user.email)return res.status(401).json({success:false,error:'Sign in to edit guest payment details.'});
+      const {data:bill,error}=await db.from('bills').select('id,creator_phone,status,share_token').eq('id',req.params.billId).maybeSingle();
+      if(error)throw error;
+      if(!bill||bill.status==='deleted')return res.status(404).json({success:false,error:'Bill not found.'});
+      if(String(bill.creator_phone||'').toLowerCase()!==user.email.toLowerCase())return res.status(403).json({success:false,error:'Only the bill creator can edit guest payment details.'});
+      if(!bill.share_token||req.headers['x-raven-bill-token']!==bill.share_token)return res.status(403).json({success:false,error:'Reopen this bill before editing payment details.'});
+      const {data:person,error:personError}=await db.from('participants').select('id,name,phone').eq('bill_id',bill.id).eq('id',req.params.participantId).maybeSingle();
+      if(personError)throw personError;
+      if(!person)return res.status(404).json({success:false,error:'Guest not found on this bill.'});
+      if(!G.isGuest(person))return res.status(409).json({success:false,error:'Registered accounts manage their own payment details.'});
+      const saved=await db.from(TABLE).select('venmo,cashapp,applepay,guest_identity').eq('bill_id',bill.id).eq('participant_id',person.id).maybeSingle();
+      if(saved.error)throw saved.error;
+      const methods=saved.data?.guest_identity===person.phone?G.normalize({venmo:saved.data.venmo,cashapp:saved.data.cashapp,applepay:saved.data.applepay}):{};
+      return res.json({success:true,participant:{id:person.id,name:person.name,guest_identity:person.phone},methods});
+    }catch{res.status(503).json({success:false,error:'Could not load guest payment details. Try again.'})}
+  });
   app.post('/bill/:billId/guest-payment-methods',async(req,res)=>{
     res.set('Cache-Control','no-store');
     try{
@@ -37,6 +58,7 @@ function register(app,db,authenticate){
         const matches=(people||[]).filter(p=>String(p.name||'').trim().toLowerCase()===entry.name.trim().toLowerCase());
         if(matches.length!==1||!G.isGuest(matches[0]))return res.status(409).json({success:false,error:'Guest assignment changed. Registered accounts use their own payment methods.'});
         const person=matches[0];
+        if((entry.participant_id!=null&&String(entry.participant_id)!==String(person.id))||(entry.guest_identity!=null&&entry.guest_identity!==person.phone))return res.status(409).json({success:false,error:'Guest assignment changed. Close and reopen payment details.'});
         if(seen.has(person.id))return res.status(400).json({success:false,error:'Duplicate guest.'});
         seen.add(person.id);
         let methods;try{methods=G.normalize(entry.methods)}catch(e){return res.status(400).json({success:false,error:e.message})}
