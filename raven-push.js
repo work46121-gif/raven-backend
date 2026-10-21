@@ -17,6 +17,7 @@ const TEXT = {
 };
 
 function alertText(event) {
+ if(event.kind==='trip_album')return 'New photos added in a trip';
  // Names only, never message/comment bodies or amounts on the lock screen.
  const clean = (value, max) => String(value || '').replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, '').trim().slice(0, max);
  const first = clean(event.actor_name, 60) || 'Someone';
@@ -349,6 +350,14 @@ module.exports = function registerPush(app, db, authenticate, env = process.env,
    if (error) throw error;
    for (const event of events || []) {
     let retry = false;
+    if(event.kind==='trip_album'){
+     stage='album-membership';
+     if(!await require('./raven-album-notifications').eligible(db,event)){
+      const saved=await db.from('raven_push_events').update({done:true}).eq('id',event.id).eq('lease',event.lease);
+      if(saved.error)throw saved.error;
+      continue;
+     }
+    }
     if(event.kind==='trip_payment'||String(event.event_key||'').startsWith('bill_payment:')){
      stage='payment-preference';
      const {data:profile,error}=await db.from('profiles').select('*').eq('id',event.user_id).maybeSingle();

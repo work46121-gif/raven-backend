@@ -26,11 +26,11 @@ assert.throws(()=>album.mediaBytes('data:image/png;base64,'+photo(6291457).toStr
 assert.throws(()=>album.binaryMedia(Buffer.from('<html>not a movie</html>'),'video/quicktime'),/format/);
 const heic=movie();heic.write('heic',16);assert.throws(()=>album.binaryMedia(heic,'video/quicktime'),/format/);
 const wide=Buffer.alloc(8);wide.writeUInt32BE(8);wide.write('wide',4);assert.equal(album.binaryMedia(Buffer.concat([wide,movie()]),'video/quicktime').kind,'video');
-let rows=[],uploads=0,storageFailure=false,hold=false,releases=[];
+let rows=[],uploads=0,storageFailure=false,hold=false,releases=[],oldSchema=false;
 const trip={id:'T',creator_email:'owner@example.invalid',member_emails:['member@example.invalid']};
 const db={from(table){let filters=[],operation='read',value;const q={select(){return q},eq(k,v){filters.push(row=>row[k]===v);return q},maybeSingle(){return q},insert(row){operation='insert';value=row;return q},then(resolve){
  if(table==='trips')return resolve({data:filters.every(f=>f(trip))?trip:null});
- if(operation==='insert'){rows.push(value);return resolve({data:null})}
+ if(operation==='insert'){if(oldSchema&&value.upload_batch_id)return resolve({error:{code:'PGRST204',message:'Could not find upload_batch_id'}});rows.push(value);return resolve({data:null})}
  resolve({data:rows.find(row=>filters.every(f=>f(row)))||null});
  }};return q},storage:{from(){return {
   upload:async()=>{uploads++;if(hold)await new Promise(resolve=>releases.push(resolve));return storageFailure?{error:Error('Synthetic storage error')}:{data:{}}},
@@ -65,11 +65,12 @@ const db={from(table){let filters=[],operation='read',value;const q={select(){re
  const app=express();app.use(express.json({limit:'20mb'}));
  register(app,db,async req=>req.headers.authorization==='Bearer member'?{id:U,email:'member@example.invalid'}:req.headers.authorization==='Bearer outsider'?{id:U,email:'outsider@example.invalid'}:null);
  const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));const base='http://127.0.0.1:'+server.address().port;
- async function post({body=movie(),mime='video/quicktime',id=ID,auth='member',caption='Weekend 🌵',tripId='T'}={}){
-  const response=await fetch(base+'/trips/'+tripId+'/album/file',{method:'POST',headers:{Authorization:'Bearer '+auth,'Content-Type':mime,'X-Raven-Upload-Id':id,'X-Raven-Upload-Caption':encodeURIComponent(caption)},body});return {status:response.status,body:await response.json()};
+ async function post({body=movie(),mime='video/quicktime',id=ID,auth='member',caption='Weekend 🌵',tripId='T',batchId=ID}={}){
+  const response=await fetch(base+'/trips/'+tripId+'/album/file',{method:'POST',headers:{Authorization:'Bearer '+auth,'Content-Type':mime,'X-Raven-Upload-Id':id,'X-Raven-Upload-Batch':batchId,'X-Raven-Upload-Caption':encodeURIComponent(caption)},body});return {status:response.status,body:await response.json()};
  }
  try{
   assert.equal((await post({body:large})).status,201);assert.equal(rows[0].byte_size,large.length);assert.equal(rows[0].caption,'Weekend 🌵');assert.equal(rows[0].kind,'video');
+  assert.equal(rows[0].upload_batch_id,ID);assert.equal((await post({batchId:'invalid'})).status,400);
   assert.equal((await post()).status,201);assert.equal(uploads,1,'lost-response retry does not duplicate file');
   assert.equal((await post({auth:'none'})).status,401);assert.equal((await post({auth:'outsider'})).status,403);assert.equal((await post({tripId:'other'})).status,404);assert.equal(uploads,1,'outsiders cannot upload');
   assert.equal((await post({mime:'image/svg+xml'})).status,415);assert.equal((await post({id:'bad'})).status,400);assert.equal((await post({caption:'x'.repeat(161)})).status,400);
@@ -91,6 +92,8 @@ const db={from(table){let filters=[],operation='read',value;const q={select(){re
   const chunked=await fetch(base+'/trips/T/album/file',{method:'POST',headers:{Authorization:'Bearer member','Content-Type':'image/png','X-Raven-Upload-Id':photoId},body:require('node:stream').Readable.from([image,Buffer.from([0])]),duplex:'half'});
   assert.equal(chunked.status,413,'streamed body over limit is rejected without Content-Length');await chunked.text();assert.equal(uploads,savedUploads);
   assert.match(fs.readFileSync('Server.js','utf8'),/Access-Control-Allow-Headers[^\n]*X-Raven-Upload-Id, X-Raven-Upload-Caption/,'upload metadata allowed by CORS');
+  assert.match(fs.readFileSync('Server.js','utf8'),/Access-Control-Allow-Headers[^\n]*X-Raven-Upload-Batch/);
+  oldSchema=true;const legacyId='99999999-9999-4999-8999-999999999999';assert.equal((await post({id:legacyId})).status,201);assert.equal(rows.find(row=>row.id===legacyId).upload_batch_id,undefined,'rolling deployment preserves uploads before migration');oldSchema=false;
   console.log('PASS binary album: real local HTTP 50 MiB photo/video boundaries, JPEG/PNG/WebP validation without base64 copies, streamed oversize rejection, legacy/chat caps preserved, retry deduplication, auth/trip isolation, memory concurrency cap and private/idempotent photo migration preserving existing media.');
  }finally{hold=false;releases.splice(0).forEach(resolve=>resolve());server.closeAllConnections();await new Promise(resolve=>server.close(resolve))}
 })().catch(error=>{console.error(error);process.exitCode=1});

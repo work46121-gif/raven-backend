@@ -7,7 +7,7 @@ const U='11111111-1111-4111-8111-111111111111';
  try{
   const page=await browser.newPage({viewport:{width:390,height:844},reducedMotion:'reduce'}),errors=[];
   let rows=[],posts=0,deleted=0,listFailure=false,delayList=false,releaseList,delayUpload=false,releaseUpload;
-  let movie,photo;
+  let movie,photo;const batches=[],uploader={name:'Alex Member',avatar_url:'https://media.test/avatar.png'};
   page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/*',async route=>{
    const req=route.request(),url=new URL(req.url());
@@ -18,9 +18,9 @@ const U='11111111-1111-4111-8111-111111111111';
    assert.ok(url.pathname.includes('/album'),'unexpected network request '+url.pathname);
    if(req.method()==='POST'){
     posts++;assert.ok(url.pathname.endsWith('/album/file'));const headers=req.headers(),data={upload_id:headers['x-raven-upload-id'],caption:decodeURIComponent(headers['x-raven-upload-caption']||'')};assert.ok(data.upload_id);if(posts<=3)assert.equal(data.caption,'Desert weekend');
-    const raw=req.postDataBuffer();assert.ok(raw?.length);assert.ok(!headers['content-type'].includes('json'),'binary transport avoids base64');
+    batches.push(headers['x-raven-upload-batch']);assert.match(batches.at(-1),/^[a-f0-9-]{36}$/);const raw=req.postDataBuffer();assert.ok(raw?.length);assert.ok(!headers['content-type'].includes('json'),'binary transport avoids base64');
     if(delayUpload)await new Promise(resolve=>{releaseUpload=resolve;setTimeout(resolve,15000)});
-    if(!rows.some(r=>r.id===data.upload_id)){const kind=headers['content-type'].startsWith('video')?'video':'photo';rows.unshift({id:data.upload_id,kind,caption:data.caption,created_at:'2026-10-18T16:00:00Z',can_remove:true,url:'https://media.test/'+data.upload_id+(kind==='video'?'.webm':'.png')})}
+    if(!rows.some(r=>r.id===data.upload_id)){const kind=headers['content-type'].startsWith('video')?'video':'photo';rows.unshift({id:data.upload_id,kind,caption:data.caption,uploader,created_at:'2026-10-18T16:00:00Z',can_remove:true,url:'https://media.test/'+data.upload_id+(kind==='video'?'.webm':'.png')})}
     // Simulate committed upload whose response was lost. Retry must reuse its ID.
     if(posts===2)return json({error:'Connection interrupted.'},503);
     return json({success:true},201);
@@ -64,7 +64,10 @@ const U='11111111-1111-4111-8111-111111111111';
   await page.getByRole('heading',{name:'Trip Photo Album',exact:true}).evaluate(el=>el.scrollIntoView({block:'start'}));await page.screenshot({path:'output/trip-album-picker-preview.png'});
   await page.getByLabel('Album caption').fill('Desert weekend');await page.getByRole('button',{name:'Upload to album'}).click();await page.getByText(/Your remaining selections are here to retry/).waitFor();
   assert.equal(rows.length,2);await page.getByRole('button',{name:'Retry upload'}).click();await page.getByText('1 added to the trip album.').waitFor();assert.equal(rows.length,2);assert.equal(posts,3);
-  await page.waitForFunction(()=>document.querySelector('.trip-album-tile.has-preview img')?.naturalWidth>0);
+  assert.equal(new Set(batches).size,1,'files and lost-response retries keep one notification batch');
+  await page.waitForFunction(()=>document.querySelector('.trip-album-tile.has-preview > img')?.naturalWidth>0);
+  assert.equal(await page.locator('.trip-album-tile .trip-album-avatar img').count(),2);
+  assert.ok(await page.locator('.trip-album-tile').first().evaluate(tile=>{const a=tile.querySelector('.trip-album-avatar').getBoundingClientRect(),t=tile.getBoundingClientRect();return a.width===28&&Math.abs(t.right-a.right-6)<1&&Math.abs(t.bottom-a.bottom-6)<1}),'uploader avatar is bottom-right');
   await page.locator('.trip-album-tile').first().click();const preview=page.getByRole('dialog',{name:'Trip album preview'});await preview.locator('video').waitFor();
   assert.equal(await preview.locator('video').evaluate(v=>v.controls&&v.playsInline),true);
   await page.evaluate(()=>{window.__shares=[];Object.defineProperty(navigator,'canShare',{configurable:true,value:()=>true});Object.defineProperty(navigator,'share',{configurable:true,value:async data=>{window.__shares.push({name:data.files[0].name,size:data.files[0].size})}})});
@@ -73,7 +76,18 @@ const U='11111111-1111-4111-8111-111111111111';
   await page.getByRole('button',{name:'Save video',exact:true}).click();assert.equal(await page.evaluate(()=>window.__shares.length),1);assert.equal(await page.evaluate(()=>window.__shares[0].size),movie.length);
   await preview.locator('video').evaluate(async v=>{v.muted=true;await v.play()});await page.waitForFunction(()=>document.querySelector('.trip-album-viewer video')?.readyState>=2);
   await page.getByRole('button',{name:'Close album preview'}).click();await page.waitForFunction(()=>!document.querySelector('.trip-album-viewer video'));
-  await page.locator('.trip-album-tile').last().click();await preview.locator('img').waitFor();page.once('dialog',d=>d.dismiss());await page.getByRole('button',{name:'Remove from album'}).click();assert.equal(deleted,0);
+  await page.locator('.trip-album-tile').last().click();await preview.locator('img.trip-album-full-media').waitFor();
+  assert.equal(await preview.locator('.trip-album-byline strong').innerText(),'Alex Member');
+  assert.equal(await preview.locator('time').getAttribute('datetime'),'2026-10-18T16:00:00.000Z');assert.match(await preview.locator('time').innerText(),/Uploaded .*2026.*[0-9]:[0-9]/);
+  assert.ok(await preview.evaluate(v=>v.querySelector('.trip-album-byline').getBoundingClientRect().top>v.querySelector('.trip-album-full-media').getBoundingClientRect().bottom),'uploader details are below media');
+  for(const width of [320,390,768]){await page.setViewportSize({width,height:844});assert.ok(await preview.evaluate(v=>{const s=v.querySelector('.trip-album-save').getBoundingClientRect(),d=v.querySelector('.trip-album-delete').getBoundingClientRect();return v.scrollWidth<=v.clientWidth&&(d.left-s.right>=19||d.top-s.bottom>=19)}),'save and remove are separated at '+width)}
+  await page.setViewportSize({width:390,height:844});await page.screenshot({path:'output/trip-album-uploader-viewer.png'});
+  await page.getByRole('button',{name:'Save photo',exact:true}).click();await page.getByText('Ready. Tap Save photo to choose where to save it.',{exact:true}).waitFor();
+  await page.evaluate(()=>Object.defineProperty(navigator,'share',{configurable:true,value:async()=>{throw new DOMException('Canceled','AbortError')}}));
+  await page.getByRole('button',{name:'Save photo',exact:true}).click();await page.getByText('Save canceled. Tap Save photo to try again.',{exact:true}).waitFor();
+  await page.evaluate(()=>Object.defineProperty(navigator,'canShare',{configurable:true,value:()=>false}));
+  const downloaded=page.waitForEvent('download');await page.getByRole('button',{name:'Save photo',exact:true}).click();assert.match((await downloaded).suggestedFilename(),/^RAVEN-trip-.*\.png$/);
+  page.once('dialog',d=>d.dismiss());await page.getByRole('button',{name:'Remove from album'}).click();assert.equal(deleted,0);
   page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'Remove from album'}).click();await page.waitForFunction(()=>document.querySelectorAll('.trip-album-tile').length===1);assert.equal(deleted,1);
   // The original phone failure: a supported MOV bigger than the old 12 MiB cap.
   await page.getByLabel('Album photos and videos').evaluate(input=>{const files=new DataTransfer();files.items.add(new File([new Uint8Array(52428801)],'too-large.mov',{type:'video/quicktime'}));files.items.add(new File([new Uint8Array(13*1024*1024)],'iphone.MOV',{type:'application/octet-stream'}));input.files=files.files;input.dispatchEvent(new Event('change',{bubbles:true}))});
@@ -104,9 +118,10 @@ const U='11111111-1111-4111-8111-111111111111';
   await page.getByLabel('Album photos and videos').setInputFiles({name:'large-photo.png',mimeType:'image/png',buffer:largePhoto});
   await page.getByRole('button',{name:'Upload to album'}).click();await page.getByText('1 added to the trip album.',{exact:true}).waitFor();
   assert.equal(rows.length,4,'photo above former 6 MiB limit uploads through normal browser flow');
-  rows=Array.from({length:27},(_,i)=>({id:'photo-'+i,kind:i%4===0?'video':'photo',caption:i%4===0?'Weekend moments':'Desert sunset',created_at:'2026-10-18T16:00:00Z',can_remove:false,url:'https://media.test/'+i+(i%4===0?'.webm':'.png')}));
+  rows=Array.from({length:27},(_,i)=>({id:'photo-'+i,kind:i%4===0?'video':'photo',caption:i%4===0?'Weekend moments':'Desert sunset',uploader:i===26?null:uploader,created_at:'2026-10-18T16:00:00Z',can_remove:false,url:'https://media.test/'+i+(i%4===0?'.webm':'.png')}));
   await page.getByRole('button',{name:'Refresh album'}).click();await page.waitForFunction(()=>document.querySelectorAll('.trip-album-tile').length===24);await page.getByRole('button',{name:'Load more memories'}).click();await page.waitForFunction(()=>document.querySelectorAll('.trip-album-tile').length===27);
   await page.locator('.trip-album-tile').first().click();await preview.locator('video').waitFor();assert.equal(await page.getByRole('button',{name:'Remove from album'}).count(),0);await page.getByRole('button',{name:'Close album preview'}).click();
+  await page.locator('.trip-album-tile').last().click();await preview.locator('img.trip-album-full-media').waitFor();assert.equal(await preview.locator('.trip-album-byline strong').innerText(),'RAVEN member');assert.equal(await preview.locator('.trip-album-avatar img').count(),0);assert.equal(await page.getByRole('button',{name:'Remove from album'}).count(),0);assert.equal(await page.getByRole('button',{name:'Save photo',exact:true}).isVisible(),true);await page.getByRole('button',{name:'Close album preview'}).click();
   for(const width of [320,390,768]){await page.setViewportSize({width,height:844});assert.ok(await page.locator('#raven-trip-travel-popup').evaluate(e=>e.scrollWidth<=e.clientWidth),'no horizontal overflow at '+width)}
   await page.setViewportSize({width:390,height:844});await page.getByRole('heading',{name:'Trip Photo Album',exact:true}).scrollIntoViewIfNeeded();await page.screenshot({path:'output/trip-album-mobile-preview.png'});
   listFailure=true;await page.getByRole('button',{name:'Refresh album'}).click();await page.getByText('Album temporarily unavailable. Please retry.').waitFor();assert.equal(await page.locator('.trip-album-tile').count(),27,'failed refresh preserves visible photos');listFailure=false;

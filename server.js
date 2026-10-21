@@ -30,7 +30,7 @@ const app = express();
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Raven-Bill-Token, X-Raven-Upload-Id, X-Raven-Upload-Caption');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Raven-Bill-Token, X-Raven-Upload-Id, X-Raven-Upload-Caption, X-Raven-Upload-Batch');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
@@ -5208,7 +5208,7 @@ ${coverHTML}
 <div class="sec" style="margin-top:16px">${countdownHTML}</div>
 <div class="sec" style="margin-top:12px"><button id="trip-travel-action" type="button" style="display:flex;align-items:center;justify-content:space-between;width:100%;box-sizing:border-box;padding:13px 16px;background:linear-gradient(110deg,#7c3aed18,#30d1580c);border:1px solid #7c3aed44;border-radius:13px;color:#d8c5f5;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer"><span>Trip Center</span><span style="font-size:12px;color:#9896a8">View / upload &#8599;</span></button></div>
 <div class="sec" style="margin-top:8px"><button id="trip-album-action" type="button" style="display:flex;align-items:center;justify-content:space-between;width:100%;padding:12px 16px;background:transparent;border:0;color:#bfa0e5;font:inherit;font-size:13px;cursor:pointer"><span>Trip Photo Album</span><span>Open album →</span></button></div>
-<script defer src="https://ravensplit.com/raven-travel-ui.js?v=20261020-photo-50mb"></script>
+<script defer src="https://ravensplit.com/raven-travel-ui.js?v=20261021-uploader"></script>
 
 <div class="sec" style="margin-top:16px">
   <div id="trip-reminder-wrap" style="display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 16px;background:linear-gradient(135deg,rgba(255,193,7,0.12),rgba(255,193,7,0.04));border:1px solid rgba(255,193,7,0.24);border-radius:16px">

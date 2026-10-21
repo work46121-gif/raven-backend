@@ -26,7 +26,7 @@ assert.equal(push.alertText({kind:'trip_comment',actor_name:'Mel',trip_name:'Mia
 assert.equal(push.alertText({kind:'dm',actor_name:'\u202eM\nel'}),'Mel sent you a message on RAVEN');
 assert.ok(push.alertText({kind:'trip_comment',actor_name:'a'.repeat(1000),trip_name:'b'.repeat(1000)}).length<210);
 const server=fs.readFileSync('Server.js','utf8');
-const helperContext={};vm.createContext(helperContext);
+const helperContext={RavenSweep:require('../raven-sweep'),RavenSweepExplain:require('../raven-sweep-explain')};vm.createContext(helperContext);
 const start=server.indexOf('function parseSettledPeopleRecord('),end=server.indexOf('async function computeOutstanding(',start);
 vm.runInContext(server.slice(start,end),helperContext);
 const conciergeStart=server.indexOf('function parseTripPeople('),conciergeEnd=server.indexOf("app.",server.indexOf('function buildTripConciergePayload('));

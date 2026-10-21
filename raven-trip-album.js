@@ -43,25 +43,34 @@ function mediaBytes(value){
  if(!match||match[2].length>VIDEO_LIMIT*4/3)fail(400,'Choose an MP4, MOV or WebM video up to 12 MB.');
  return binaryMedia(Buffer.from(match[2],'base64'),match[1],VIDEO_LIMIT);
 }
-module.exports=function registerAlbum(app,db,{run,result}){
+module.exports=function registerAlbum(app,db,{run,result,authenticate}){
+ require('./raven-album-notifications').register(app,db,authenticate);
  let binaryUploads=0;
  const scoped=(req,res,user,scope)=>db.from(TABLE).select('*').eq('trip_id',scope.trip.id).eq('id',req.params.mediaId).maybeSingle();
- async function presentation(row,user,scope){
+ async function uploaders(rows){
+  const ids=[...new Set(rows.map(row=>row.uploader_id).filter(Boolean))];if(!ids.length)return new Map();
+  // One bounded lookup per album page, never a profile request for every tile.
+  const {data,error}=await Promise.resolve(db.from('profiles').select('id,first_name,last_name,raven_id,avatar_url').in('id',ids)).catch(()=>({error:true}));
+  if(error)return new Map();
+  return new Map((data||[]).map(p=>[p.id,{name:[p.first_name,p.last_name].filter(Boolean).join(' ').trim()||(p.raven_id?'@'+p.raven_id:'RAVEN member'),avatar_url:typeof p.avatar_url==='string'&&/^(https:\/\/|data:image\/(?:png|jpe?g|webp|gif);base64,)/i.test(p.avatar_url)?p.avatar_url:null}]));
+ }
+ async function presentation(row,user,profiles){
   const signed=await result(db.storage.from(BUCKET).createSignedUrl(row.object_path,300));
-  return {id:row.id,kind:row.kind,caption:row.caption,mime_type:row.mime_type,created_at:row.created_at,url:signed.signedUrl,can_remove:scope.owner||row.uploader_id===user.id};
+  return {id:row.id,kind:row.kind,caption:row.caption,mime_type:row.mime_type,created_at:row.created_at,url:signed.signedUrl,uploader:profiles.get(row.uploader_id)||{name:'RAVEN member',avatar_url:null},can_remove:row.uploader_id===user.id};
  }
  app.get('/trips/:id/album',run(async(req,res,user,scope)=>{
   const offset=Number(req.query.offset||0);if(!Number.isSafeInteger(offset)||offset<0||offset>100000)fail(400,'Invalid album page.');
   const rows=await result(db.from(TABLE).select('*').eq('trip_id',scope.trip.id).order('created_at',{ascending:false}).order('id',{ascending:false}).range(offset,offset+24));
-  const media=await Promise.all(rows.slice(0,24).map(row=>presentation(row,user,scope)));
+  const page=rows.slice(0,24),profiles=await uploaders(page);
+  const media=await Promise.all(page.map(row=>presentation(row,user,profiles)));
   res.json({success:true,media,hasMore:rows.length>24,nextOffset:offset+24});
  }));
  app.get('/trips/:id/album/:mediaId',run(async(req,res,user,scope)=>{
   if(!UUID.test(req.params.mediaId))fail(400,'Invalid album item.');
   const row=await result(scoped(req,res,user,scope));if(!row)fail(404,'This photo or video is no longer in the album.');
-  res.json({success:true,media:await presentation(row,user,scope)});
+  res.json({success:true,media:await presentation(row,user,await uploaders([row]))});
  }));
- async function save(media,id,caption,res,user,scope){
+ async function save(media,id,caption,res,user,scope,batchId){
   if(caption.length>160)fail(400,'Keep the caption under 160 characters.');
   if(!UUID.test(id))fail(400,'Invalid upload. Choose the file again.');
   const existing=await result(db.from(TABLE).select('id,uploader_id,trip_id').eq('id',id).maybeSingle());
@@ -70,7 +79,14 @@ module.exports=function registerAlbum(app,db,{run,result}){
   // must not remove a newer retry using the same client upload ID.
   const path=scope.trip.id+'/'+randomUUID()+'.'+media.extension;
   await result(db.storage.from(BUCKET).upload(path,media.bytes,{contentType:media.mime,upsert:false}));
-  try{await result(db.from(TABLE).insert({id,trip_id:scope.trip.id,uploader_id:user.id,kind:media.kind,caption,object_path:path,mime_type:media.mime,byte_size:media.bytes.length}))}
+  try{
+   const record={id,trip_id:scope.trip.id,uploader_id:user.id,kind:media.kind,caption,object_path:path,mime_type:media.mime,byte_size:media.bytes.length,...(batchId?{upload_batch_id:batchId}:{})};
+   const saved=await db.from(TABLE).insert(record);
+   // Safe rolling release: uploads still work before the additive notification migration.
+   if(saved.error&&batchId&&['PGRST204','42703'].includes(saved.error.code)&&/upload_batch_id/.test(saved.error.message||'')){
+    delete record.upload_batch_id;await result(db.from(TABLE).insert(record));
+   }else if(saved.error)throw saved.error;
+  }
   catch(error){await db.storage.from(BUCKET).remove([path]);throw error}
   res.status(201).json({success:true,id});
  }
@@ -85,6 +101,7 @@ module.exports=function registerAlbum(app,db,{run,result}){
   const limit=mime.startsWith('video/')?BINARY_VIDEO_LIMIT:BINARY_PHOTO_LIMIT;
   if(Number(req.headers['content-length'])>limit)fail(413,'This '+(mime.startsWith('video/')?'video is over 50 MB. Trim or export a smaller clip.':'photo is over 50 MB. Choose a smaller photo.'));
   const id=req.headers['x-raven-upload-id'];if(!UUID.test(id||''))fail(400,'Invalid upload. Choose the file again.');
+  const batchId=req.headers['x-raven-upload-batch'];if(batchId&&!UUID.test(batchId))fail(400,'Invalid upload batch. Choose the files again.');
   let caption;try{caption=decodeURIComponent(req.headers['x-raven-upload-caption']||'').trim()}catch{fail(400,'The caption could not be read. Edit it and retry.')}
   if(caption.length>160)fail(400,'Keep the caption under 160 characters.');
   // Bound server memory. Authentication and trip membership run before reading
@@ -94,15 +111,15 @@ module.exports=function registerAlbum(app,db,{run,result}){
   try{
    const raw=require('express').raw({type:()=>true,limit,inflate:false});
    await new Promise((resolve,reject)=>raw(req,res,error=>error?reject(Object.assign(Error(error.type==='entity.too.large'?'This file is too large. Photos and videos can be up to 50 MB each.':'Could not receive this file. Please retry.'),{status:error.status||400})):resolve()));
-   await save(binaryMedia(req.body,mime),id,caption,res,user,scope);
+   await save(binaryMedia(req.body,mime),id,caption,res,user,scope,batchId);
   }finally{binaryUploads--}
  }));
  app.delete('/trips/:id/album/:mediaId',run(async(req,res,user,scope)=>{
   if(!UUID.test(req.params.mediaId))fail(400,'Invalid album item.');
   const row=await result(scoped(req,res,user,scope));if(!row)fail(404,'Album item not found.');
-  if(!scope.owner&&row.uploader_id!==user.id)fail(403,'Only the uploader or trip organizer can remove this.');
+  if(row.uploader_id!==user.id)fail(403,'Only the person who uploaded this can remove it.');
   await result(db.storage.from(BUCKET).remove([row.object_path]));
-  await result(db.from(TABLE).delete().eq('trip_id',scope.trip.id).eq('id',row.id));
+  await result(db.from(TABLE).delete().eq('trip_id',scope.trip.id).eq('id',row.id).eq('uploader_id',user.id));
   res.json({success:true});
  }));
 };

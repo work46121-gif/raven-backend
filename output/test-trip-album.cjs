@@ -11,11 +11,12 @@ assert.equal(album.mediaBytes(png).kind,'photo');assert.equal(album.mediaBytes(v
 const mov=Buffer.from(mp4);mov.write('qt  ',8);assert.equal(album.mediaBytes('data:video/quicktime;base64,'+mov.toString('base64')).extension,'mov');
 const webm=Buffer.concat([Buffer.from([0x1a,0x45,0xdf,0xa3]),Buffer.from('webm'),Buffer.alloc(20)]);assert.equal(album.mediaBytes('data:video/webm;base64,'+webm.toString('base64')).extension,'webm');
 for(const value of [null,'https://private.invalid/photo','data:image/svg+xml;base64,PHN2Zz4=','data:video/mp4;base64,'+Buffer.from('<html>not a movie</html>').toString('base64'),png.replace('image/png','image/jpeg'),'data:video/mp4;base64,'+Buffer.alloc(12582913).toString('base64')])assert.throws(()=>album.mediaBytes(value));
-let user={id:U,email:'member@test.invalid'},rows=[],uploads=[],removals=[],signed=[],insertError=false,storageError=false,tableMissing=false;
+let user={id:U,email:'member@test.invalid'},rows=[],uploads=[],removals=[],signed=[],insertError=false,storageError=false,tableMissing=false,profileLookups=0,profileError=false;
 const routes={};
 const trip={id:'T',creator_email:'owner@test.invalid',member_emails:['member@test.invalid','other@test.invalid'],people:['Member','Other']};
 const db={from(table){let filters=[],op='read',inserted,range;const q={select(){return q},eq(k,v){filters.push(r=>r[k]===v);return q},in(k,v){filters.push(r=>v.includes(r[k]));return q},order(){return q},range(a,b){range=[a,b+1];return q},limit(n){range=[0,n];return q},maybeSingle(){q.single=true;return q},insert(row){op='insert';inserted=row;return q},delete(){op='delete';return q},then(resolve){
   if(table==='trips')return resolve({data:[trip,{...trip,id:'T2'}].find(r=>filters.every(f=>f(r)))||null});
+  if(table==='profiles'){profileLookups++;return resolve(profileError?{error:Error('offline')}:{data:[{id:U,first_name:'Alex',last_name:'Member',avatar_url:'https://synthetic.invalid/avatar.png',email:'never-return@example.invalid'}]})}
   if(tableMissing)return resolve({error:{code:'42P01'}});
   let found=rows.filter(r=>filters.every(f=>f(r)));
   if(op==='insert'){if(insertError)return resolve({error:{code:'synthetic'}});rows.push({...inserted,created_at:'2026-10-18T16:00:00Z'});return resolve({data:null})}
@@ -57,6 +58,8 @@ async function call(method='get',suffix='',body={},params={}){
  assert.equal(rows[0].uploader_id,U);assert.equal(uploads.length,1);assert.equal(uploads[0].opts.upsert,false);
  assert.equal((await call('post','',{data_url:png,upload_id:ID})).status,201);assert.equal(uploads.length,1,'retry does not create a duplicate');
  const page=await call();assert.equal(page.headers['Cache-Control'],'private, no-store');assert.equal(page.payload.media[0].can_remove,true);assert.equal(page.payload.media[0].object_path,undefined);assert.equal(page.payload.media[0].uploader_id,undefined);assert.equal(signed[0].ttl,300);
+ assert.deepEqual(page.payload.media[0].uploader,{name:'Alex Member',avatar_url:'https://synthetic.invalid/avatar.png'});
+ assert.equal(page.payload.media[0].created_at,'2026-10-18T16:00:00Z');
  assert.equal((await call('get','/:mediaId')).status,200);
  assert.equal((await call('get','',{offset:-1})).status,400);
  user=null;const before=signed.length;assert.equal((await call()).status,401);
@@ -71,11 +74,13 @@ async function call(method='get',suffix='',body={},params={}){
  assert.equal((await call('post','',{data_url:video,caption:'x'.repeat(161)})).status,400);
  insertError=true;const removed=removals.length;assert.equal((await call('post','',{data_url:video})).status,503);assert.equal(removals.length,removed+1,'failed metadata insert cleans storage');insertError=false;
  storageError=true;const rowCount=rows.length;assert.equal((await call('post','',{data_url:video})).status,503);assert.equal(rows.length,rowCount);assert.equal((await call('delete','/:mediaId')).status,503);assert.equal(rows.length,rowCount);storageError=false;
- user={id:OTHER,email:'owner@test.invalid'};assert.equal((await call('delete','/:mediaId')).status,200);assert.equal(rows.length,0);
+ user={id:OTHER,email:'owner@test.invalid'};assert.equal((await call()).payload.media[0].can_remove,false);const deletesBefore=removals.length;assert.equal((await call('delete','/:mediaId')).status,403);assert.equal(removals.length,deletesBefore,'organizer cannot delete another member’s storage object');assert.equal(rows.length,1);
+ user={id:U,email:'member@test.invalid'};assert.equal((await call('delete','/:mediaId')).status,200);assert.equal(rows.length,0);
  user={id:U,email:'member@test.invalid'};await call('post','',{data_url:video,upload_id:ID});assert.equal(rows[0].kind,'video');
  // More than one page, private signed URLs limited to the returned 24.
  rows=Array.from({length:25},(_,i)=>({...rows[0],id:i===0?ID:String(i),object_path:'T/'+i+'.mp4'}));
- const first=await call();assert.equal(first.payload.media.length,24);assert.equal(first.payload.hasMore,true);assert.equal((await call('get','',{offset:24})).payload.media.length,1);
+ const lookupsBefore=profileLookups;const first=await call();assert.equal(profileLookups,lookupsBefore+1,'only one profile lookup for the whole page');assert.equal(first.payload.media.length,24);assert.equal(first.payload.hasMore,true);assert.equal((await call('get','',{offset:24})).payload.media.length,1);
+ profileError=true;assert.equal((await call()).payload.media[0].uploader.name,'RAVEN member','optional profile failure does not block the album');profileError=false;
  rows.push({...rows[0],id:'different-user',uploader_id:OTHER,object_path:'T/other.mp4'});
  await album.cleanupUser(db,U);assert.equal(rows.length,1);assert.equal(rows[0].uploader_id,OTHER);
  tableMissing=true;await album.cleanupUser(db,U);tableMissing=false;

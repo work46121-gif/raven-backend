@@ -7,7 +7,10 @@
  .trip-album-tile span{display:block;font:600 12px inherit;padding:6px;overflow-wrap:anywhere}
  .trip-album-tile .trip-album-play{font-size:30px}
  .trip-album-tile.has-preview .trip-album-play{position:absolute;inset:0;display:grid;place-items:center;text-shadow:0 2px 10px #000;background:#0002}
- .trip-album-tile.has-preview .trip-album-caption{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,#000b);color:#fff;padding:18px 6px 6px;font-size:11px}
+ .trip-album-tile.has-preview .trip-album-caption{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,#000b);color:#fff;padding:18px 38px 6px 6px;font-size:11px}
+ .trip-album-avatar{position:relative;display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;border-radius:50%;overflow:hidden;background:linear-gradient(140deg,#65418a,#205942);color:#fff;font:600 14px/1 sans-serif}
+ .trip-album-avatar img{position:absolute;inset:0;display:block;width:100%;height:100%;max-height:none;object-fit:cover;border-radius:50%;background:none}
+ .trip-album-tile .trip-album-avatar{position:absolute;display:grid;bottom:6px;right:6px;width:28px;height:28px;box-sizing:border-box;border:2px solid #17131c;padding:0;font-size:10px;box-shadow:0 2px 8px #0008;z-index:2}
  .trip-album-upload{display:grid;gap:10px;margin:12px 0}.trip-album-upload[hidden]{display:none}
  .trip-album-upload input[hidden]{display:none!important}
  .trip-album-pending progress[hidden],.trip-album-upload button[hidden]{display:none}
@@ -32,12 +35,18 @@
  #raven-trip-travel-popup .trip-album-note{font-size:12px;line-height:1.45;margin:6px 0}
  .trip-album-viewer{inset:0;margin:auto;box-sizing:border-box;width:min(760px,calc(100% - 20px));max-height:92dvh;overflow:auto;background:#0d0c14;color:#eee;border:1px solid #a855f750;border-radius:18px;padding:16px;font:14px inherit}
  .trip-album-viewer::backdrop{background:#030308df;backdrop-filter:blur(8px)}
- .trip-album-viewer img,.trip-album-viewer video{display:block;width:100%;max-height:65dvh;object-fit:contain;border-radius:10px;background:#000}
+ .trip-album-viewer .trip-album-full-media{display:block;width:100%;max-height:62dvh;object-fit:contain;border-radius:10px;background:#000}
  .trip-album-viewer p{overflow-wrap:anywhere;color:#b7afc7;line-height:1.5}
  .trip-album-viewer header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
  .trip-album-viewer button{padding:10px 12px;border:1px solid #ffffff22;background:transparent;color:#ddc2f3;border-radius:9px;font:inherit;cursor:pointer}
- .trip-album-viewer .trip-album-delete{color:#e2a6b6}
- .trip-album-viewer .trip-album-save{background:#30d158;color:#07120a;border:0;font-weight:700;margin:12px 10px 0 0}
+ .trip-album-viewer .trip-album-close{width:36px;height:36px;padding:0;font-size:24px;flex-shrink:0}
+ .trip-album-byline{display:flex;align-items:center;gap:10px;margin-top:16px;min-width:0}
+ .trip-album-byline-copy{min-width:0;display:grid;gap:5px}.trip-album-byline strong{font-size:14px;overflow-wrap:anywhere}
+ .trip-album-byline time{font-size:12px;color:#aaa2b8;line-height:1.5}
+ .trip-album-viewer .trip-album-actions{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1px solid #ffffff13}
+ .trip-album-viewer .trip-album-delete{color:#e2a6b6;font-size:12px;background:none;border-color:transparent;min-height:40px;margin-left:auto}
+ .trip-album-viewer .trip-album-save{background:#30d158;color:#07120a;border:0;font-size:13px;font-weight:700;min-height:40px;margin:0}
+ .trip-album-viewer .trip-album-save-note{font-size:12px;margin:10px 0 0}.trip-album-save-note:empty{display:none}
  `;document.head.append(css);
  window.RavenTripAlbum={mount(container,{tripId,api,standalone=false}){
   const path='/trips/'+encodeURIComponent(tripId)+'/album';let disposed=false,busy=false,uploading=false,uploadController=null,offset=0,items=[],pending=[],viewSequence=0;
@@ -66,42 +75,54 @@
   function valid(){return !disposed&&section.isConnected}
   function error(message){if(valid()){status.dataset.tone='error';status.textContent=message||'Could not update the album. Please retry.'}}
   function info(message){if(valid()){status.dataset.tone='';status.textContent=message}}
+  function avatar(uploader){
+   const name=uploader?.name||'RAVEN member',node=make('span',name.trim().split(/\s+/).slice(0,2).map(s=>s[0]||'').join('').toUpperCase());node.className='trip-album-avatar';node.setAttribute('aria-label','Uploaded by '+name);node.title='Uploaded by '+name;
+   if(typeof uploader?.avatar_url==='string'&&/^(https:\/\/|data:image\/(?:png|jpe?g|webp|gif);base64,)/i.test(uploader.avatar_url)){
+    const img=make('img');img.alt='';img.loading='lazy';img.referrerPolicy='no-referrer';img.src=uploader.avatar_url;img.onerror=()=>img.remove();node.append(img);
+   }return node;
+  }
   async function show(item){
-   const sequence=++viewSequence;clearViewer();const close=make('button','Close album preview');close.type='button';close.onclick=()=>viewer.close();
+   const sequence=++viewSequence;clearViewer();const close=make('button','×');close.type='button';close.className='trip-album-close';close.setAttribute('aria-label','Close album preview');close.onclick=()=>viewer.close();
    const header=make('header');header.append(make('strong',item.kind==='video'?'Trip video':'Trip photo'),close);const message=make('p','Opening…');viewer.append(header,message);if(!viewer.open)viewer.showModal();
    try{
     // Refresh the short-lived URL and re-check membership each time it opens.
     const result=await api(path+'/'+item.id);if(!valid()||sequence!==viewSequence||!viewer.open)return;
-    const row=result.media,media=make(row.kind==='video'?'video':'img');
+    const row=result.media,media=make(row.kind==='video'?'video':'img');media.className='trip-album-full-media';
     if(row.kind==='video'){media.controls=true;media.playsInline=true;media.preload='metadata'}else media.alt=row.caption||'Trip photo';
     media.src=row.url;media.onerror=()=>{message.textContent='This file could not be displayed. Close and reopen to retry. Some video formats may not play on this device.'};
-    message.textContent=[row.caption,'Added '+new Date(row.created_at).toLocaleString()].filter(Boolean).join(' · ');viewer.append(media);
-    if(row.kind==='video'){
-     const save=make('button','Save video'),saveNote=make('p');save.type='button';save.className='trip-album-save';saveNote.setAttribute('role','status');let readyFile=null;
+    message.textContent='';viewer.append(media);if(row.caption)viewer.append(make('p',row.caption));
+    const byline=make('footer');byline.className='trip-album-byline';const copy=make('div');copy.className='trip-album-byline-copy';copy.append(make('strong',row.uploader?.name||'RAVEN member'));
+    const date=new Date(row.created_at),stamp=make('time');
+    if(Number.isFinite(date.getTime())){stamp.dateTime=date.toISOString();stamp.textContent='Uploaded '+date.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})+' · '+date.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});stamp.title=date.toLocaleString(undefined,{timeZoneName:'short'})}else stamp.textContent='Upload date unavailable';
+    copy.append(stamp);byline.append(avatar(row.uploader),copy);viewer.append(byline);
+    const actions=make('div');actions.className='trip-album-actions';viewer.append(actions);
+    {
+     const kind=row.kind==='video'?'video':'photo',title=kind==='video'?'Trip video':'Trip photo';
+     const save=make('button','Save '+kind),saveNote=make('p');save.type='button';save.className='trip-album-save';saveNote.className='trip-album-save-note';saveNote.setAttribute('role','status');let readyFile=null;
      save.onclick=async()=>{
       if(readyFile){
        try{
-        if(navigator.canShare?.({files:[readyFile]})&&navigator.share){await navigator.share({files:[readyFile],title:'Trip video'});saveNote.textContent='Choose Save Video or Save to Files in your device’s share sheet.'}
+        if(navigator.canShare?.({files:[readyFile]})&&navigator.share){await navigator.share({files:[readyFile],title});saveNote.textContent='Choose '+(kind==='video'?'Save Video':'Save Image')+' or Save to Files in your device’s share sheet.'}
         else{if(!saveUrl)saveUrl=URL.createObjectURL(readyFile);const link=make('a');link.href=saveUrl;link.download=readyFile.name;document.body.append(link);link.click();link.remove();saveNote.textContent='Download requested. Check your device’s downloads.'}
-       }catch(e){saveNote.textContent=e.name==='AbortError'?'Save canceled. Tap Save video to try again.':'Could not open the save menu. Please try again.'}return;
+       }catch(e){saveNote.textContent=e.name==='AbortError'?'Save canceled. Tap Save '+kind+' to try again.':'Could not open the save menu. Please try again.'}return;
       }
-      save.disabled=true;save.textContent='Preparing video…';saveNote.textContent='Preparing the original file. Keep this preview open.';const controller=saveController=new AbortController();const timer=setTimeout(()=>controller.abort(),120000);
+      save.disabled=true;save.textContent='Preparing '+kind+'…';saveNote.textContent='Preparing the original file. Keep this preview open.';const controller=saveController=new AbortController();const timer=setTimeout(()=>controller.abort(),120000);
       try{
        const fresh=await api(path+'/'+row.id);if(!valid()||sequence!==viewSequence||!viewer.open)return;
-       const response=await fetch(fresh.media.url,{signal:controller.signal});if(!response.ok)throw Error('Could not download this video. Please retry.');
-       const blob=await response.blob();if(!blob.size||blob.size>52428800)throw Error('This video could not be prepared for saving.');
+       const response=await fetch(fresh.media.url,{signal:controller.signal});if(!response.ok)throw Error('Could not download this '+kind+'. Please retry.');
+       const blob=await response.blob();if(!blob.size||blob.size>52428800)throw Error('This '+kind+' could not be prepared for saving.');
        if(!valid()||sequence!==viewSequence||!viewer.open)return;
-       const mime=fresh.media.mime_type||blob.type,ext=mime==='video/quicktime'?'mov':mime==='video/webm'?'webm':'mp4';
+       const mime=fresh.media.mime_type||blob.type,ext={'video/quicktime':'mov','video/webm':'webm','video/mp4':'mp4','image/jpeg':'jpg','image/png':'png','image/webp':'webp'}[mime];if(!ext)throw Error('This file type cannot be saved.');
        readyFile=new File([blob],'RAVEN-trip-'+String(row.id).replace(/[^a-z0-9-]/gi,'').slice(0,40)+'.'+ext,{type:mime});
-       saveNote.textContent='Ready. Tap Save video to choose where to save it.';
-      }catch(e){if(valid()&&sequence===viewSequence&&viewer.open)saveNote.textContent=e.name==='AbortError'?'Download stopped. Tap Save video to retry.':e.message}
-      finally{clearTimeout(timer);if(sequence===viewSequence&&viewer.open){save.disabled=false;save.textContent='Save video'}}
-     };viewer.append(save,saveNote);
+       saveNote.textContent='Ready. Tap Save '+kind+' to choose where to save it.';
+      }catch(e){if(valid()&&sequence===viewSequence&&viewer.open)saveNote.textContent=e.name==='AbortError'?'Download stopped. Tap Save '+kind+' to retry.':e.message}
+      finally{clearTimeout(timer);if(sequence===viewSequence&&viewer.open){save.disabled=false;save.textContent='Save '+kind}}
+     };actions.append(save);viewer.append(saveNote);
     }
     if(row.can_remove){const remove=make('button','Remove from album');remove.type='button';remove.className='trip-album-delete';
      remove.onclick=async()=>{if(!confirm('Remove this photo or video from the trip album?'))return;remove.disabled=true;
       try{await api(path+'/'+row.id,'DELETE');if(valid()){viewer.close();await load(false)}}catch(e){message.textContent=e.message;remove.disabled=false}
-     };viewer.append(remove);
+     };actions.append(remove);
     }
    }catch(e){if(valid()&&sequence===viewSequence)message.textContent=e.message||'Could not open this memory. Close and try again.'}
   }
@@ -125,6 +146,7 @@
    grid.replaceChildren();for(const item of items){const tile=make('button');tile.type='button';tile.className='trip-album-tile';tile.setAttribute('aria-label','View '+(item.caption||(item.kind==='video'?'trip video':'trip photo')));tile.onclick=()=>show(item);
     if(item.kind==='photo'){const img=make('img');img.src=item.url;img.alt=item.caption||'Trip photo';img.loading='lazy';img.onerror=()=>{img.remove();tile.append(make('span','Photo · tap to view'))};tile.append(img)}
     else{const play=make('span','▷'),caption=make('span',item.caption||'Video');play.className='trip-album-play';caption.className='trip-album-caption';tile.append(play,caption);tile.albumItem=item}grid.append(tile);
+    tile.append(avatar(item.uploader));tile.setAttribute('aria-label',tile.getAttribute('aria-label')+' · Uploaded by '+(item.uploader?.name||'RAVEN member'));
     if(item.kind==='video'){if(thumbObserver)thumbObserver.observe(tile);else thumbQueue.push({tile,item})}
    }
    if(!thumbObserver)pumpThumbs();
@@ -186,6 +208,7 @@
    event.preventDefault();if(uploading||send.disabled)return;
    if(!api.upload){error('Reopen this trip to load the new uploader, then choose your files again.');return}
    const batch=pending.filter(p=>['ready','error'].includes(p.phase));if(!batch.length)return;
+   const batchId=batch.find(p=>p.batchId)?.batchId||crypto.randomUUID();for(const entry of batch)entry.batchId??=batchId;
    uploading=true;uploadController=new AbortController();let uploaded=0;renderPending();
    try{
     for(const next of batch){
@@ -193,7 +216,7 @@
      next.phase='uploading';next.message='Uploading · 0%';next.percent=0;next.caption??=caption.value;
      info('Uploading '+(uploaded+1)+' of '+batch.length+' · Keep Trip Center open.');renderPending();
      try{
-      await api.upload(path+'/file',next.file,{type:next.type,id:next.id,caption:next.caption,signal:uploadController.signal,onProgress:percent=>{
+      await api.upload(path+'/file',next.file,{type:next.type,id:next.id,batchId:next.batchId,caption:next.caption,signal:uploadController.signal,onProgress:percent=>{
        if(!valid())return;next.percent=percent;next.phase=percent===100?'saving':'uploading';next.message=percent===100?'Saving to album…':'Uploading · '+percent+'%';renderPending();
       }});
       next.phase='done';next.message='Added to album';uploaded++;renderPending();
