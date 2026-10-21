@@ -34,6 +34,15 @@
     // Callers supply a name container, never a parent button or link.
     if (isMember(profile) && !element.closest('button,a')) element.insertAdjacentHTML('beforeend', html(profile, size));
   }
+  function isCreator(profile) {
+    return !!profile && profile.id === 'dd58ecef-0b94-4c53-ac39-ddf573ad1efb';
+  }
+  function mountProfile(element, profile) {
+    if (!element) return;
+    mount(element, profile, 'profile');
+    element.querySelectorAll('[data-raven-creator]').forEach(node => node.remove());
+    if (isCreator(profile)) element.insertAdjacentHTML('beforeend', '<span class="raven-creator-badge" data-raven-creator="1" aria-label="RAVEN Creator">CREATOR</span>');
+  }
   const css = `
 .raven-plus-badge.raven-plus-badge{display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;flex:0 0 28px;width:28px;min-width:28px;height:28px;min-height:28px;padding:3px;margin:0 0 0 3px;border:0;border-radius:7px;background:transparent;color:#C084FC;box-shadow:none;cursor:pointer;line-height:1;touch-action:manipulation;box-sizing:border-box}
 .raven-plus-badge.raven-plus-badge img{display:block;width:22px;height:22px;max-width:none;object-fit:contain;pointer-events:none}
@@ -42,6 +51,7 @@
 .raven-plus-badge.raven-plus-badge:hover{background:rgba(192,132,252,.1)}
 .raven-plus-badge.raven-plus-badge:focus-visible{outline:2px solid #C084FC;outline-offset:2px}
 .raven-plus-identity{display:inline-flex;align-items:center;min-width:0;max-width:100%;gap:2px}
+.raven-creator-badge{display:inline-flex;align-items:center;vertical-align:middle;margin-left:6px;padding:4px 8px;border:1px solid #ffd56899;border-radius:99px;background:linear-gradient(135deg,#fff3b0,#d89a18);color:#3b2400;font:800 10px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:.1em;box-shadow:0 0 12px #f5b92c25;text-shadow:none;white-space:nowrap}
 #raven-plus-info{position:fixed;inset:auto;margin:0;padding:10px 12px;box-sizing:border-box;max-width:calc(100vw - 16px);border:1px solid #6d4988;border-radius:14px;background:#15101e;color:#f0eef8;box-shadow:0 8px 28px #0006;z-index:2147483647;font:600 14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:normal;text-transform:none}
 #raven-plus-info[hidden]{display:none}
 #raven-plus-info .raven-plus-info-inner{display:flex;align-items:center;gap:8px}
@@ -121,5 +131,5 @@
       window.visualViewport.addEventListener('scroll', position);
     }
   }
-  return { isMember, html, mount, install };
+  return { isMember, isCreator, html, mount, mountProfile, install };
 });

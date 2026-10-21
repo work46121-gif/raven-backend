@@ -112,6 +112,7 @@ async function requireRavenAdmin(req, res, next) {
   }
 }
 
+require('./raven-guest-payments-server').register(app, supabase, getAuthenticatedRavenUser);
 require('./raven-chat-routes')(app, supabase, getAuthenticatedRavenUser);
 const tripPushReminders = require('./raven-push-reminders')(supabase, (trip, receipts) => buildTripConciergePayload(trip, receipts).debtors);
 require('./raven-push')(app, supabase, getAuthenticatedRavenUser, process.env, undefined, tripPushReminders);
@@ -1957,7 +1958,12 @@ app.get('/bill/:billId', async (req, res) => {
     } catch (e) {}
     // Unlinked payers stay unlinked until explicitly assigned by the creator.
   }
-  const billPayerProfile = payerProfile || (paidByName ? { first_name: paidByName } : creatorProfile);
+  let guestPayerProfile = null;
+  if (!payerProfile && paidByName && bill.share_token) {
+    try { guestPayerProfile = await require('./raven-guest-payments-server').payer(supabase, { ...bill, id: billId }); }
+    catch { console.warn('Guest payer options temporarily unavailable'); }
+  }
+  const billPayerProfile = payerProfile || guestPayerProfile || (paidByName ? { first_name: paidByName } : creatorProfile);
   if (billPayerProfile && paidByName) billPayerProfile.first_name = paidByName;
 
   const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
@@ -2168,7 +2174,8 @@ app.get('/bill/:billId', async (req, res) => {
 
   <div class="raven-footer"><a href="https://ravensplit.com" class="raven-footer-inner"><span style="font-size:12px;color:#6E6B80">Split bills free with <strong style="color:#C084FC">RAVEN</strong></span></a></div>
 
-  <input type="hidden" id="pd" value="${profileB64}">
+  ${guestPayerProfile ? '<p style="padding:8px 20px;margin:0 auto;max-width:500px;color:#aaa;font-size:12px">Guest payment details were added by the bill creator. Confirm them with the guest before paying. RAVEN does not send money.</p>' : ''}
+<input type="hidden" id="pd" value="${profileB64}">
   <input type="hidden" id="paid-by-name" value="${bill.paid_by ? bill.paid_by.replace(/"/g,'&quot;') : ''}">
 
   <div id="pmod" style="display:none;position:fixed;inset:0;z-index:999">
@@ -2736,6 +2743,7 @@ ${bill.receipt_image ? `
   </a>
 </div>
 
+${guestPayerProfile ? '<p style="padding:8px 20px;margin:0 auto;max-width:500px;color:#aaa;font-size:12px">Guest payment details were added by the bill creator. Confirm them with the guest before paying. RAVEN does not send money.</p>' : ''}
 <input type="hidden" id="pd" value="${profileB64}">
 <input type="hidden" id="paid-by-name" value="${bill.paid_by ? bill.paid_by.replace(/"/g,'&quot;') : ''}">
 <script>
@@ -7331,7 +7339,7 @@ function openMemberProfile(name) {
   // Use the cached value from applyAllMemberAvatars, falling back to localStorage for self
   const cachedAvatar = getTripProfileAvatar(name) || _memberAvatarCache[normalizedName] || _memberAvatarCache[displayName.toLowerCase()] || null;
   if (avEl) { if (cachedAvatar) { avEl.innerHTML = '<img src="'+cachedAvatar+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%">'; avEl.style.background="transparent"; } else { avEl.innerHTML = ''; avEl.textContent=displayName[0].toUpperCase(); avEl.style.background=colors[displayName.charCodeAt(0)%colors.length]; } }
-  const nameEl=document.getElementById("mp-name"); if(nameEl) { nameEl.textContent=displayName; RavenPlusBadge.mount(nameEl, D.plusBadgeProfilesByMember?.[name] || Object.values(D.plusBadgeProfilesByMember || {}).find(p => p.id === prof?.id), "profile"); }
+  const nameEl=document.getElementById("mp-name"); if(nameEl) { nameEl.textContent=displayName; RavenPlusBadge.mountProfile(nameEl, D.plusBadgeProfilesByMember?.[name] || Object.values(D.plusBadgeProfilesByMember || {}).find(p => p.id === prof?.id), "profile"); }
   const ridEl=document.getElementById("mp-raven-id"); if(ridEl) ridEl.textContent=prof?.raven_id?"@"+prof.raven_id:"";
   const sinceEl=document.getElementById("mp-member-since"); if(sinceEl) { if(prof?.created_at){const d=new Date(prof.created_at);sinceEl.textContent=" RAVEN member since "+d.toLocaleDateString("en-US",{month:"long",year:"numeric"});}else{sinceEl.textContent=" RAVEN member";}}
   const chipsEl=document.getElementById("mp-payment-chips"); if(chipsEl){const chips=[];if(prof?.venmo)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#0084FF;border-radius:8px;font-size:12px;font-weight:700;color:#fff"><span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;background:rgba(255,255,255,0.18);font-size:10px;line-height:1;font-weight:800">V</span> Venmo</span>');if(prof?.cashapp)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#00D632;border-radius:8px;font-size:12px;font-weight:700;color:#000"><span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;background:rgba(0,0,0,0.14);font-size:10px;line-height:1;font-weight:800">$</span> Cash App</span>');if(prof?.zelle)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#6D1ED4;border-radius:8px;font-size:12px;font-weight:700;color:#fff"><span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;background:rgba(255,255,255,0.18);font-size:10px;line-height:1;font-weight:800">Z</span> Zelle</span>');if(prof?.applepay)chips.push('<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:#1a1a1a;border:1px solid #555;border-radius:8px;font-size:12px;font-weight:700;color:#fff"><span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:999px;background:rgba(255,255,255,0.12);font-size:10px;line-height:1;font-weight:800">Pay</span> Apple Pay</span>');chipsEl.innerHTML=chips.length?chips.join(""):'<span style="font-size:12px;color:#6E6B80">No payment methods set up</span>';}

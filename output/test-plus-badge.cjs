@@ -17,11 +17,12 @@ const trip={id:'TEST',share_token:'token',invite_token:'invite',name:'Wingcheck 
 const receipts=[{id:1,name:'Dinner fixture',total:50,paid_by:'Mel',splits:{Andrew:10,Arsalan:10,Will:10,Nicholas:10},items:[],created_at:'2026-10-20'}];
 const helper = fs.readFileSync('raven-plus-badge.js','utf8');
 function syntax(html) { for(const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) if(!/src=|application\/(?:ld\+)?json/.test(m[1]))new vm.Script(m[2]); }
-async function renderBill(live) {
+async function renderBill(live,guest=false) {
  let handler, output;
  const bill={id:'TEST',share_token:'token',name:'Badge bill fixture',creator_phone:profiles[0].email,paid_by:'Mel',total:20,live_mode:live};
  const participants=[{id:1,name:'Mel',phone:profiles[0].email,amount:0,paid:true},{id:2,name:'Andrew',phone:profiles[1].email,amount:10,paid:false},{id:3,name:'Will',phone:'guest:will',amount:10,paid:false}];
  const data={bills:[bill],participants,profiles:structuredClone(profiles),receipt_items:[],item_selections:[]};
+ if(guest){participants[0].phone='unknown_guest';data.bill_guest_payment_methods=[{participant_id:1,guest_identity:'unknown_guest',venmo:'guest_demo',cashapp:'GuestDemo',applepay:'+15551234567'}];}
  const db={from(table){let single=false;const filters=[];const q={select(){return q},eq(k,v){if(k!=='bill_id')filters.push(r=>r[k]===v);return q},ilike(k,v){filters.push(r=>String(r[k]).toLowerCase()===v.toLowerCase());return q},in(k,v){filters.push(r=>v.includes(r[k]));return q},or(s){const parts=s.split(',').map(p=>p.split('.eq.'));filters.push(r=>parts.some(([k,v])=>r[k]===v));return q},order(){return q},single(){single=true;return q},maybeSingle(){single=true;return q},then(resolve,reject){let rows=(data[table]||[]).filter(r=>filters.every(fn=>fn(r)));return Promise.resolve({data:single?rows[0]||null:rows,error:null}).then(resolve,reject)}};return q}};
  const req=p=>p.startsWith('./')?require('../'+p.slice(2)):require(p);req.resolve=p=>require.resolve('../'+p.slice(2));
  const context={app:{get:(path,fn)=>{handler=fn}},supabase:db,require:req,process:{env:{}},Buffer,URLSearchParams,console,
@@ -47,6 +48,13 @@ async function renderBill(live) {
  const explicitHTML=await renderTrip({...trip,people:['@t'],member_emails:[],creator_email:''},[],[],server,{profiles});
  assert.equal(JSON.parse(explicitHTML.match(/<script id="page-data" type="application\/json">([\s\S]*?)<\/script>/)[1]).plusBadgeProfilesByMember['@t'].id,profiles[1].id,'one-character explicit handle works');
  const classic=await renderBill(false),live=await renderBill(true);
+ for(const mode of [false,true]){
+   const guest=await renderBill(mode,true);
+   const encoded=guest.match(/id="pd" value="([^"]+)"/)[1];
+   const payer=JSON.parse(Buffer.from(encoded,'base64').toString());
+   assert.equal(payer.venmo,'guest_demo');assert.equal(payer.guest_payment_details,true);
+   assert.equal(payer.id,undefined,'guest payer gets no account badge');
+ }
  const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
  try {
   const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true});
@@ -72,6 +80,7 @@ async function renderBill(live) {
   await page.getByRole('button',{name:'Close membership information',exact:true}).click();
   await page.evaluate(()=>openMemberProfile('Mel'));
   assert.equal(await page.locator('#mp-name [data-raven-plus-badge]').count(),1);
+  assert.equal(await page.locator('#mp-name [data-raven-creator]').count(),1,'Creator badge appears in Trip Hub profile');
   await page.locator('#mp-name [data-raven-plus-badge]').click();
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('#member-profile-modal').evaluate(el=>el.classList.contains('open')),true,'Escape closes badge info, not the profile');
