@@ -1,5 +1,5 @@
 const {PGlite}=require('./push-test-runtime/node_modules/@electric-sql/pglite');
-const fs=require('node:fs'),assert=require('node:assert/strict'),vm=require('node:vm');
+const fs=require('node:fs'),assert=require('node:assert/strict'),vm=require('node:vm'),path=require('node:path');
 const newsletter=require('../raven-newsletter');
 (async()=>{
  const pg=new PGlite();
@@ -35,12 +35,12 @@ const newsletter=require('../raven-newsletter');
   const html=newsletter.render('https://example.invalid/unsubscribe?token=x');
   assert.ok(html.includes('1624 Broadway'));assert.ok(html.includes('href="https://example.invalid/unsubscribe?token=x"'));assert.ok(!html.includes('DRAFT'));
   for(const file of ['dashboard.html','onboarding.html']){
-   const source=fs.readFileSync(file,'utf8');let count=0;
+   const source=fs.readFileSync(path.join(process.env.RAVEN_SITE_PATH||'.',file),'utf8');let count=0;
    for(const match of source.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)){
     if(/src=|application\//i.test(match[1]))continue;new vm.Script(match[2],{filename:file+':inline'+count++});
    }
   }
-  assert.ok(!/id="newsletter-consent"[^>]*\bchecked/.test(fs.readFileSync('onboarding.html','utf8')));
+  assert.ok(!/id="newsletter-consent"[^>]*\bchecked/.test(fs.readFileSync(path.join(process.env.RAVEN_SITE_PATH||'.','onboarding.html'),'utf8')));
   console.log('PASS: migration, explicit opt-in, drafts, dedup, legacy opt-out, signed unsubscribe, template, inline JS');
  }finally{await pg.close();}
 })().catch(e=>{console.error(e);process.exit(1)});

@@ -21,6 +21,7 @@ function render(unsubscribe) {
  return fs.readFileSync(path.join(__dirname,'raven-newsletter-template.html'),'utf8').replaceAll('{{UNSUBSCRIBE_URL}}',escape(unsubscribe));
 }
 module.exports=function registerNewsletter(app,db,authenticate,admin,env=process.env,fetcher=fetch) {
+ const weekly=require('./raven-newsletter-weekly')(app,db,admin,env,fetcher,tokenFor);
  const secret=env.RAVEN_NEWSLETTER_SECRET||env.SUPABASE_SERVICE_KEY;
  const checked=async q=>{const {data,error}=await q;if(error)throw Error('Newsletter database unavailable');return data;};
  const link=(id,email)=>BASE+'/newsletter/unsubscribe?token='+encodeURIComponent(tokenFor(id,email,secret));
@@ -101,7 +102,9 @@ module.exports=function registerNewsletter(app,db,authenticate,admin,env=process
    }
   }catch{console.warn('[newsletter] Delivery check unavailable; no automatic resend.');}finally{busy=false;}
  }
- const timer=setInterval(tick,60000);timer.unref?.();
- return {tick,send};
+ const run=async()=>{await weekly.tick();await tick()};
+ const timer=setInterval(run,60000);timer.unref?.();
+ const startup=setTimeout(run,5000);startup.unref?.();
+ return {tick,send,weekly,stop(){clearInterval(timer);clearTimeout(startup)}};
 };
 module.exports.tokenFor=tokenFor;module.exports.readToken=readToken;module.exports.render=render;
