@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<title>RAVEN Plus · Private pilot preview</title>
+<style>
+:root{color-scheme:dark;--ink:#f4f0fa;--muted:#b4adbf;--line:#ffffff19;--violet:#c4a0ff;--green:#36dd86;--paper:#09080e}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button,select{font:inherit}button{cursor:pointer}button:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--green);outline-offset:4px}main{max-width:980px;margin:auto;padding:28px 32px 56px}.masthead{display:flex;justify-content:space-between;gap:16px;align-items:center;padding-bottom:24px;border-bottom:1px solid var(--line)}.wordmark{font-size:18px;font-weight:900;letter-spacing:.19em}.wordmark span{color:var(--violet);letter-spacing:.02em}.eyebrow{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--green);font-weight:800}.private{max-width:220px;text-align:right;color:var(--muted);font-size:11px}.hero{position:relative;padding:52px 0 38px;isolation:isolate}.hero:before{content:"";position:absolute;z-index:-1;inset:15% 0 5% 40%;background:radial-gradient(ellipse,#8c46ff21,transparent 65%);pointer-events:none}.mark{width:64px;height:64px;filter:drop-shadow(0 0 18px #b685ff30)}h1{font-size:clamp(42px,6vw,70px);line-height:1.04;letter-spacing:-.055em;max-width:650px;margin:16px 0 22px;font-weight:850}h1 em{font-style:normal;color:var(--violet)}.lede{max-width:540px;color:var(--muted);font-size:17px;margin:0}.group{display:flex;gap:16px;align-items:center;margin:28px 0 0}.faces{display:flex;padding-left:6px;flex-shrink:0}.face{display:grid;place-items:center;width:34px;height:34px;border:3px solid var(--paper);border-radius:50%;margin-left:-6px;background:#36234d;font-size:11px;font-weight:800}.face:first-child{background:var(--green);color:#07341b}.face:nth-child(3){background:#263e47}.group p{font-size:12px;color:var(--muted);margin:0}.plans{display:grid;grid-template-columns:.85fr 1.15fr;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.plan{padding:28px 28px 28px 0;min-width:0}.plan+.plan{border-left:1px solid var(--line);padding-left:32px;padding-right:0}.plan h2{font-size:14px;letter-spacing:.1em;margin:0 0 15px}.plan h2 span{color:var(--violet)}.price{font-size:44px;font-weight:800;letter-spacing:-.045em;line-height:1.25}.price small{font-size:13px;font-weight:400;letter-spacing:0;color:var(--muted)}.price-note{color:var(--muted);font-size:12px;margin:7px 0 18px;min-height:20px}.switch{display:inline-flex;padding:3px;background:#ffffff08;border:1px solid var(--line);border-radius:30px;gap:3px;margin-bottom:18px}.switch button{border:0;border-radius:22px;background:none;color:var(--muted);padding:8px 13px;font-size:12px}.switch button[aria-pressed=true]{background:#b285e533;color:#e1c8ff}.features{list-style:none;padding:0;margin:18px 0 0}.features li{padding:9px 0 9px 20px;position:relative;font-size:13px}.features li:before{content:"✓";position:absolute;left:0;color:var(--green)}.subtle{color:var(--muted);font-size:12px}.notice{padding:16px 0;color:var(--muted);font-size:12px;border-bottom:1px solid var(--line)}.notice strong{color:#e1c8ff}.section{padding:32px 0;border-bottom:1px solid var(--line)}.section h2{font-size:23px;letter-spacing:-.025em;margin:0 0 8px}.section>p{color:var(--muted);font-size:14px;margin:0 0 18px}.comparison{width:100%;border-collapse:collapse;font-size:13px}.comparison th,.comparison td{border-bottom:1px solid var(--line);padding:13px 8px;text-align:left;vertical-align:top}.comparison th:first-child,.comparison td:first-child{padding-left:0;width:40%}.comparison th{font-size:11px;color:var(--muted);font-weight:500}.comparison td:last-child{color:#d9baff}.comparison tr:last-child td{border:0}.demo-label{display:block;color:var(--muted);font-size:12px;margin-bottom:7px}select{max-width:100%;width:100%;padding:13px;background:#15111e;color:var(--ink);border:1px solid #a476d646;border-radius:10px}.demo-row{display:flex;justify-content:space-between;align-items:center;gap:16px;margin:22px 0 6px}.demo-row strong{font-size:17px}.trip-label{font-size:11px;padding:5px 9px;border-radius:99px;border:1px solid #ffffff30;white-space:nowrap}.trip-label.plus{color:#dfc3ff;background:#b87bff16;border-color:#b87bff66}.demo-status{font-size:14px;margin:12px 0;color:var(--muted)}.kept{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--green);margin:18px 0}.kept:before{content:"✓"}.fineprint{font-size:12px;color:var(--muted);margin:18px 0 0}.footer{padding-top:28px;color:var(--muted);font-size:12px}.footer strong{color:var(--ink)}.sample{color:#bba3d1;font-size:10px;letter-spacing:.1em;text-transform:uppercase}.no-charge{color:var(--green);font-weight:600}.launch-list{margin:16px 0 0;padding-left:18px;color:var(--muted);font-size:13px}.launch-list li{padding:4px 0}@media(max-width:580px){main{padding:20px}.hero{padding-top:32px}.plans{grid-template-columns:1fr}.plan{padding:25px 0}.plan+.plan{padding:25px 0;border-left:0;border-top:1px solid var(--line)}.hero:before{inset:0}h1{font-size:48px}.comparison{font-size:12px}.comparison th:first-child,.comparison td:first-child{width:36%}.private{max-width:150px;font-size:10px}.demo-row{align-items:flex-start}.comparison td{overflow-wrap:anywhere}.lede{font-size:16px}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<main>
+ <header class="masthead"><div class="wordmark">RAVEN <span>PLUS</span></div><div class="private">Owner preview<br>No purchases · No access changes</div></header>
+ <section class="hero">
+  <div class="eyebrow">The whole trip. A little more RAVEN.</div>
+  <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="wing" x1="5" y1="9" x2="22" y2="28" gradientUnits="userSpaceOnUse"><stop stop-color="#E2C5FF"/><stop offset=".5" stop-color="#C084FC"/><stop offset="1" stop-color="#8B5CF6"/></linearGradient></defs><path d="M2 15.5 7.1 16.6 12 21.5 28 3.5 24.2 14.6 21.3 13.7 20.5 18.2 17.7 17.3 16.7 22.4 12.1 27.7Z" fill="url(#wing)"/><path d="M25.5 21v8M21.5 25h8" stroke="#36dd86" stroke-width="2.6" stroke-linecap="round"/></svg>
+  <h1>One upgrade.<br><em>The whole trip.</em></h1>
+  <p class="lede">More room for the memories. More tools for the plans. One Plus member can sponsor a trip for everyone in it.</p>
+  <div class="group"><div class="faces" aria-hidden="true"><span class="face">You</span><span class="face">S</span><span class="face">A</span><span class="face">J</span></div><p>Your friends join free.<br>They don't need their own subscription.</p></div>
+ </section>
+ <section class="plans" aria-label="Proposed plans">
+  <article class="plan"><h2>RAVEN FREE</h2><div class="price">$0</div><p class="price-note">The everyday essentials.</p><ul class="features"><li>Create one active trip</li><li>Join friends' trips freely</li><li>Basic splitting and RAVEN Sweep</li><li>Starter shared album</li><li>Keep access to existing balances</li></ul></article>
+  <article class="plan"><h2>RAVEN <span>PLUS</span></h2><div class="switch" aria-label="Preview billing period"><button id="monthly" type="button" aria-pressed="true">Monthly</button><button id="annual" type="button" aria-pressed="false">Annual · save 44%</button></div><div id="price" class="price" aria-live="polite">$5.99 <small>/ month</small></div><p id="price-note" class="price-note">Proposed price. Not available to purchase yet.</p><ul class="features"><li>Upgrade trips for the whole group</li><li>Larger shared photo and video albums</li><li>Higher receipt-scanning allowance*</li><li>Live flight tools for active trips*</li><li>Your RAVEN Plus Wingcheck badge</li></ul></article>
+ </section>
+ <div class="notice"><strong>Private pilot proposal.</strong> These prices and allowances are a preview, not your current plan. Checkout is off. Existing trips, uploads and memberships are unchanged.</div>
+ <section class="section"><h2>More space. Clear limits.</h2><p>One shared allowance for the trip—not an “unlimited” promise.</p>
+ <table class="comparison"><thead><tr><th scope="col">Proposed allowance</th><th scope="col">Free</th><th scope="col">Plus trip</th></tr></thead><tbody>
+ <tr><td>Join other trips</td><td>No cap</td><td>No cap</td></tr>
+ <tr><td>Active trips</td><td>Host 1</td><td id="trip-cap">Sponsor 10*</td></tr>
+ <tr><td>Shared album</td><td>10 photos + 5 videos</td><td id="album-cap">5 GB total*</td></tr>
+ <tr><td>Per photo</td><td>6 MB</td><td>50 MB</td></tr>
+ <tr><td>Per video</td><td>50 MB</td><td>500 MB*</td></tr>
+ <tr><td>Splits & balances</td><td>Included</td><td>Included</td></tr>
+ </tbody></table><p class="fineprint">*Trip count and shared storage are draft choices awaiting owner confirmation. AI-scan allowances, flight alerts and large-video infrastructure need validation before sale. No Trip Pass in this first version. Exports are not included until implemented and tested.</p></section>
+ <section class="section" aria-labelledby="demo-heading"><div class="sample">Interactive example · No real account data</div><h2 id="demo-heading">What happens to the group?</h2><p>Try the membership lifecycle. The server uses the same date and membership rules.</p>
+ <label class="demo-label" for="scenario">Example membership state</label><select id="scenario"><option value="active">Plus member · subscription active</option><option value="cancelled">Cancelled renewal · paid period remains</option><option value="expired">Paid period ended</option><option value="removed">Sponsor left the trip</option><option value="refunded">Purchase refunded / revoked</option><option value="sandbox">Test purchase · not a real membership</option></select>
+ <div class="demo-row"><strong>Weekend away</strong><span id="trip-label" class="trip-label plus">RAVEN Plus trip</span></div><p class="demo-status" id="demo-status" aria-live="polite"></p><div class="kept">Existing balances and memories are not deleted by this model.</div><p class="fineprint">Cancellation keeps Plus through the paid period. Expiry, revocation or losing the last eligible sponsor would stop new premium usage after launch. Any storage-retention terms must be disclosed before checkout; this preview has no deletion or enforcement behavior.</p></section>
+ <section class="section"><h2>Launch switches stay off.</h2><p class="no-charge">No charge. No subscription created.</p><ul class="launch-list"><li>Connect and sandbox-test Apple purchases and restoration.</li><li>Verify renewals, cancellation, refunds and account binding on the server.</li><li>Confirm storage, trip and AI-scan allowances against actual costs.</li><li>Test quota enforcement and 500 MB resumable uploads before enabling them.</li><li>Start with an approved, small paid pilot after reliability checks.</li></ul></section>
+ <footer class="footer"><strong>RAVEN Plus</strong> is a membership—not a payment to another trip member. Your existing Plus badge is cosmetic and is never used as proof of a purchase.</footer>
+</main>
+<script>/* RAVEN_PLUS_ENGINE */</script>
+<script>
+'use strict';
+const policy = /* RAVEN_PLUS_POLICY */ null;
+if (policy && window.RavenPlusPolicy) {
+ const usd = cents => new Intl.NumberFormat('en-US',{style:'currency',currency:policy.currency}).format(cents/100);
+ const annual = document.getElementById('annual'), monthly = document.getElementById('monthly');
+ function price(yearly) {
+  annual.setAttribute('aria-pressed',String(yearly));monthly.setAttribute('aria-pressed',String(!yearly));
+  const amount=document.createTextNode(usd(yearly?policy.annual_cents:policy.monthly_cents)+' '), period=document.createElement('small');period.textContent=yearly?'/ year':'/ month';document.getElementById('price').replaceChildren(amount,period);
+  document.getElementById('price-note').textContent=yearly?'Proposed annual billing: '+usd(policy.annual_cents)+' once a year. Checkout is off.':'Proposed monthly billing: '+usd(policy.monthly_cents)+'. Checkout is off.';
+ }
+ annual.textContent='Annual · save '+Math.round((1-policy.annual_cents/(policy.monthly_cents*12))*100)+'%';
+ monthly.addEventListener('click',()=>price(false));annual.addEventListener('click',()=>price(true));
+ document.getElementById('trip-cap').textContent=policy.plus_active_sponsored_trips==null?'Unlimited*':'Sponsor '+policy.plus_active_sponsored_trips+'*';
+ document.getElementById('album-cap').textContent=(policy.plus_album_bytes/1024/1024/1024)+' GB total*';
+ function simulate(){
+  const state=document.getElementById('scenario').value,now=Date.now(),stamp=offset=>new Date(now+offset).toISOString();
+  const grant={user_id:'sample-member',provider:'apple',environment:state==='sandbox'?'sandbox':'production',starts_at:stamp(-86400000),ends_at:stamp(state==='expired'?-1000:86400000),revoked_at:state==='refunded'?stamp(-1000):null};
+  const projected=RavenPlusPolicy.tripProjection({trip:{status:'active'},sponsors:[{user_id:'sample-member',linked:state!=='removed',grants:[grant]}]},now);
+  const plus=projected.tier==='plus',tag=document.getElementById('trip-label');tag.textContent=plus?'RAVEN Plus trip':'Standard trip';tag.classList.toggle('plus',plus);
+  const messages={active:'One eligible sponsor brings Plus benefits to everyone in this example trip.',cancelled:'Renewal is off, but the paid period has not ended. The trip keeps Plus for now.',expired:'The paid period ended. No new premium allowance is granted; existing records are retained.',removed:'The only sponsor left. Their membership cannot upgrade a trip they no longer belong to.',refunded:'The purchase was revoked. A badge or old receipt cannot keep granting premium access.',sandbox:'Sandbox purchases never grant production Plus access.'};
+  document.getElementById('demo-status').textContent=messages[state];
+ }
+ document.getElementById('scenario').addEventListener('change',simulate);price(false);simulate();
+}
+</script>
+</body></html>

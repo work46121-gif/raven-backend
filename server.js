@@ -119,6 +119,7 @@ require('./raven-push')(app, supabase, getAuthenticatedRavenUser, process.env, u
 require('./raven-trip-travel')(app, supabase, getAuthenticatedRavenUser);
 require('./raven-trip-album').startCleanup(supabase);
 require('./raven-newsletter')(app, supabase, getAuthenticatedRavenUser, requireRavenAdmin);
+require('./raven-plus-server').register(app, supabase, getAuthenticatedRavenUser, requireRavenAdmin);
 
 async function provisionCreatorWelcome(user) {
   const createdAt = Date.parse(user?.created_at || '');
