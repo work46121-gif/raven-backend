@@ -4401,6 +4401,8 @@ app.get('/trip/:tripId', async (req, res) => {
     }
   }
   const memberPlusBadge = person => RavenPlusBadge.html(plusBadgeProfilesByMember[person]);
+  // Keep the name and its badge as one tight unit, independent of row/avatar gaps.
+  const memberIdentityHtml = person => '<span class="trip-person-identity"><span class="trip-person-label" title="' + esc(getMemberDisplayName(person)) + '">' + esc(getMemberDisplayName(person)) + '</span>' + memberPlusBadge(person) + '</span>';
 
   // Net owed per person: how much each person owes TO payers (excluding what they paid themselves)
   const totals = {};       // what each person owes overall
@@ -4815,7 +4817,7 @@ app.get('/trip/:tripId', async (req, res) => {
         <div style="display:flex;align-items:center;gap:10px;cursor:pointer;min-width:0;flex:1" data-open-profile="${esc(p)}" title="View ${esc(displayName)}'s profile">
           <div data-person-avatar="${esc(p)}" style="width:34px;height:34px;flex-shrink:0;border-radius:50%;background:${avatarColors[i%avatarColors.length]};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;overflow:hidden">${profile?.avatar_url ? `<img src="${esc(profile.avatar_url)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : esc(displayName[0].toUpperCase())}</div>
           <div style="min-width:0">
-            <div data-trip-member-name="1" style="font-weight:600;font-size:14px;display:flex;flex-wrap:wrap;align-items:center;gap:6px;overflow-wrap:anywhere">${esc(displayName)}${memberPlusBadge(p)} <span data-trip-member-you="1" style="display:none;font-size:11px;color:#30D158;font-weight:700">(you)</span><span style="font-size:11px;color:#6E6B80;font-weight:400">&gt;</span></div>
+            <div data-trip-member-name="1" style="font-weight:600;font-size:14px;display:flex;flex-wrap:wrap;align-items:center;gap:6px;overflow-wrap:anywhere">${memberIdentityHtml(p)} <span data-trip-member-you="1" style="display:none;font-size:11px;color:#30D158;font-weight:700">(you)</span><span style="font-size:11px;color:#6E6B80;font-weight:400">&gt;</span></div>
             <div class="person-status-display" style="font-size:11px;color:${effectiveIsSettled?'#30D158':effectiveAmtOwed>0?'#FF9A3C':effectiveIsCreditor?'#A855F7':'#30D158'}">
               ${tripUsesSimpleSplit ? sweepStatus : effectiveIsSettled ? 'all settled' : effectiveAmtOwed>0 ? (effectiveIsPartiallySettled ? 'still owes $' + effectiveAmtOwed.toFixed(2) : 'owes $' + effectiveAmtOwed.toFixed(2)) : effectiveIsCreditor ? 'collecting $' + amtReceivable.toFixed(2) : 'all settled'}
             </div>
@@ -4867,7 +4869,7 @@ ${tripUsesSimpleSplit&&payerEntries.length>1?'<div class="sweep-payment-total" s
     const splitPillsHtml = splitEntries.map(([p,a]) =>
       `<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:rgba(255,255,255,0.05);border-radius:20px;font-size:12px;color:#9896A8">
         <span data-person-avatar="${esc(p)}" style="width:18px;height:18px;border-radius:50%;background:${avatarColorMap[people.indexOf(p) % avatarColorMap.length] || '#6E6B80'};display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0">${esc(p[0].toUpperCase())}</span>
-        ${esc(getMemberDisplayName(p))}${memberPlusBadge(p)} <b style="color:#F0EEF8;font-family:monospace">$${parseFloat(a).toFixed(2)}</b>
+        ${memberIdentityHtml(p)} <b style="color:#F0EEF8;font-family:monospace">$${parseFloat(a).toFixed(2)}</b>
       </span>`
     ).join('');
 
@@ -4911,7 +4913,7 @@ ${tripUsesSimpleSplit&&payerEntries.length>1?'<div class="sweep-payment-total" s
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${payer?'10px':'8px'}">
                 <div style="display:flex;align-items:center;gap:8px">
                   <div data-person-avatar="${esc(person)}" style="width:28px;height:28px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;overflow:hidden;flex-shrink:0">${esc(person[0].toUpperCase())}</div>
-                  <span style="font-size:14px;font-weight:600">${esc(getMemberDisplayName(person))}${memberPlusBadge(person)}</span>
+                  <span style="font-size:14px;font-weight:600;min-width:0">${memberIdentityHtml(person)}</span>
                 </div>
                 <div style="text-align:right">
                   <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:#30D158;letter-spacing:0.03em;line-height:1">$${parseFloat(amount).toFixed(2)}</div>
@@ -4946,7 +4948,7 @@ ${tripUsesSimpleSplit&&payerEntries.length>1?'<div class="sweep-payment-total" s
       <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:rgba(124,58,237,0.07);border:1px solid rgba(124,58,237,0.2);border-radius:10px;margin-bottom:12px">
         <div data-person-avatar="${esc(payer)}" style="width:32px;height:32px;border-radius:50%;background:${avatarColorMap[people.indexOf(payer)%avatarColorMap.length]||'#7C3AED'};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden">${esc(payer[0].toUpperCase())}</div>
         <div style="flex:1">
-          <div style="font-size:12px;color:#A855F7;font-weight:700">Paid by ${esc(payerDisplay)}${memberPlusBadge(payer)}</div>
+          <div style="font-size:12px;color:#A855F7;font-weight:700">Paid by ${memberIdentityHtml(payer)}</div>
           <div style="font-size:11px;color:#6E6B80">${tripUsesSimpleSplit?'Reimbursement included in Sweep':'Others need to pay them back'}</div>
         </div>
         <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:#A855F7">$${total.toFixed(2)}</div>
@@ -4988,7 +4990,8 @@ ${tripUsesSimpleSplit&&payerEntries.length>1?'<div class="sweep-payment-total" s
           ${thumbHtml}
           <div style="flex:1;min-width:0">
             <div style="font-weight:700;font-size:15px;color:#F0EEF8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.name||'Receipt')}</div>
-            <div style="font-size:11px;color:#6E6B80;margin-top:2px">${dateStr}  ${splitterCount} ${splitterCount===1?'person':'people'}</div>            ${payer ? '<div style="display:inline-flex;align-items:center;gap:4px;margin-top:3px;padding:2px 8px;background:rgba(168,85,247,0.12);border:1px solid rgba(168,85,247,0.25);border-radius:6px"><span style="font-size:10px;color:#A855F7;font-weight:700"> Paid by ' + esc(payerDisplay) + '</span>' + memberPlusBadge(payer) + '</div>' : ''}
+            <div style="font-size:11px;color:#6E6B80;margin-top:2px">${dateStr}  ${splitterCount} ${splitterCount===1?'person':'people'}</div>
+            ${payer ? '<div class="trip-receipt-payer"><span>Paid by</span>' + memberIdentityHtml(payer) + '</div>' : ''}
             ${splitEntries.length > 0 ? '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">' + splitPillsHtml + '</div>' : ''}
           </div>
         </div>
@@ -5151,6 +5154,10 @@ input:focus,textarea:focus{border-color:var(--purple)}
 .sweep-history-actions button{font:inherit;font-size:10px;color:#B9B6C9;background:transparent;border:1px solid #ffffff18;border-radius:8px;min-height:36px;padding:6px 10px;margin-top:6px;cursor:pointer}
 .sweep-history-actions button:disabled{opacity:.5}
 .sweep-history-note{font-size:10px;line-height:1.5;color:#9896A8;margin:0 0 14px}
+.trip-person-identity{display:inline-flex;align-items:center;vertical-align:middle;gap:0;min-width:0;max-width:100%;flex:0 1 auto}
+.trip-person-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trip-receipt-payer{display:inline-flex;flex-wrap:wrap;align-items:center;gap:0 3px;max-width:100%;margin-top:3px;padding:2px 8px;background:rgba(168,85,247,0.12);border:1px solid rgba(168,85,247,0.25);border-radius:6px;font-size:10px;color:#A855F7;font-weight:700}
+.trip-receipt-payer>span:first-child{white-space:nowrap}
 .receipt-actions{display:flex;align-items:center;gap:6px;flex-shrink:0;padding-top:2px}
 .receipt-icon-btn{width:30px;height:30px;border-radius:999px;border:1px solid transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;-webkit-tap-highlight-color:transparent;transition:transform .14s ease,background .14s ease,border-color .14s ease}
 .receipt-icon-btn:active{transform:scale(.94)}

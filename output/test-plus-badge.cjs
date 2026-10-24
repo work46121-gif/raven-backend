@@ -36,6 +36,13 @@ async function renderBill(live,guest=false) {
  syntax(output);return output;
 }
 (async()=>{
+ const fontAssets=new Map();
+ if(process.env.RAVEN_TEST_BRAND_FONTS==='1'){
+  const url='https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Epilogue:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap';
+  const css=await(await fetch(url,{signal:AbortSignal.timeout(15000)})).text();
+  fontAssets.set(url,{contentType:'text/css',body:css});
+  for(const match of css.matchAll(/url\((https:\/\/fonts\.gstatic\.com\/[^)]+)\)/g))fontAssets.set(match[1],{contentType:'font/woff2',body:Buffer.from(await(await fetch(match[1],{signal:AbortSignal.timeout(15000)})).arrayBuffer())});
+ }
  for(const p of profiles) { assert.ok(badge.isMember(p)); assert.ok(badge.html(p).includes('RAVEN Plus Member')); }
  for(const p of [null,{}, {first_name:'Mel'}, {raven_id:'melad'}, {id:'new-account',raven_id:'melad'}, {id:'not-a-member',raven_id:'t'}, {id:'"><script>alert(1)</script>'}]) {assert.equal(badge.isMember(p),false);assert.equal(badge.html(p),'');}
  assert.ok(badge.isMember({...profiles[0],raven_id:'renamed'}),'badge follows selected account, not reusable handle');
@@ -62,6 +69,7 @@ async function renderBill(live,guest=false) {
   page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/*',async route=>{
    const r=route.request();
+   if(fontAssets.has(r.url()))return route.fulfill(fontAssets.get(r.url()));
    if(r.isNavigationRequest())return route.fulfill({contentType:'text/html; charset=utf-8',body:html});
    if(r.method()!=='GET')mutations.push(r.url());
    if(r.resourceType()==='script')return route.fulfill({contentType:'application/javascript',body:''});
@@ -70,6 +78,7 @@ async function renderBill(live,guest=false) {
    return route.fulfill({contentType:'application/json',body:'{"success":true,"comments":[],"messages":[],"profiles":[],"data":[],"total":0}'});
   });
   await page.goto('https://badge.test/trip/TEST?t=token&app=1');
+  await page.evaluate(()=>document.fonts.ready);
   assert.equal(await page.locator('[data-trip-member-name] [data-raven-plus-badge]').count(),5);
   const first=page.locator('#row-person-Mel [data-raven-plus-badge]').first();
   await first.click();
@@ -85,8 +94,23 @@ async function renderBill(live,guest=false) {
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('#member-profile-modal').evaluate(el=>el.classList.contains('open')),true,'Escape closes badge info, not the profile');
   await page.evaluate(()=>closeMemberProfile());
-  for(const width of [320,390,768]){
+  await page.evaluate(()=>toggleReceipts());
+  async function assertTightBadges(context){
+   const measurements=await page.locator('.trip-person-identity').evaluateAll(nodes=>nodes.filter(n=>n.getBoundingClientRect().height&&n.querySelector('[data-raven-plus-badge]')).map(n=>{
+    const label=n.querySelector('.trip-person-label'),badge=n.querySelector('[data-raven-plus-badge]');
+    const text=label.getBoundingClientRect(),icon=badge.querySelector('img').getBoundingClientRect(),target=badge.getBoundingClientRect();
+    return {name:label.textContent,gap:icon.left-text.right,aligned:icon.top<text.bottom&&icon.bottom>text.top,targetWidth:target.width,targetHeight:target.height};
+   }));
+   assert.ok(measurements.length>=10,'balances, receipt payer and share pills measured');
+   for(const m of measurements){
+    assert.ok(m.gap>=0&&m.gap<=4.1,context+' '+JSON.stringify(m));
+    assert.ok(m.aligned,context+' badge stays on name line: '+m.name);
+    assert.ok(m.targetWidth>=24&&m.targetHeight>=24,'tap target preserved');
+   }
+  }
+  for(const width of [320,390,430,768]){
    await page.setViewportSize({width,height:844});
+   await assertTightBadges('viewport '+width);
    assert.equal(await page.locator('[data-raven-plus-badge]').evaluateAll(nodes=>nodes.some(n=>n.parentElement.closest('button'))),false,'no nested buttons');
    await first.click();
    const box=await page.locator('#raven-plus-info').boundingBox();
@@ -95,9 +119,31 @@ async function renderBill(live,guest=false) {
    assert.ok(await page.locator('[data-trip-member-row]').evaluateAll(rows=>rows.every(r=>r.scrollWidth<=r.clientWidth)),'member rows fit '+width);
   }
   await page.setViewportSize({width:390,height:844});
+  // A wrapped payer label must never push the badge to the pill's right edge.
+  const payer=page.locator('.trip-receipt-payer').first();
+  await payer.evaluate(el=>el.style.width='70px');
+  assert.equal(await payer.evaluate(el=>el.querySelector('.trip-person-identity').getBoundingClientRect().top>=el.firstElementChild.getBoundingClientRect().bottom),true,'Paid by wraps separately from name + badge');
+  await assertTightBadges('wrapped payer');
+  await payer.evaluate(el=>el.style.removeProperty('width'));
+  // Long display names use ellipsis; the badge remains beside the visible name.
+  await page.locator('.trip-person-label').evaluateAll(nodes=>nodes.forEach(n=>{n.dataset.original=n.textContent;n.textContent='AlexandertheVeryLongName';}));
+  for(const width of [320,390,768]){
+   await page.setViewportSize({width,height:844});
+   await assertTightBadges('long names '+width);
+   assert.ok(await page.locator('[data-trip-member-row]').evaluateAll(rows=>rows.every(r=>r.scrollWidth<=r.clientWidth)),'long balance names fit '+width);
+  }
+  await page.locator('.trip-person-label').evaluateAll(nodes=>nodes.forEach(n=>n.textContent=n.dataset.original));
+  await page.setViewportSize({width:390,height:844});
+  await page.evaluate(()=>document.activeElement.blur());
   await page.locator('#row-person-Mel').evaluate(el=>el.scrollIntoView({block:'start'}));
   await page.screenshot({path:'output/raven-plus-trip-mobile.png'});
   await first.click();await page.screenshot({path:'output/raven-plus-tap-mobile.png'});
+  await page.keyboard.press('Escape');
+  await page.locator('#receipt-0-wrap').evaluate(el=>el.scrollIntoView({block:'start'}));
+  await page.screenshot({path:'output/raven-plus-receipt-spacing-mobile.png'});
+  const collapsed=await page.locator('#receipt-0').isVisible();
+  await payer.locator('[data-raven-plus-badge]').click();
+  assert.equal(await page.locator('#receipt-0').isVisible(),collapsed,'payer badge does not expand receipt');
   await page.keyboard.press('Escape');
   assert.ok(await page.locator('[id="receipt-0"] [data-raven-plus-badge]').count()>0,'receipt payer and shares have badges');
   // Classic bill uses exact stored account identities, never the guest's name.
@@ -125,6 +171,6 @@ async function renderBill(live,guest=false) {
   assert.equal(await page.locator('#name [data-raven-plus-badge]').count(),0,'switching accounts removes old badge');
   assert.deepEqual(mutations,[],'badge performs no writes or payment requests');
   assert.deepEqual(errors,[],'no browser errors');
-  console.log('PASS: five stable account assignments; no name/handle impersonation; guest exclusion; one-character ID; trip, receipt and profile integration; classic/live bill rendering; dashboard name fragment; tap/keyboard/Escape/outside dismissal; no nested buttons; 320/390/768px layout; no mutations.');
+  console.log('PASS: stable account assignments and guest exclusion; trip, receipt and profile integration; classic/live bills; dashboard fragment; tap/keyboard/Escape/outside dismissal; no nested buttons; 320/390/430/768px layout; 4px name-to-icon spacing; wrapped payer and long-name spacing; preserved tap targets; no mutations.');
  } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});
